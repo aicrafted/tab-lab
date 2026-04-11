@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * TabMind palette — one place to change.
+   * All values are HSL channels (no hsl() wrapper) so Tailwind can apply opacity.
+   *
+   * Source hex:
+   *   #111111  →  background
+   *   #1e1e1e  →  card / surface
+   *   #60863D  →  primary (green)
+   *   #EFBC0B  →  accent (amber)
+   *   #DADADA  →  muted text
+   *   #F0E6D0  →  foreground (cream)
+   *
+   * To add dark/light toggle later: wrap in `.dark { ... }` and toggle
+   * the `dark` class on <html> via a theme context.
+   */
+  :root {
+    --background:          0 0% 7%;          /* #111111 */
+    --foreground:          41 51% 88%;       /* #F0E6D0 */
+
+    --card:                0 0% 12%;         /* #1e1e1e */
+    --card-foreground:     41 51% 88%;
+
+    --popover:             0 0% 12%;
+    --popover-foreground:  41 51% 88%;
+
+    --primary:             91 37% 38%;       /* #60863D */
+    --primary-foreground:  41 51% 88%;       /* #F0E6D0 */
+
+    --secondary:           0 0% 12%;
+    --secondary-foreground: 0 0% 85%;        /* #DADADA */
+
+    --muted:               0 0% 12%;
+    --muted-foreground:    0 0% 85%;         /* #DADADA */
+
+    --accent:              47 91% 49%;       /* #EFBC0B */
+    --accent-foreground:   0 0% 7%;          /* #111111 — dark text on amber */
+
+    --destructive:         0 72% 51%;
+    --destructive-foreground: 41 51% 88%;
+
+    --border:              0 0% 20%;
+    --input:               0 0% 20%;
+    --ring:                91 37% 38%;       /* #60863D */
+
+    --radius:              0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Dark scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  * {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) hsl(var(--background));
+    scrollbar-width: thin;
+  }
+}

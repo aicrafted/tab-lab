@@ -1,0 +1,228 @@
+import { projectTo2D, type Point2D } from './project'
+import type { LlmSettings } from './types'
+import { webgpuEmbed } from './webgpu-provider'
+
+const DB_NAME = 'tabmind-embeddings'
+const EMBEDDINGS_STORE = 'embeddings'
+const PROJECTION_STORE = 'projection2d'
+const DB_VERSION = 2
+
+/** Open (or create) the embeddings IndexedDB, returning a Promise<IDBDatabase>. */
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION)
+    req.onupgradeneeded = (e) => {
+      const db = (e.target as IDBOpenDBRequest).result
+      if (!db.objectStoreNames.contains(EMBEDDINGS_STORE)) {
+        db.createObjectStore(EMBEDDINGS_STORE, { keyPath: 'url' })
+      }
+      if (!db.objectStoreNames.contains(PROJECTION_STORE)) {
+        db.createObjectStore(PROJECTION_STORE, { keyPath: 'url' })
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/** Load cached 2D projection coordinates from the embeddings DB. */
+export async function loadCached2D(): Promise<Map<string, [number, number]>> {
+  try {
+    const db = await openDB()
+    const points = await getAllFromStore<Point2DRow>(db, PROJECTION_STORE)
+    if (!points?.length) return new Map()
+    return new Map(points.map(p => [p.url, [p.x, p.y] as [number, number]]))
+  } catch {
+    return new Map()
+  }
+}
+
+/** Save 2D projection coordinates to the projection store (replaces all existing). */
+export async function saveCached2D(points: Point2D[]): Promise<void> {
+  const db = await openDB()
+  const tx = db.transaction(PROJECTION_STORE, 'readwrite')
+  const store = tx.objectStore(PROJECTION_STORE)
+  store.clear()
+  for (const p of points) {
+    store.put({ url: p.url, x: p.x, y: p.y })
+  }
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+/** Clear all cached embeddings and 2D projections. */
+export async function clearEmbeddingCache(): Promise<void> {
+  try {
+    const db = await openDB()
+    const tx = db.transaction([EMBEDDINGS_STORE, PROJECTION_STORE], 'readwrite')
+    tx.objectStore(EMBEDDINGS_STORE).clear()
+    tx.objectStore(PROJECTION_STORE).clear()
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  } catch {
+  }
+}
+
+interface Point2DRow {
+  url: string
+  x: number
+  y: number
+}
+
+interface EmbeddingRow {
+  url: string
+  vector?: Float32Array | number[]
+}
+
+/** Helper: get all rows from a store. */
+function getAllFromStore<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      resolve([])
+      return
+    }
+    const tx = db.transaction(storeName, 'readonly')
+    const req = tx.objectStore(storeName).getAll()
+    req.onsuccess = () => resolve(req.result as T[])
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/** Retrieve all cached embeddings from IndexedDB as { url → number[] } map. */
+export async function loadCachedEmbeddings(): Promise<Map<string, number[]>> {
+  try {
+    const db = await openDB()
+    const rows = await getAllFromStore<EmbeddingRow>(db, EMBEDDINGS_STORE)
+    const map = new Map<string, number[]>()
+    for (const row of rows ?? []) {
+      if (!row.url || !row.vector) continue
+      const vector = Array.isArray(row.vector) ? row.vector : Array.from(row.vector)
+      if (vector.length > 0) map.set(row.url, vector)
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
+/** Store a single embedding vector in IndexedDB. */
+async function storeEmbedding(url: string, vector: number[]): Promise<void> {
+  const db = await openDB()
+  const tx = db.transaction(EMBEDDINGS_STORE, 'readwrite')
+  tx.objectStore(EMBEDDINGS_STORE).put({ url, vector: new Float32Array(vector) })
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+/** Fetch a single embedding vector from LM Studio. */
+async function fetchEmbeddingLmStudio(
+  text: string,
+  settings: LlmSettings,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  const model = settings.embeddingModel || settings.model
+  const res = await fetch(`${settings.baseUrl}/embeddings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}),
+    },
+    body: JSON.stringify({ model, input: text }),
+    signal: signal ?? AbortSignal.timeout(20_000),
+  })
+  if (!res.ok) throw new Error(`Embeddings request failed: ${res.status}`)
+  const json = (await res.json()) as { data: { embedding: number[] }[] }
+  const vec = json.data[0]?.embedding
+  if (!vec?.length) throw new Error('Empty embedding response')
+  return vec
+}
+
+export async function fetchEmbedding(
+  text: string,
+  settings: LlmSettings,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  if (settings.embeddingProvider === 'transformers') {
+    return webgpuEmbed(text)
+  }
+  if (settings.embeddingProvider === 'lmstudio') {
+    return fetchEmbeddingLmStudio(text, settings, signal)
+  }
+  throw new Error('Unsupported embedding provider')
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0) return 0
+  const len = Math.min(a.length, b.length)
+  let dot = 0
+  let na = 0
+  let nb = 0
+  for (let i = 0; i < len; i += 1) {
+    dot += a[i] * b[i]
+    na += a[i] * a[i]
+    nb += b[i] * b[i]
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1)
+}
+
+/**
+ * Fetch embeddings for items that aren't already cached in IndexedDB.
+ * Uses LM Studio /v1/embeddings.
+ * Vectors are stored as Float32Array in IndexedDB (efficient binary).
+ * Input text = "category: title" when category exists, otherwise title.
+ */
+export async function fetchEmbeddingsBatch(
+  items: { url: string; title: string; domain: string; category?: string }[],
+  settings: LlmSettings,
+  onProgress: (updates: { url: string; embedding: number[] }[]) => void,
+): Promise<void> {
+  if (settings.embeddingProvider === 'lmstudio') {
+    if (!settings.baseUrl) return
+    if (!settings.model && !settings.embeddingModel) return
+  }
+
+  const cachedUrls = new Set<string>()
+  try {
+    const db = await openDB()
+    const rows = await getAllFromStore<EmbeddingRow>(db, EMBEDDINGS_STORE)
+    for (const row of rows ?? []) {
+      if (row.url && row.vector && (Array.isArray(row.vector) ? row.vector.length > 0 : row.vector.byteLength > 0)) {
+        cachedUrls.add(row.url)
+      }
+    }
+  } catch {
+  }
+
+  const uncached = items.filter(item => !cachedUrls.has(item.url))
+  if (uncached.length === 0) return
+
+  for (const item of uncached) {
+    try {
+      const text = item.category ? `${item.category}: ${item.title}` : item.title
+      const embedding = await fetchEmbedding(text, settings)
+      await storeEmbedding(item.url, embedding)
+      onProgress([{ url: item.url, embedding }])
+    } catch (err) {
+      console.warn('Embedding failed for', item.url, err)
+    }
+  }
+}
+
+/**
+ * Re-project all cached embeddings to 2D and update the projection cache.
+ */
+export async function reprojectAllEmbeddings(): Promise<Map<string, [number, number]>> {
+  const embeddings = await loadCachedEmbeddings()
+  if (embeddings.size < 2) return new Map()
+
+  const items = Array.from(embeddings.entries()).map(([url, embedding]) => ({ url, embedding }))
+  const points = projectTo2D(items)
+  await saveCached2D(points)
+  return new Map(points.map(p => [p.url, [p.x, p.y] as [number, number]]))
+}

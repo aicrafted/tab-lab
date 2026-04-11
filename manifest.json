@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "TabLab",
+  "version": "0.1.0",
+  "description": "Analytics lab for bookmark hoarders — local AI classification, semantic search, and visual exploration.",
+  "permissions": ["bookmarks", "tabs", "storage", "history", "tabGroups", "offscreen"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open TabLab",
+    "default_icon": {
+      "16":  "icons/aicrafted.png",
+      "32":  "icons/aicrafted.png",
+      "48":  "icons/aicrafted.png",
+      "128": "icons/aicrafted.png"
+    }
+  },
+  "icons": {
+    "16":  "icons/aicrafted.png",
+    "32":  "icons/aicrafted.png",
+    "48":  "icons/aicrafted.png",
+    "128": "icons/aicrafted.png"
+  }
+}
