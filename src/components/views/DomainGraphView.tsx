@@ -7,7 +7,6 @@ import type { ViewProps } from '@/components/views/types'
 import { colorFromKey } from '@/components/views/stubs'
 import { runDeterministicForceLayout } from '@/lib/force-layout'
 
-type SourceMode = 'bookmarks' | 'tabs' | 'both'
 type DomainLayoutMode = 'live' | 'static'
 
 interface DomainPage {
@@ -73,7 +72,6 @@ const DOMAIN_LIVE_DEFAULTS = {
 }
 
 export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
-  const [source, setSource] = useState<SourceMode>('both')
   const [layoutMode, setLayoutMode] = useState<DomainLayoutMode>('live')
   const [liveTuning, setLiveTuning] = useState(DOMAIN_LIVE_DEFAULTS)
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null)
@@ -97,30 +95,26 @@ export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
   const graphBase = useMemo(() => {
     const pages: DomainPage[] = []
 
-    if (source === 'bookmarks' || source === 'both') {
-      for (const bookmark of bookmarks) {
-        pages.push({
-          id: `bm-${bookmark.id}`,
-          title: bookmark.title || bookmark.url,
-          url: bookmark.url,
-          domain: bookmark.domain,
-          category: bookmark.category,
-          visitCount: bookmark.visitCount ?? 1,
-        })
-      }
+    for (const bookmark of bookmarks) {
+      pages.push({
+        id: `bm-${bookmark.id}`,
+        title: bookmark.title || bookmark.url,
+        url: bookmark.url,
+        domain: bookmark.domain,
+        category: bookmark.category,
+        visitCount: bookmark.visitCount ?? 1,
+      })
     }
 
-    if (source === 'tabs' || source === 'both') {
-      for (const tab of tabs) {
-        pages.push({
-          id: `tab-${tab.id}`,
-          title: tab.title || tab.url,
-          url: tab.url,
-          domain: tab.domain,
-          category: tab.category,
-          visitCount: tab.visitCount ?? 1,
-        })
-      }
+    for (const tab of tabs) {
+      pages.push({
+        id: `tab-${tab.id}`,
+        title: tab.title || tab.url,
+        url: tab.url,
+        domain: tab.domain,
+        category: tab.category,
+        visitCount: tab.visitCount ?? 1,
+      })
     }
 
     const byDomain = new Map<string, DomainPage[]>()
@@ -148,10 +142,10 @@ export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
     const maxDomainVisits = Math.max(1, ...nodesBase.map((node) => node.visitCount))
 
     const edgeWeight = new Map<string, number>()
-    if (source === 'tabs' || source === 'both') {
+    {
       const domainsByWindow = new Map<number, string[]>()
       for (const tab of tabs) {
-        if (source === 'tabs' || byDomain.has(tab.domain)) {
+        if (byDomain.has(tab.domain)) {
           domainsByWindow.set(tab.windowId, [...(domainsByWindow.get(tab.windowId) ?? []), tab.domain])
         }
       }
@@ -203,7 +197,7 @@ export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
     }))
 
     return { nodes, edges: edgesBase }
-  }, [bookmarks, tabs, source])
+  }, [bookmarks, tabs])
 
   const graph = useMemo(() => {
     const nodes = graphBase.nodes.map((node) => {
@@ -434,15 +428,6 @@ export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
     <section className="grid gap-4 lg:grid-cols-[1fr_280px]">
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant={source === 'bookmarks' ? 'default' : 'outline'} onClick={() => setSource('bookmarks')}>
-            Bookmarks
-          </Button>
-          <Button type="button" size="sm" variant={source === 'tabs' ? 'default' : 'outline'} onClick={() => setSource('tabs')}>
-            Tabs
-          </Button>
-          <Button type="button" size="sm" variant={source === 'both' ? 'default' : 'outline'} onClick={() => setSource('both')}>
-            Both
-          </Button>
           <Button type="button" size="sm" variant={layoutMode === 'live' ? 'default' : 'outline'} onClick={() => switchLayout('live')}>
             Live
           </Button>
@@ -562,18 +547,32 @@ export function DomainGraphView({ bookmarks, tabs, loading }: ViewProps) {
                   onClick={() => setSelectedDomain(node.domain)}
                   className="cursor-pointer"
                 >
+                  {(() => {
+                    const radius = nodeRadius(node.visitCount)
+                    return (
+                      <>
                   <circle
                     cx={node.x}
                     cy={node.y}
-                    r={nodeRadius(node.visitCount)}
+                    r={radius}
                     fill={colorFromKey(node.colorKey)}
                     opacity={0.85}
                     stroke={selectedDomain === node.domain ? 'hsl(var(--primary))' : 'hsl(var(--background))'}
                     strokeWidth={selectedDomain === node.domain ? 3 : 1.5}
                   />
-                  <text x={node.x} y={node.y + 4} textAnchor="middle" fill="white" fontSize="10" fontWeight="600">
+                  <text
+                    x={node.x}
+                    y={node.y - radius - 5}
+                    textAnchor="middle"
+                    fill="hsl(var(--foreground))"
+                    fontSize="11"
+                    fontWeight="600"
+                  >
                     {shorten(node.domain, 12)}
                   </text>
+                      </>
+                    )
+                  })()}
                 </g>
               ))}
             </g>

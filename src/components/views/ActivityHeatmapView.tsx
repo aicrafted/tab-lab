@@ -1,9 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
-
-type SourceMode = 'bookmarks' | 'tabs' | 'both'
 
 interface HeatmapPage {
   id: string
@@ -30,7 +27,6 @@ interface HoverState {
 const CELL_DAYS = 52 * 7
 
 export function ActivityHeatmapView({ bookmarks, tabs, loading }: ViewProps) {
-  const [source, setSource] = useState<SourceMode>('both')
   const [hover, setHover] = useState<HoverState | null>(null)
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null)
 
@@ -53,46 +49,42 @@ export function ActivityHeatmapView({ bookmarks, tabs, loading }: ViewProps) {
       })
     }
 
-    if (source === 'bookmarks' || source === 'both') {
-      for (const bookmark of bookmarks) {
-        if (!bookmark.lastVisited) continue
-        const key = toDayKey(new Date(bookmark.lastVisited))
-        const entry = byDay.get(key)
-        if (!entry) continue
-        const visits = bookmark.visitCount ?? 1
-        entry.count += visits
-        if (!entry.domains.includes(bookmark.domain)) entry.domains.push(bookmark.domain)
-        entry.pages.push({
-          id: `bm-${bookmark.id}`,
-          title: bookmark.title || bookmark.url,
-          url: bookmark.url,
-          domain: bookmark.domain,
-          visits,
-        })
-      }
+    for (const bookmark of bookmarks) {
+      if (!bookmark.lastVisited) continue
+      const key = toDayKey(new Date(bookmark.lastVisited))
+      const entry = byDay.get(key)
+      if (!entry) continue
+      const visits = bookmark.visitCount ?? 1
+      entry.count += visits
+      if (!entry.domains.includes(bookmark.domain)) entry.domains.push(bookmark.domain)
+      entry.pages.push({
+        id: `bm-${bookmark.id}`,
+        title: bookmark.title || bookmark.url,
+        url: bookmark.url,
+        domain: bookmark.domain,
+        visits,
+      })
     }
 
-    if (source === 'tabs' || source === 'both') {
-      for (const tab of tabs) {
-        if (!tab.lastAccessed) continue
-        const key = toDayKey(new Date(tab.lastAccessed))
-        const entry = byDay.get(key)
-        if (!entry) continue
-        const visits = tab.visitCount ?? 1
-        entry.count += visits
-        if (!entry.domains.includes(tab.domain)) entry.domains.push(tab.domain)
-        entry.pages.push({
-          id: `tab-${tab.id}`,
-          title: tab.title || tab.url,
-          url: tab.url,
-          domain: tab.domain,
-          visits,
-        })
-      }
+    for (const tab of tabs) {
+      if (!tab.lastAccessed) continue
+      const key = toDayKey(new Date(tab.lastAccessed))
+      const entry = byDay.get(key)
+      if (!entry) continue
+      const visits = tab.visitCount ?? 1
+      entry.count += visits
+      if (!entry.domains.includes(tab.domain)) entry.domains.push(tab.domain)
+      entry.pages.push({
+        id: `tab-${tab.id}`,
+        title: tab.title || tab.url,
+        url: tab.url,
+        domain: tab.domain,
+        visits,
+      })
     }
 
     return Array.from(byDay.values()).sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [bookmarks, tabs, source])
+  }, [bookmarks, tabs])
 
   const monthLabels = useMemo(() => {
     const labels: Array<{ label: string; week: number }> = []
@@ -130,15 +122,6 @@ export function ActivityHeatmapView({ bookmarks, tabs, loading }: ViewProps) {
     <section className="grid gap-4 lg:grid-cols-[1fr_280px]">
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant={source === 'bookmarks' ? 'default' : 'outline'} onClick={() => setSource('bookmarks')}>
-            Bookmarks
-          </Button>
-          <Button type="button" size="sm" variant={source === 'tabs' ? 'default' : 'outline'} onClick={() => setSource('tabs')}>
-            Tabs
-          </Button>
-          <Button type="button" size="sm" variant={source === 'both' ? 'default' : 'outline'} onClick={() => setSource('both')}>
-            Both
-          </Button>
           <span className="text-xs text-muted-foreground">Approximate: based on lastVisited/lastAccessed only.</span>
         </div>
 

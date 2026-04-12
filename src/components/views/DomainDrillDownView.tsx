@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 
-type SourceMode = 'bookmarks' | 'tabs' | 'both'
 type SortMode = 'count' | 'alpha'
 
 interface PageEntry {
@@ -33,42 +32,37 @@ interface DomainGroup {
 }
 
 export function DomainDrillDownView({ bookmarks, tabs, loading }: ViewProps) {
-  const [source, setSource] = useState<SourceMode>('both')
   const [sortMode, setSortMode] = useState<SortMode>('count')
 
   const entries = useMemo<PageEntry[]>(() => {
     const result: PageEntry[] = []
-    if (source === 'bookmarks' || source === 'both') {
-      for (const bookmark of bookmarks) {
-        result.push({
-          id: `bm-${bookmark.id}`,
-          source: 'bookmark',
-          title: bookmark.title || bookmark.url,
-          url: bookmark.url,
-          domain: bookmark.domain,
-          visitCount: bookmark.visitCount,
-          dateAdded: bookmark.dateAdded,
-        })
-      }
+    for (const bookmark of bookmarks) {
+      result.push({
+        id: `bm-${bookmark.id}`,
+        source: 'bookmark',
+        title: bookmark.title || bookmark.url,
+        url: bookmark.url,
+        domain: bookmark.domain,
+        visitCount: bookmark.visitCount,
+        dateAdded: bookmark.dateAdded,
+      })
     }
-    if (source === 'tabs' || source === 'both') {
-      for (const tab of tabs) {
-        result.push({
-          id: `tab-${tab.id}`,
-          source: 'tab',
-          title: tab.title || tab.url,
-          url: tab.url,
-          domain: tab.domain,
-          visitCount: tab.visitCount,
-          dateAdded: tab.lastAccessed,
-          tabId: tab.id,
-          windowId: tab.windowId,
-          favIconUrl: tab.favIconUrl,
-        })
-      }
+    for (const tab of tabs) {
+      result.push({
+        id: `tab-${tab.id}`,
+        source: 'tab',
+        title: tab.title || tab.url,
+        url: tab.url,
+        domain: tab.domain,
+        visitCount: tab.visitCount,
+        dateAdded: tab.lastAccessed,
+        tabId: tab.id,
+        windowId: tab.windowId,
+        favIconUrl: tab.favIconUrl,
+      })
     }
     return result
-  }, [bookmarks, tabs, source])
+  }, [bookmarks, tabs])
 
   const groups = useMemo<DomainGroup[]>(() => {
     const byDomain = new Map<string, PageEntry[]>()
@@ -117,10 +111,7 @@ export function DomainDrillDownView({ bookmarks, tabs, loading }: ViewProps) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant={source === 'bookmarks' ? 'default' : 'outline'} onClick={() => setSource('bookmarks')}>Bookmarks</Button>
-        <Button type="button" size="sm" variant={source === 'tabs' ? 'default' : 'outline'} onClick={() => setSource('tabs')}>Tabs</Button>
-        <Button type="button" size="sm" variant={source === 'both' ? 'default' : 'outline'} onClick={() => setSource('both')}>Both</Button>
-        <span className="ml-2 text-xs text-muted-foreground">Sort domains:</span>
+        <span className="text-xs text-muted-foreground">Sort domains:</span>
         <Button type="button" size="sm" variant={sortMode === 'count' ? 'default' : 'outline'} onClick={() => setSortMode('count')}>By count</Button>
         <Button type="button" size="sm" variant={sortMode === 'alpha' ? 'default' : 'outline'} onClick={() => setSortMode('alpha')}>A-Z</Button>
       </div>

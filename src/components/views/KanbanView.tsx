@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 
-type SourceMode = 'bookmarks' | 'tabs' | 'both'
 type GroupMode = 'category' | 'domain' | 'tag'
 
 interface KanbanCard {
@@ -28,47 +27,42 @@ interface KanbanColumn {
 }
 
 export function KanbanView({ bookmarks, tabs, loading }: ViewProps) {
-  const [source, setSource] = useState<SourceMode>('both')
   const [groupMode, setGroupMode] = useState<GroupMode>('category')
 
   const cards = useMemo<KanbanCard[]>(() => {
     const result: KanbanCard[] = []
 
-    if (source === 'bookmarks' || source === 'both') {
-      for (const bookmark of bookmarks) {
-        result.push({
-          key: `bm-${bookmark.id}`,
-          source: 'bookmark',
-          title: bookmark.title,
-          url: bookmark.url,
-          domain: bookmark.domain,
-          category: bookmark.category,
-          visitCount: bookmark.visitCount,
-          tags: bookmark.tags ?? [],
-        })
-      }
+    for (const bookmark of bookmarks) {
+      result.push({
+        key: `bm-${bookmark.id}`,
+        source: 'bookmark',
+        title: bookmark.title,
+        url: bookmark.url,
+        domain: bookmark.domain,
+        category: bookmark.category,
+        visitCount: bookmark.visitCount,
+        tags: bookmark.tags ?? [],
+      })
     }
 
-    if (source === 'tabs' || source === 'both') {
-      for (const tab of tabs) {
-        result.push({
-          key: `tab-${tab.id}`,
-          source: 'tab',
-          title: tab.title,
-          url: tab.url,
-          domain: tab.domain,
-          category: tab.category,
-          visitCount: tab.visitCount,
-          favIconUrl: tab.favIconUrl,
-          tabId: tab.id,
-          windowId: tab.windowId,
-          tags: tab.tags ?? [],
-        })
-      }
+    for (const tab of tabs) {
+      result.push({
+        key: `tab-${tab.id}`,
+        source: 'tab',
+        title: tab.title,
+        url: tab.url,
+        domain: tab.domain,
+        category: tab.category,
+        visitCount: tab.visitCount,
+        favIconUrl: tab.favIconUrl,
+        tabId: tab.id,
+        windowId: tab.windowId,
+        tags: tab.tags ?? [],
+      })
     }
 
     return result
-  }, [bookmarks, tabs, source])
+  }, [bookmarks, tabs])
 
   const columns = useMemo<KanbanColumn[]>(() => {
     const byColumn = new Map<string, KanbanCard[]>()
@@ -144,17 +138,6 @@ export function KanbanView({ bookmarks, tabs, loading }: ViewProps) {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant={source === 'bookmarks' ? 'default' : 'outline'} onClick={() => setSource('bookmarks')}>
-          Bookmarks
-        </Button>
-        <Button type="button" size="sm" variant={source === 'tabs' ? 'default' : 'outline'} onClick={() => setSource('tabs')}>
-          Tabs
-        </Button>
-        <Button type="button" size="sm" variant={source === 'both' ? 'default' : 'outline'} onClick={() => setSource('both')}>
-          Both
-        </Button>
-      </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
         <Button type="button" size="sm" variant={groupMode === 'category' ? 'default' : 'outline'} onClick={() => setGroupMode('category')}>

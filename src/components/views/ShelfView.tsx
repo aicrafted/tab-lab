@@ -111,7 +111,7 @@ export function ShelfView({ bookmarks, tabs, loading }: ViewProps) {
           return (
             <div key={shelf.label}>
               <div className="mb-1 text-xs text-muted-foreground">{shelf.label} ({shelf.books.length})</div>
-              <div className="relative rounded-sm border-b-4 border-[hsl(30_40%_40%)] bg-[hsl(30_30%_85%)] px-2">
+              <div className="relative rounded-sm border border-border/40 border-b-2 bg-[hsl(var(--muted)/0.18)] px-2 shadow-[inset_0_1px_0_hsl(var(--background)/0.35)]">
                 <div className="flex items-end gap-px overflow-x-auto pb-0 pt-1">
                   {shelf.books.map((book) => {
                     const height = clamp(40 + book.readingTime * 3, 40, 120)
