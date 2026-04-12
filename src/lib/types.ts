@@ -65,25 +65,135 @@ export interface CacheEntry {
   intent?: PageIntent      // intent classification
 }
 
+export type ChatProvider = 'gemini-nano' | 'webllm' | 'lmstudio' | 'openrouter'
+export type EmbeddingProvider = 'transformers' | 'lmstudio' | 'openrouter'
+export type ClassificationMethod = 'llm' | 'nli'
+export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
+
 export interface LlmSettings {
-  chatProvider: ChatProvider
-  embeddingProvider: EmbeddingProvider
-  baseUrl: string          // e.g. "http://localhost:1234/v1"
-  apiKey: string           // empty string if not required
-  model: string            // lmstudio chat model
-  embeddingModel: string   // lmstudio embedding model
-  webllmModel: string      // WebLLM model id
+  providers: {
+    lmstudio: { baseUrl: string; apiKey: string }
+    openrouter: { apiKey: string }
+  }
+  tasks: {
+    chat: {
+      provider: ChatProvider
+      model: string
+    }
+    embedding: {
+      provider: EmbeddingProvider
+      model: string
+    }
+    classification: {
+      method: ClassificationMethod
+    }
+  }
 }
 
-export type ChatProvider = 'gemini-nano' | 'lmstudio' | 'webllm'
-export type EmbeddingProvider = 'lmstudio' | 'transformers'
+interface LegacyLlmSettings {
+  chatProvider?: string
+  embeddingProvider?: string
+  baseUrl?: string
+  apiKey?: string
+  model?: string
+  embeddingModel?: string
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function toChatProvider(value: unknown, fallback: ChatProvider): ChatProvider {
+  if (value === 'gemini-nano' || value === 'webllm' || value === 'lmstudio' || value === 'openrouter') {
+    return value
+  }
+  return fallback
+}
+
+function toEmbeddingProvider(value: unknown, fallback: EmbeddingProvider): EmbeddingProvider {
+  if (value === 'transformers' || value === 'lmstudio' || value === 'openrouter') {
+    return value
+  }
+  return fallback
+}
+
+function toClassificationMethod(value: unknown, fallback: ClassificationMethod): ClassificationMethod {
+  if (value === 'llm' || value === 'nli') return value
+  return fallback
+}
 
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
-  chatProvider: 'lmstudio',
-  embeddingProvider: 'lmstudio',
-  baseUrl: 'http://localhost:1234/v1',
-  apiKey: '',
-  model: '',
-  embeddingModel: '',
-  webllmModel: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',
+  providers: {
+    lmstudio: { baseUrl: 'http://localhost:1234/v1', apiKey: '' },
+    openrouter: { apiKey: '' },
+  },
+  tasks: {
+    chat: { provider: 'lmstudio', model: '' },
+    embedding: { provider: 'lmstudio', model: '' },
+    classification: { method: 'llm' },
+  },
+}
+
+export function migrateLlmSettings(raw: unknown): LlmSettings {
+  if (raw && typeof raw === 'object' && 'tasks' in raw) {
+    const obj = asObject(raw)
+    const providers = asObject(obj.providers)
+    const lmstudio = asObject(providers.lmstudio)
+    const openrouter = asObject(providers.openrouter)
+    const tasks = asObject(obj.tasks)
+    const chat = asObject(tasks.chat)
+    const embedding = asObject(tasks.embedding)
+    const classification = asObject(tasks.classification)
+
+    return {
+      providers: {
+        lmstudio: {
+          baseUrl: asString(lmstudio.baseUrl, DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl),
+          apiKey: asString(lmstudio.apiKey, ''),
+        },
+        openrouter: {
+          apiKey: asString(openrouter.apiKey, ''),
+        },
+      },
+      tasks: {
+        chat: {
+          provider: toChatProvider(chat.provider, DEFAULT_LLM_SETTINGS.tasks.chat.provider),
+          model: asString(chat.model, ''),
+        },
+        embedding: {
+          provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
+          model: asString(embedding.model, ''),
+        },
+        classification: {
+          method: toClassificationMethod(classification.method, DEFAULT_LLM_SETTINGS.tasks.classification.method),
+        },
+      },
+    }
+  }
+
+  const old = asObject(raw) as LegacyLlmSettings
+  return {
+    providers: {
+      lmstudio: {
+        baseUrl: old.baseUrl ?? DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl,
+        apiKey: old.apiKey ?? '',
+      },
+      openrouter: { apiKey: '' },
+    },
+    tasks: {
+      chat: {
+        provider: toChatProvider(old.chatProvider, DEFAULT_LLM_SETTINGS.tasks.chat.provider),
+        model: old.model ?? '',
+      },
+      embedding: {
+        provider: toEmbeddingProvider(old.embeddingProvider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
+        model: old.embeddingModel ?? '',
+      },
+      classification: { method: 'llm' },
+    },
+  }
 }

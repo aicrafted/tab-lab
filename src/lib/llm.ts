@@ -13,7 +13,8 @@ export async function chatComplete(
   maxTokens = 40,
   options: ChatOptions = {},
 ): Promise<string> {
-  switch (settings.chatProvider) {
+  const provider = settings.tasks.chat.provider
+  switch (provider) {
     case 'gemini-nano': {
       if (!window.ai?.languageModel) throw new Error('Gemini Nano unavailable')
       const session = await window.ai.languageModel.create({ systemPrompt })
@@ -24,17 +25,27 @@ export async function chatComplete(
       }
     }
     case 'webllm':
-      return webllmChat(systemPrompt, userMessage, settings.webllmModel, maxTokens, options)
+      return webllmChat(systemPrompt, userMessage, settings.tasks.chat.model, maxTokens, options)
+    case 'openrouter':
     case 'lmstudio':
     default: {
-      const res = await fetch(`${settings.baseUrl}/chat/completions`, {
+      const baseUrl = provider === 'openrouter'
+        ? 'https://openrouter.ai/api/v1'
+        : settings.providers.lmstudio.baseUrl
+      const apiKey = provider === 'openrouter'
+        ? settings.providers.openrouter.apiKey
+        : settings.providers.lmstudio.apiKey
+      const model = settings.tasks.chat.model
+
+      const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}),
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
         },
         body: JSON.stringify({
-          model: settings.model,
+          model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },

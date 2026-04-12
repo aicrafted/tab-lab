@@ -281,6 +281,9 @@ export function BookmarksTable({ data, settings, loading, onDelete, onExport }: 
 }
 
 function embeddingsAvailable(settings: LlmSettings): boolean {
-  if (settings.embeddingProvider === 'transformers') return true
-  return Boolean(settings.baseUrl && (settings.model || settings.embeddingModel))
+  if (settings.tasks.embedding.provider === 'transformers') return true
+  if (settings.tasks.embedding.provider === 'lmstudio') {
+    return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.embedding.model)
+  }
+  return Boolean(settings.providers.openrouter.apiKey && settings.tasks.embedding.model)
 }

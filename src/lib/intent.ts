@@ -1,6 +1,9 @@
 import { chatComplete } from './llm'
+import { cosineSimilarity } from './embedder'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
+import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
+import { webgpuEmbed } from './webgpu-provider'
 
 const INTENT_PROMPT = `You classify web pages by their intent — how the user is meant to use them.
 
@@ -43,6 +46,41 @@ const VALID_INTENTS: PageIntent[] = [
   'repository',
   'other',
 ]
+let intentLabelEmbeddingsPromise: Promise<Map<PageIntent, number[]>> | null = null
+
+async function getIntentLabelEmbeddings(model: string): Promise<Map<PageIntent, number[]>> {
+  if (!intentLabelEmbeddingsPromise) {
+    intentLabelEmbeddingsPromise = Promise.resolve(new Map())
+  }
+  const existing = await intentLabelEmbeddingsPromise
+  if (existing.size > 0 && model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) return existing
+
+  const map = new Map<PageIntent, number[]>()
+  for (const intent of VALID_INTENTS) {
+    map.set(intent, await webgpuEmbed(`Intent label: ${intent}. Browser page usage mode.`, model))
+  }
+  if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
+    intentLabelEmbeddingsPromise = Promise.resolve(map)
+  }
+  return map
+}
+
+async function classifyIntentNLI(item: { title: string; domain: string }, model: string): Promise<PageIntent> {
+  const query = await webgpuEmbed(`${item.title}\n${item.domain}`, model)
+  const labels = await getIntentLabelEmbeddings(model)
+  let bestIntent: PageIntent = 'other'
+  let bestScore = -Infinity
+
+  for (const [intent, embedding] of labels.entries()) {
+    const score = cosineSimilarity(query, embedding)
+    if (score > bestScore) {
+      bestScore = score
+      bestIntent = intent
+    }
+  }
+
+  return bestIntent
+}
 
 function parseIntent(raw: string): PageIntent {
   const normalized = raw.trim().toLowerCase()
@@ -82,7 +120,14 @@ export async function classifyIntent(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const isWebLLM = settings.chatProvider === 'webllm'
+  const useNli = settings.tasks.classification.method === 'nli'
+    && settings.tasks.embedding.provider === 'transformers'
+  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+  if (settings.tasks.classification.method === 'nli' && !useNli) {
+    console.warn('[intent] NLI method requires embedding provider "transformers"; falling back to LLM intent classification')
+  }
+
+  const isWebLLM = settings.tasks.chat.provider === 'webllm'
   const prompt = isWebLLM ? INTENT_PROMPT_JSON : INTENT_PROMPT
   const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
 
@@ -91,14 +136,19 @@ export async function classifyIntent(
     const batch = uncached.slice(i, i + BATCH)
     const results = await Promise.all(
       batch.map(async (item) => {
-        const raw = await chatComplete(
-          prompt,
-          `Title: ${item.title}\nDomain: ${item.domain}`,
-          settings,
-          15,
-          options,
-        )
-        const intent = isWebLLM ? parseIntentJson(raw) : parseIntent(raw)
+        let intent: PageIntent = 'other'
+        if (useNli) {
+          intent = await classifyIntentNLI(item, nliModel)
+        } else {
+          const raw = await chatComplete(
+            prompt,
+            `Title: ${item.title}\nDomain: ${item.domain}`,
+            settings,
+            15,
+            options,
+          )
+          intent = isWebLLM ? parseIntentJson(raw) : parseIntent(raw)
+        }
         const existing = await getCached(prefix, item.url)
         await setCached(prefix, item.url, {
           category: existing?.category ?? 'Other',
@@ -123,13 +173,13 @@ export async function classifyIntentGeminiNano(
     items,
     prefix,
     {
-      chatProvider: 'gemini-nano',
-      embeddingProvider: 'transformers',
-      baseUrl: '',
-      apiKey: '',
-      model: '',
-      embeddingModel: '',
-      webllmModel: '',
+      ...DEFAULT_LLM_SETTINGS,
+      tasks: {
+        ...DEFAULT_LLM_SETTINGS.tasks,
+        chat: { provider: 'gemini-nano', model: '' },
+        embedding: { provider: 'transformers', model: '' },
+        classification: { method: 'llm' },
+      },
     },
     onProgress,
   )

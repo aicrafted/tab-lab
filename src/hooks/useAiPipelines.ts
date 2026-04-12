@@ -31,6 +31,19 @@ function createTaskLogger(task: string, total: number) {
   }
 }
 
+function hasChatProviderConfig(settings: LlmSettings): boolean {
+  const provider = settings.tasks.chat.provider
+  if (provider === 'gemini-nano') return true
+  if (provider === 'webllm') return Boolean(settings.tasks.chat.model)
+  if (provider === 'lmstudio') {
+    return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.chat.model)
+  }
+  if (provider === 'openrouter') {
+    return Boolean(settings.providers.openrouter.apiKey && settings.tasks.chat.model)
+  }
+  return false
+}
+
 interface UseAiPipelinesArgs {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
@@ -81,7 +94,9 @@ export function useAiPipelines({
     bm: BookmarkItem[],
     settings: LlmSettings,
   ) => {
-    if (settings.embeddingProvider === 'lmstudio' && !settings.model && !settings.embeddingModel) return
+    const embeddingProvider = settings.tasks.embedding.provider
+    if (embeddingProvider === 'lmstudio' && !settings.tasks.embedding.model) return
+    if (embeddingProvider === 'openrouter' && (!settings.providers.openrouter.apiKey || !settings.tasks.embedding.model)) return
 
     const allItems = [
       ...tb.map(t => ({ url: t.url, title: t.title || t.url, domain: t.domain, category: t.category })),
@@ -105,13 +120,46 @@ export function useAiPipelines({
   ) => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
     console.info('[llm:auto] evaluate provider', {
-      provider: llmSettings.chatProvider,
+      provider: llmSettings.tasks.chat.provider,
       status: nanoStatus,
       tabs: tb.length,
       bookmarks: bm.length,
     })
 
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+    if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+      setLlmStatus('classifying')
+      void classifyWithLmStudio(
+        tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+        'tab',
+        llmSettings,
+        applyTabCategoryBatch,
+      ).then(() =>
+        classifyWithLmStudio(
+          bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          llmSettings,
+          applyBookmarkCategoryBatch,
+        ).then(() => {
+          setLlmStatus('ready')
+          void classifyIntentLmStudio(
+            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+            'tab',
+            llmSettings,
+            applyTabIntentBatch,
+          )
+          void classifyIntentLmStudio(
+            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+            'bm',
+            llmSettings,
+            applyBookmarkIntentBatch,
+          )
+        }),
+      )
+      void runEmbeddingPass(tb, bm, llmSettings)
+      return
+    }
+
+    if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
       void classifyTabs(tb, (updates) => {
         applyTabCategoryBatch(updates)
@@ -137,10 +185,7 @@ export function useAiPipelines({
       return
     }
 
-    if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
+    if (hasChatProviderConfig(llmSettings)) {
       setLlmStatus('classifying')
       try {
         await classifyWithLmStudio(
@@ -262,7 +307,36 @@ export function useAiPipelines({
     const nanoStatus = await checkLlmAvailability(llmSettings)
     const tabsLog = createTaskLogger('manual-classify-tabs', tabs.length)
     const bookmarksLog = createTaskLogger('manual-classify-bookmarks', bookmarks.length)
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+    if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+      setLlmStatus('classifying')
+      void classifyWithLmStudio(
+        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+        'tab',
+        llmSettings,
+        (updates) => {
+          tabsLog.progress(updates.length)
+          applyTabCategoryBatch(updates)
+        },
+      ).then(() =>
+        classifyWithLmStudio(
+          bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          llmSettings,
+          (updates) => {
+            bookmarksLog.progress(updates.length)
+            applyBookmarkCategoryBatch(updates)
+          },
+        ).then(() => {
+          tabsLog.done()
+          bookmarksLog.done()
+          setLlmStatus('ready')
+        }),
+      ).catch((err) => {
+        tabsLog.failed(err)
+        bookmarksLog.failed(err)
+        setLlmStatus('unavailable')
+      })
+    } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
       void classifyTabs(tabs, (updates) => {
         tabsLog.progress(updates.length)
@@ -277,10 +351,7 @@ export function useAiPipelines({
           setLlmStatus('ready')
         }),
       )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
+    } else if (hasChatProviderConfig(llmSettings)) {
       setLlmStatus('classifying')
       void classifyWithLmStudio(
         tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -326,7 +397,36 @@ export function useAiPipelines({
     const tabsLog = createTaskLogger('manual-intent-tabs', tabs.length)
     const bookmarksLog = createTaskLogger('manual-intent-bookmarks', bookmarks.length)
 
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+    if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+      setLlmStatus('classifying')
+      void classifyIntentLmStudio(
+        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+        'tab',
+        llmSettings,
+        (updates) => {
+          tabsLog.progress(updates.length)
+          applyTabIntentBatch(updates)
+        },
+      ).then(() =>
+        classifyIntentLmStudio(
+          bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          llmSettings,
+          (updates) => {
+            bookmarksLog.progress(updates.length)
+            applyBookmarkIntentBatch(updates)
+          },
+        ).then(() => {
+          tabsLog.done()
+          bookmarksLog.done()
+          setLlmStatus('ready')
+        }),
+      ).catch((err) => {
+        tabsLog.failed(err)
+        bookmarksLog.failed(err)
+        setLlmStatus('unavailable')
+      })
+    } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
       void classifyIntentGeminiNano(tabs, 'tab', (updates) => {
         tabsLog.progress(updates.length)
@@ -341,10 +441,7 @@ export function useAiPipelines({
           setLlmStatus('ready')
         }),
       )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
+    } else if (hasChatProviderConfig(llmSettings)) {
       setLlmStatus('classifying')
       void classifyIntentLmStudio(
         tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -386,10 +483,7 @@ export function useAiPipelines({
   ])
 
   const handlePass2 = useCallback(async () => {
-    if (
-      (llmSettings.chatProvider === 'lmstudio' && (!llmSettings.model || !llmSettings.baseUrl)) ||
-      (llmSettings.chatProvider === 'webllm' && !llmSettings.webllmModel)
-    ) return
+    if (!hasChatProviderConfig(llmSettings)) return
     setLlmStatus('normalizing')
     try {
       const allLabels = [...new Set(tabs.map(t => t.category).filter(Boolean) as string[])]
@@ -436,10 +530,7 @@ export function useAiPipelines({
   }, [llmSettings, setLlmStatus, setTabs, tabs])
 
   const handlePass3 = useCallback(async () => {
-    if (
-      (llmSettings.chatProvider === 'lmstudio' && (!llmSettings.model || !llmSettings.baseUrl)) ||
-      (llmSettings.chatProvider === 'webllm' && !llmSettings.webllmModel)
-    ) return
+    if (!hasChatProviderConfig(llmSettings)) return
     setLlmStatus('normalizing')
     try {
       const categoryCounts = new Map<string, number>()
@@ -475,7 +566,7 @@ export function useAiPipelines({
     const nanoStatus = await checkLlmAvailability(llmSettings)
     const tabsLog = createTaskLogger('manual-tags-tabs', tabs.length)
     const bookmarksLog = createTaskLogger('manual-tags-bookmarks', bookmarks.length)
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+    if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
       void tagWithGeminiNano(tabs, 'tab', (updates) => {
         tabsLog.progress(updates.length)
@@ -490,10 +581,7 @@ export function useAiPipelines({
           setLlmStatus('ready')
         }),
       )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
+    } else if (hasChatProviderConfig(llmSettings)) {
       setLlmStatus('classifying')
       void tagWithLmStudio(
         tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),

@@ -1,6 +1,7 @@
 import { chatComplete } from './llm'
 import { getCached, setCached } from './storage'
 import type { LlmSettings } from './types'
+import { DEFAULT_LLM_SETTINGS } from './types'
 
 const TAG_SYSTEM_PROMPT = `You are a web page tagger. For each browser tab title and domain, reply with exactly 3-5 lowercase tags separated by commas. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet". Reply with tags only — no explanation, no extra punctuation.`
 const TAG_SYSTEM_PROMPT_JSON = `You are a web page tagger. Output a JSON object with a "tags" key containing an array of 3-5 lowercase tags. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet".
@@ -50,7 +51,7 @@ export async function tagItems(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const isWebLLM = settings.chatProvider === 'webllm'
+  const isWebLLM = settings.tasks.chat.provider === 'webllm'
   const systemPrompt = isWebLLM ? TAG_SYSTEM_PROMPT_JSON : TAG_SYSTEM_PROMPT
   const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
 
@@ -90,13 +91,12 @@ export async function tagWithGeminiNano(
     items,
     prefix,
     {
-      chatProvider: 'gemini-nano',
-      embeddingProvider: 'transformers',
-      baseUrl: '',
-      apiKey: '',
-      model: '',
-      embeddingModel: '',
-      webllmModel: '',
+      ...DEFAULT_LLM_SETTINGS,
+      tasks: {
+        ...DEFAULT_LLM_SETTINGS.tasks,
+        chat: { provider: 'gemini-nano', model: '' },
+        embedding: { provider: 'transformers', model: '' },
+      },
     },
     onProgress,
   )

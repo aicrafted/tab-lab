@@ -1,4 +1,5 @@
 import { CreateMLCEngine } from '@mlc-ai/web-llm'
+import { hasModelInCache } from '@mlc-ai/web-llm'
 import type { MLCEngine } from '@mlc-ai/web-llm'
 
 export interface WebllmChatOptions {
@@ -102,4 +103,15 @@ export async function webllmChat(
 export async function preloadWebllmModel(modelId: string): Promise<void> {
   if (!modelId.trim()) throw new Error('WebLLM model ID is required')
   await getEngine(modelId)
+}
+
+export async function isWebllmModelCached(modelId: string): Promise<boolean> {
+  const normalized = modelId.trim()
+  if (!normalized) return false
+  try {
+    return await hasModelInCache(normalized)
+  } catch (err) {
+    console.warn('[webllm] failed to check model cache status', { modelId: normalized, err })
+    return false
+  }
 }

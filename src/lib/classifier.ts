@@ -1,6 +1,9 @@
 import { chatComplete } from './llm'
+import { cosineSimilarity } from './embedder'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
+import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
+import { webgpuEmbed } from './webgpu-provider'
 
 const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title and domain you receive, reply with ONE short category label (2-4 words, Title Case). Choose from common topics like: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. If unsure, use "Other". Reply with the category label only — no explanation, no punctuation.`
 const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title and domain, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case). Choose from: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. Use "Other" if unsure.
@@ -21,14 +24,73 @@ function parseCategoryJson(raw: string): string {
 
 export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing'
 export const SPLIT_THRESHOLD = 15
+const CATEGORY_CANDIDATES = [
+  'Development',
+  'Design',
+  'AI & ML',
+  'Science',
+  'News',
+  'Finance',
+  'Shopping',
+  'Social Media',
+  'Entertainment',
+  'Productivity',
+  'Documentation',
+  'Video',
+  'Research',
+  'Education',
+  'Health',
+  'Other',
+] as const
+
+let categoryLabelEmbeddingsPromise: Promise<Map<string, number[]>> | null = null
+
+async function getCategoryLabelEmbeddings(model: string): Promise<Map<string, number[]>> {
+  if (!categoryLabelEmbeddingsPromise) {
+    categoryLabelEmbeddingsPromise = Promise.resolve(new Map())
+  }
+  const existing = await categoryLabelEmbeddingsPromise
+  if (existing.size > 0 && model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) return existing
+
+  const map = new Map<string, number[]>()
+  for (const label of CATEGORY_CANDIDATES) {
+    const descriptor = `${label}. Browser page category.`
+    map.set(label, await webgpuEmbed(descriptor, model))
+  }
+  if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
+    categoryLabelEmbeddingsPromise = Promise.resolve(map)
+  }
+  return map
+}
+
+async function classifyItemNLI(item: ClassifiedItem, model: string): Promise<string> {
+  const text = `${item.title}\n${item.domain}`
+  const queryEmbedding = await webgpuEmbed(text, model)
+  const labelEmbeddings = await getCategoryLabelEmbeddings(model)
+  let bestLabel = 'Other'
+  let bestScore = -Infinity
+
+  for (const [label, embedding] of labelEmbeddings.entries()) {
+    const score = cosineSimilarity(queryEmbedding, embedding)
+    if (score > bestScore) {
+      bestScore = score
+      bestLabel = label
+    }
+  }
+
+  return bestLabel
+}
 
 export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmStatus> {
-  const provider = settings?.chatProvider ?? 'gemini-nano'
+  const provider = settings?.tasks.chat.provider ?? 'gemini-nano'
   if (provider === 'webllm') {
-    return settings?.webllmModel ? 'ready' : 'unavailable'
+    return settings?.tasks.chat.model ? 'ready' : 'unavailable'
   }
   if (provider === 'lmstudio') {
-    return settings?.baseUrl && settings?.model ? 'ready' : 'unavailable'
+    return settings?.providers.lmstudio.baseUrl && settings?.tasks.chat.model ? 'ready' : 'unavailable'
+  }
+  if (provider === 'openrouter') {
+    return settings?.providers.openrouter.apiKey && settings?.tasks.chat.model ? 'ready' : 'unavailable'
   }
   try {
     if (!window.ai?.languageModel) return 'unavailable'
@@ -43,9 +105,10 @@ export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmS
 }
 
 export async function fetchLmStudioModels(settings: LlmSettings): Promise<string[]> {
-  if (!settings.baseUrl) return []
-  const res = await fetch(`${settings.baseUrl}/models`, {
-    headers: settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {},
+  const { baseUrl, apiKey } = settings.providers.lmstudio
+  if (!baseUrl) return []
+  const res = await fetch(`${baseUrl}/models`, {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
     signal: AbortSignal.timeout(5000),
   })
   if (!res.ok) return []
@@ -75,7 +138,14 @@ export async function classifyItems(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const isWebLLM = settings.chatProvider === 'webllm'
+  const useNli = settings.tasks.classification.method === 'nli'
+    && settings.tasks.embedding.provider === 'transformers'
+  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+  if (settings.tasks.classification.method === 'nli' && !useNli) {
+    console.warn('[classifier] NLI method requires embedding provider "transformers"; falling back to LLM classification')
+  }
+
+  const isWebLLM = settings.tasks.chat.provider === 'webllm'
   const systemPrompt = isWebLLM ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
   const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
 
@@ -84,14 +154,19 @@ export async function classifyItems(
     const batch = uncached.slice(i, i + BATCH)
     const results = await Promise.all(
       batch.map(async (item) => {
-        const raw = await chatComplete(
-          systemPrompt,
-          `Title: ${item.title}\nDomain: ${item.domain}`,
-          settings,
-          40,
-          options,
-        )
-        const category = isWebLLM ? parseCategoryJson(raw) : (raw.trim().slice(0, 40) || 'Other')
+        let category = 'Other'
+        if (useNli) {
+          category = await classifyItemNLI(item, nliModel)
+        } else {
+          const raw = await chatComplete(
+            systemPrompt,
+            `Title: ${item.title}\nDomain: ${item.domain}`,
+            settings,
+            40,
+            options,
+          )
+          category = isWebLLM ? parseCategoryJson(raw) : (raw.trim().slice(0, 40) || 'Other')
+        }
         await setCached(prefix, item.url, { category, processedAt: Date.now() })
         return { url: item.url, category }
       }),
@@ -170,7 +245,7 @@ Reply with JSON only, no explanation.`
     prompt,
     settings,
     300,
-    settings.chatProvider === 'webllm'
+    settings.tasks.chat.provider === 'webllm'
       ? { responseFormat: 'json', disableThinking: true }
       : {},
   )
@@ -204,7 +279,7 @@ export async function splitLargeClusters(
 
   for (const [parentCategory, members] of groups) {
     if (members.length <= SPLIT_THRESHOLD) continue
-    const isWebLLM = settings.chatProvider === 'webllm'
+    const isWebLLM = settings.tasks.chat.provider === 'webllm'
     const systemPrompt = isWebLLM ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
     const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
     const BATCH = 5
@@ -240,13 +315,13 @@ export async function classifyTabs(
   settings?: LlmSettings,
 ): Promise<void> {
   const activeSettings = settings ?? {
-    chatProvider: 'gemini-nano',
-    embeddingProvider: 'transformers',
-    baseUrl: '',
-    apiKey: '',
-    model: '',
-    embeddingModel: '',
-    webllmModel: '',
+    ...DEFAULT_LLM_SETTINGS,
+    tasks: {
+      ...DEFAULT_LLM_SETTINGS.tasks,
+      chat: { provider: 'gemini-nano', model: '' },
+      embedding: { provider: 'transformers', model: '' },
+      classification: { method: 'llm' },
+    },
   }
   await classifyItems(
     tabs.map((tab) => ({ url: tab.url, title: tab.title, domain: tab.domain })),
@@ -262,13 +337,13 @@ export async function classifyBookmarks(
   settings?: LlmSettings,
 ): Promise<void> {
   const activeSettings = settings ?? {
-    chatProvider: 'gemini-nano',
-    embeddingProvider: 'transformers',
-    baseUrl: '',
-    apiKey: '',
-    model: '',
-    embeddingModel: '',
-    webllmModel: '',
+    ...DEFAULT_LLM_SETTINGS,
+    tasks: {
+      ...DEFAULT_LLM_SETTINGS.tasks,
+      chat: { provider: 'gemini-nano', model: '' },
+      embedding: { provider: 'transformers', model: '' },
+      classification: { method: 'llm' },
+    },
   }
   await classifyItems(
     bookmarks.map((bookmark) => ({ url: bookmark.url, title: bookmark.title, domain: bookmark.domain })),

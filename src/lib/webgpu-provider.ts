@@ -1,4 +1,5 @@
 const OFFSCREEN_URL = 'offscreen.html'
+const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
 
 async function ensureOffscreen(): Promise<void> {
   if (!chrome.offscreen) {
@@ -30,11 +31,33 @@ function sendToOffscreen<T>(msg: object): Promise<T> {
   })
 }
 
-export async function webgpuEmbed(text: string): Promise<number[]> {
+export async function webgpuEmbed(text: string, model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL): Promise<number[]> {
   await ensureOffscreen()
   const response = await sendToOffscreen<{ ok: true; vector: number[] }>({
     type: 'WEBGPU_EMBED',
     text,
+    model,
   })
   return response.vector
+}
+
+export async function preloadTransformersEmbeddingModel(
+  model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
+): Promise<void> {
+  await ensureOffscreen()
+  await sendToOffscreen<{ ok: true }>({
+    type: 'WEBGPU_EMBED_PRELOAD',
+    model,
+  })
+}
+
+export async function isTransformersEmbeddingModelCached(
+  model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
+): Promise<boolean> {
+  await ensureOffscreen()
+  const response = await sendToOffscreen<{ ok: true; cached: boolean }>({
+    type: 'WEBGPU_EMBED_CHECK_CACHE',
+    model,
+  })
+  return response.cached
 }

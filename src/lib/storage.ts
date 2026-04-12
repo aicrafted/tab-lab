@@ -7,7 +7,7 @@
 
 import * as cacheDb from './cacheDb'
 import { clearEmbeddingCache } from './embedder'
-import { DEFAULT_LLM_SETTINGS } from './types'
+import { migrateLlmSettings } from './types'
 import type { CacheEntry, LlmSettings } from './types'
 import type { SourceFilter } from '@/components/views/types'
 import {
@@ -46,10 +46,12 @@ export async function setCached(
 
 export async function getLlmSettings(): Promise<LlmSettings> {
   const result = await chrome.storage.local.get(SETTINGS_KEY)
-  return {
-    ...DEFAULT_LLM_SETTINGS,
-    ...(result[SETTINGS_KEY] ?? {}),
+  const rawSettings = result[SETTINGS_KEY]
+  const migrated = migrateLlmSettings(rawSettings)
+  if (rawSettings !== undefined && rawSettings && typeof rawSettings === 'object' && !('tasks' in (rawSettings as object))) {
+    await safeLocalSet({ [SETTINGS_KEY]: migrated })
   }
+  return migrated
 }
 
 export async function setLlmSettings(settings: LlmSettings): Promise<void> {

@@ -1,5 +1,5 @@
 import { projectTo2D, type Point2D } from './project'
-import type { LlmSettings } from './types'
+import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, type LlmSettings } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
 const DB_NAME = 'tabmind-embeddings'
@@ -123,18 +123,19 @@ async function storeEmbedding(url: string, vector: number[]): Promise<void> {
   })
 }
 
-/** Fetch a single embedding vector from LM Studio. */
-async function fetchEmbeddingLmStudio(
+/** Fetch a single embedding vector from OpenAI-compatible /embeddings endpoint. */
+async function fetchEmbeddingRemote(
   text: string,
-  settings: LlmSettings,
+  baseUrl: string,
+  apiKey: string,
+  model: string,
   signal?: AbortSignal,
 ): Promise<number[]> {
-  const model = settings.embeddingModel || settings.model
-  const res = await fetch(`${settings.baseUrl}/embeddings`, {
+  const res = await fetch(`${baseUrl}/embeddings`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}),
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({ model, input: text }),
     signal: signal ?? AbortSignal.timeout(20_000),
@@ -151,11 +152,18 @@ export async function fetchEmbedding(
   settings: LlmSettings,
   signal?: AbortSignal,
 ): Promise<number[]> {
-  if (settings.embeddingProvider === 'transformers') {
-    return webgpuEmbed(text)
+  const provider = settings.tasks.embedding.provider
+  const model = settings.tasks.embedding.model
+
+  if (provider === 'transformers') {
+    return webgpuEmbed(text, model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL)
   }
-  if (settings.embeddingProvider === 'lmstudio') {
-    return fetchEmbeddingLmStudio(text, settings, signal)
+  if (provider === 'lmstudio') {
+    const { baseUrl, apiKey } = settings.providers.lmstudio
+    return fetchEmbeddingRemote(text, baseUrl, apiKey, model, signal)
+  }
+  if (provider === 'openrouter') {
+    return fetchEmbeddingRemote(text, 'https://openrouter.ai/api/v1', settings.providers.openrouter.apiKey, model, signal)
   }
   throw new Error('Unsupported embedding provider')
 }
@@ -185,9 +193,14 @@ export async function fetchEmbeddingsBatch(
   settings: LlmSettings,
   onProgress: (updates: { url: string; embedding: number[] }[]) => void,
 ): Promise<void> {
-  if (settings.embeddingProvider === 'lmstudio') {
-    if (!settings.baseUrl) return
-    if (!settings.model && !settings.embeddingModel) return
+  const provider = settings.tasks.embedding.provider
+  if (provider === 'lmstudio') {
+    if (!settings.providers.lmstudio.baseUrl) return
+    if (!settings.tasks.embedding.model) return
+  }
+  if (provider === 'openrouter') {
+    if (!settings.providers.openrouter.apiKey) return
+    if (!settings.tasks.embedding.model) return
   }
 
   const cachedUrls = new Set<string>()
