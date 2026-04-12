@@ -4,18 +4,16 @@ import { StatusBar } from '@/components/StatusBar'
 import { LlmSettingsPanel } from '@/components/LlmSettings'
 import { FacetSidebar } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
-import { getAllBookmarks, exportToChromeFolders } from '@/lib/bookmarks'
-import { getAllTabs } from '@/lib/tabs'
-import { crossLink } from '@/lib/crosslink'
-import { checkLlmAvailability, classifyTabs, classifyBookmarks, classifyWithLmStudio, loadCachedCategories, loadCachedTags, loadCachedIntents, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
-import { tagWithGeminiNano, tagWithLmStudio } from '@/lib/tagger'
-import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
-import { clearEmbeddingCache, fetchEmbeddingsBatch, loadCached2D, reprojectAllEmbeddings } from '@/lib/embedder'
-import { getLlmSettings, getSourceFilter, setLlmSettings, setSourceFilter, setCached, clearAllAICache } from '@/lib/storage'
+import { exportToChromeFolders } from '@/lib/bookmarks'
+import { type LlmStatus } from '@/lib/classifier'
+import { loadCached2D } from '@/lib/embedder'
+import { loadHydratedData } from '@/lib/initial-load'
+import { getLlmSettings, getSourceFilter, setLlmSettings, setSourceFilter } from '@/lib/storage'
 import { useResizable } from '@/hooks/useResizable'
+import { useAiPipelines } from '@/hooks/useAiPipelines'
 import type { BookmarkItem, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
-import type { SourceFilter, ViewId } from '@/components/views/types'
+import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -36,28 +34,26 @@ import { OverlapExplorerView } from '@/components/views/OverlapExplorerView'
 import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
 
-function createTaskLogger(task: string, total: number) {
-  const safeTotal = Math.max(1, total)
-  let done = 0
-  const startedAt = Date.now()
-  console.info(`[llm:${task}] start`, { total })
-
-  return {
-    progress(delta: number) {
-      done = Math.min(safeTotal, done + Math.max(0, delta))
-      const pct = Math.round((done / safeTotal) * 100)
-      console.info(`[llm:${task}] progress ${done}/${safeTotal} (${pct}%)`)
-    },
-    done(extra?: Record<string, unknown>) {
-      console.info(`[llm:${task}] done`, {
-        elapsedMs: Date.now() - startedAt,
-        ...extra,
-      })
-    },
-    failed(error: unknown) {
-      console.error(`[llm:${task}] failed`, error)
-    },
-  }
+const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
+  triage: TriageView,
+  kanban: KanbanView,
+  timeline: TimelineView,
+  magazine: MagazineView,
+  treemap: TreemapView,
+  semantic: SemanticMapView,
+  heatmap: ActivityHeatmapView,
+  'domain-graph': DomainGraphView,
+  'reading-queue': ReadingQueueView,
+  'tag-constellation': TagConstellationView,
+  'personal-radar': PersonalRadarView,
+  'topic-river': TopicRiverView,
+  'domain-drill-down': DomainDrillDownView,
+  'focus-rings': FocusRingsView,
+  'tag-cooccurrence': TagCooccurrenceView,
+  'shelf-view': ShelfView,
+  'overlap-explorer': OverlapExplorerView,
+  'shadow-map': ShadowMapView,
+  'session-story': SessionStoryView,
 }
 
 export function App() {
@@ -88,57 +84,39 @@ export function App() {
     void setSourceFilter(value)
   }, [])
 
+  function reload() {
+    setBookmarks([])
+    setTabs([])
+    setLastUpdated(null)
+    setLoading(true)
+    void doLoad()
+  }
+
+  const {
+    runEmbeddingPass,
+    runAutoAiPipeline,
+    handleClearCache,
+    handleClassify,
+    handleRunIntent,
+    handlePass2,
+    handlePass3,
+    handleRunTags,
+    handleReembedAll,
+  } = useAiPipelines({
+    bookmarks,
+    tabs,
+    llmSettings,
+    setBookmarks,
+    setTabs,
+    setLlmStatus,
+    setProjectedPoints,
+    reload,
+  })
+
   async function doLoad() {
-    const [rawBookmarks, rawTabs] = await Promise.all([
-      getAllBookmarks(),
-      getAllTabs(),
-    ])
-    const { bookmarks: bm, tabs: tb } = crossLink(rawBookmarks, rawTabs)
-
-    // Always restore cached categories on refresh
-    const [tabCache, bmCache] = await Promise.all([
-      loadCachedCategories(tb, 'tab'),
-      loadCachedCategories(bm, 'bm'),
-    ])
-    const bmWithCache = bm.map(b => {
-      const cat = bmCache.get(b.url)
-      return cat ? { ...b, category: cat } : b
-    })
-    const tbWithCache = tb.map(t => {
-      const cat = tabCache.get(t.url)
-      return cat ? { ...t, category: cat } : t
-    })
-
-    // Restore cached tags too
-    const [tabTagCache, bmTagCache] = await Promise.all([
-      loadCachedTags(tb, 'tab'),
-      loadCachedTags(bm, 'bm'),
-    ])
-    const bmWithTags = bmWithCache.map(b => {
-      const tags = bmTagCache.get(b.url)
-      return tags ? { ...b, tags } : b
-    })
-    const tbWithTags = tbWithCache.map(t => {
-      const tags = tabTagCache.get(t.url)
-      return tags ? { ...t, tags } : t
-    })
-
-    // Restore cached intents too
-    const [tabIntentCache, bmIntentCache] = await Promise.all([
-      loadCachedIntents(tb, 'tab'),
-      loadCachedIntents(bm, 'bm'),
-    ])
-    const bmFinal = bmWithTags.map(b => {
-      const intent = bmIntentCache.get(b.url)
-      return intent ? { ...b, intent } : b
-    })
-    const tbFinal = tbWithTags.map(t => {
-      const intent = tabIntentCache.get(t.url)
-      return intent ? { ...t, intent } : t
-    })
-
-    setBookmarks(bmFinal)
-    setTabs(tbFinal)
+    const hydrated = await loadHydratedData()
+    setBookmarks(hydrated.bookmarks)
+    setTabs(hydrated.tabs)
 
     // Restore cached 2D projection (Semantic Map coords)
     const cached2D = await loadCached2D()
@@ -147,402 +125,17 @@ export function App() {
     setLastUpdated(Date.now())
     setLoading(false)
 
-    // Check LLM availability — fallback chain
-    const nanoStatus = await checkLlmAvailability(llmSettings)
-    console.info('[llm:auto] evaluate provider', {
-      provider: llmSettings.chatProvider,
-      status: nanoStatus,
-      tabs: tb.length,
-      bookmarks: bm.length,
-    })
-
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      // Gemini Nano takes priority
-      setLlmStatus('classifying')
-      void classifyTabs(tb, (updates) => {
-        setTabs(prev =>
-          prev.map(t => {
-            const hit = updates.find(u => u.url === t.url)
-            return hit ? { ...t, category: hit.category } : t
-          }),
-        )
-      }).then(() =>
-        classifyBookmarks(bm, (updates) => {
-          setBookmarks(prev =>
-            prev.map(b => {
-              const hit = updates.find(u => u.url === b.url)
-              return hit ? { ...b, category: hit.category } : b
-            }),
-          )
-        }).then(() => {
-          setLlmStatus('ready')
-          // Tagging pass — run silently after classification
-          void tagWithGeminiNano(tb, 'tab', (updates) => {
-            setTabs(prev =>
-              prev.map(t => {
-                const hit = updates.find(u => u.url === t.url)
-                return hit ? { ...t, tags: hit.tags } : t
-              }),
-            )
-          })
-          void tagWithGeminiNano(bm, 'bm', (updates) => {
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, tags: hit.tags } : b
-              }),
-            )
-          })
-          // Intent pass
-          void classifyIntentGeminiNano(tb, 'tab', (updates) => {
-            setTabs(prev =>
-              prev.map(t => {
-                const hit = updates.find(u => u.url === t.url)
-                return hit ? { ...t, intent: hit.intent } : t
-              }),
-            )
-          })
-          void classifyIntentGeminiNano(bm, 'bm', (updates) => {
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, intent: hit.intent } : b
-              }),
-            )
-          })
-        }),
-      )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
-      // Fall back to LM Studio
-      setLlmStatus('classifying')
-      try {
-        await classifyWithLmStudio(
-          tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          llmSettings,
-          (updates) => {
-            setTabs(prev =>
-              prev.map(t => {
-                const hit = updates.find(u => u.url === t.url)
-                return hit ? { ...t, category: hit.category } : t
-              }),
-            )
-          },
-        )
-        await classifyWithLmStudio(
-          bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          llmSettings,
-          (updates) => {
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, category: hit.category } : b
-              }),
-            )
-          },
-        )
-
-        // Pass 2 — merge near-duplicates (tabs only)
-        setLlmStatus('normalizing')
-        const allLabels = [...new Set(tbWithCache.map(t => t.category).filter(Boolean) as string[])]
-        if (allLabels.length > 1) {
-          console.group('[Auto Pass 2] Merge categories')
-          console.log('Input labels:', allLabels)
-          const mergeMap = await normalizeCategoryLabels(allLabels, llmSettings)
-          console.log('Merge map:', mergeMap)
-          const changes = Object.entries(mergeMap).filter(([from, to]) => from !== to)
-          console.log('Changes:', changes)
-          // Apply merge to tabs state
-          setTabs(prev =>
-            prev.map(t => ({
-              ...t,
-              category: t.category ? mergeMap[t.category] ?? t.category : t.category,
-            })),
-          )
-          // Also merge the local tb reference for Pass 3
-          for (const t of tbWithCache) {
-            if (t.category && mergeMap[t.category]) {
-              t.category = mergeMap[t.category]
-            }
-          }
-          // Persist changed categories to cache
-          await Promise.all(
-            tbWithCache
-              .filter(t => t.category && mergeMap[t.category])
-              .map(t =>
-                setCached('tab', t.url, {
-                  category: t.category!,
-                  processedAt: Date.now(),
-                }),
-              ),
-          )
-          console.groupEnd()
-        }
-
-        // Pass 3 — split overcrowded categories
-        setLlmStatus('normalizing')
-        console.group('[Auto Pass 3] Split large categories')
-        void splitLargeClusters(
-          tbWithCache.map(t => ({
-            url: t.url,
-            title: t.title,
-            domain: t.domain,
-            category: t.category ?? '',
-          })),
-          'tab',
-          llmSettings,
-          (updates) =>
-            setTabs(prev =>
-              prev.map(t => {
-                const hit = updates.find(u => u.url === t.url)
-                return hit ? { ...t, category: hit.category } : t
-              }),
-            ),
-        ).then(() => {
-          setLlmStatus('ready')
-          console.groupEnd()
-          // Tagging pass — run silently after classification
-          void tagWithLmStudio(
-            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            llmSettings,
-            (updates) =>
-              setTabs(prev =>
-                prev.map(t => {
-                  const hit = updates.find(u => u.url === t.url)
-                  return hit ? { ...t, tags: hit.tags } : t
-                }),
-              ),
-          )
-          void tagWithLmStudio(
-            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            llmSettings,
-            (updates) =>
-              setBookmarks(prev =>
-                prev.map(b => {
-                  const hit = updates.find(u => u.url === b.url)
-                  return hit ? { ...b, tags: hit.tags } : b
-                }),
-              ),
-          )
-          // Intent pass
-          void classifyIntentLmStudio(
-            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            llmSettings,
-            (updates) =>
-              setTabs(prev =>
-                prev.map(t => {
-                  const hit = updates.find(u => u.url === t.url)
-                  return hit ? { ...t, intent: hit.intent } : t
-                }),
-              ),
-          )
-          void classifyIntentLmStudio(
-            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            llmSettings,
-            (updates) =>
-              setBookmarks(prev =>
-                prev.map(b => {
-                  const hit = updates.find(u => u.url === b.url)
-                  return hit ? { ...b, intent: hit.intent } : b
-                }),
-              ),
-          )
-        })
-
-        // Embedding pass — non-blocking, runs after tagging
-        void runEmbeddingPass(tb, bm, llmSettings)
-      } catch {
-        setLlmStatus('unavailable')
-      }
-    } else {
-      setLlmStatus('unavailable')
-    }
-  }
-
-  // Clear cache
-  const handleClearCache = async () => {
-    if (!confirm('Clear all cached AI data (categories, tags, intents, embeddings)?')) return
-    await clearAllAICache()
-    setProjectedPoints(new Map())
-    reload()
-  }
-
-  // Classification only (pass 1)
-  const handleClassify = async () => {
-    const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-classify-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-classify-bookmarks', bookmarks.length)
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void classifyTabs(tabs, (updates) => {
-        tabsLog.progress(updates.length)
-        setTabs(prev =>
-          prev.map(t => {
-            const hit = updates.find(u => u.url === t.url)
-            return hit ? { ...t, category: hit.category } : t
-          }),
-        )
-      }).then(() =>
-        classifyBookmarks(bookmarks, (updates) => {
-          bookmarksLog.progress(updates.length)
-          setBookmarks(prev =>
-            prev.map(b => {
-              const hit = updates.find(u => u.url === b.url)
-              return hit ? { ...b, category: hit.category } : b
-            }),
-          )
-        }).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
-      setLlmStatus('classifying')
-      void classifyWithLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          setTabs(prev =>
-            prev.map(t => {
-              const hit = updates.find(u => u.url === t.url)
-              return hit ? { ...t, category: hit.category } : t
-            }),
-          )
-        },
-      ).then(() =>
-        classifyWithLmStudio(
-          bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          llmSettings,
-          (updates) => {
-            bookmarksLog.progress(updates.length)
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, category: hit.category } : b
-              }),
-            )
-          },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
-      })
-    } else {
-      setLlmStatus('unavailable')
-    }
-  }
-
-  // Run intent only
-  const handleRunIntent = async () => {
-    // Check Gemini Nano first
-    const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-intent-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-intent-bookmarks', bookmarks.length)
-
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-        tabsLog.progress(updates.length)
-        setTabs(prev =>
-          prev.map(t => {
-            const hit = updates.find(u => u.url === t.url)
-            return hit ? { ...t, intent: hit.intent } : t
-          }),
-        )
-      }).then(() =>
-        classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-          bookmarksLog.progress(updates.length)
-          setBookmarks(prev =>
-            prev.map(b => {
-              const hit = updates.find(u => u.url === b.url)
-              return hit ? { ...b, intent: hit.intent } : b
-            }),
-          )
-        }).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
-      setLlmStatus('classifying')
-      void classifyIntentLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          setTabs(prev =>
-            prev.map(t => {
-              const hit = updates.find(u => u.url === t.url)
-              return hit ? { ...t, intent: hit.intent } : t
-            }),
-          )
-        },
-      ).then(() =>
-        classifyIntentLmStudio(
-          bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          llmSettings,
-          (updates) => {
-            bookmarksLog.progress(updates.length)
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, intent: hit.intent } : b
-              }),
-            )
-          },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
-      })
-    } else {
-      setLlmStatus('unavailable')
-    }
+    void runAutoAiPipeline(
+      hydrated.rawLinked.tabs,
+      hydrated.rawLinked.bookmarks,
+      hydrated.tabsWithCategoryCache,
+    )
   }
 
   useEffect(() => {
     setLoading(true)
     void doLoad()
   }, [])
-
-  function reload() {
-    setBookmarks([])
-    setTabs([])
-    setLastUpdated(null)
-    setLoading(true)
-    void doLoad()
-  }
 
   async function activateTab(id: number) {
     try {
@@ -554,178 +147,6 @@ export function App() {
     }
   }
 
-  // Manual Pass 2 — merge near-duplicate categories
-  const handlePass2 = async () => {
-    if (
-      (llmSettings.chatProvider === 'lmstudio' && (!llmSettings.model || !llmSettings.baseUrl)) ||
-      (llmSettings.chatProvider === 'webllm' && !llmSettings.webllmModel)
-    ) return
-    setLlmStatus('normalizing')
-    try {
-      const allLabels = [...new Set(tabs.map(t => t.category).filter(Boolean) as string[])]
-      if (allLabels.length <= 1) { setLlmStatus('ready'); return }
-
-      console.group('[Pass 2] Merge categories')
-      console.log('Input labels:', allLabels)
-
-      const mergeMap = await normalizeCategoryLabels(allLabels, llmSettings)
-      console.log('Merge map:', mergeMap)
-
-      const changes = Object.entries(mergeMap).filter(([from, to]) => from !== to)
-      console.log('Changes:', changes)
-
-      setTabs(prev =>
-        prev.map(t => ({
-          ...t,
-          category: t.category ? mergeMap[t.category] ?? t.category : t.category,
-        })),
-      )
-
-      // Count affected items
-      const affectedCount = tabs.filter(t => t.category && mergeMap[t.category] !== t.category).length
-      console.log(`Affected ${affectedCount} tabs`)
-
-      // Persist changed categories
-      await Promise.all(
-        Object.entries(mergeMap)
-          .filter(([from, to]) => from !== to)
-          .flatMap(([from, to]) =>
-            tabs.filter(t => t.category === from).map(t =>
-              setCached('tab', t.url, { category: to, processedAt: Date.now() }),
-            ),
-          ),
-      )
-
-      if (changes.length === 0) {
-        console.log('No merges needed')
-      }
-
-      console.groupEnd()
-    } catch (err) {
-      console.error('[Pass 2] Failed:', err)
-    }
-    setLlmStatus('ready')
-  }
-
-  // Manual Pass 3 — split overcrowded categories
-  const handlePass3 = async () => {
-    if (
-      (llmSettings.chatProvider === 'lmstudio' && (!llmSettings.model || !llmSettings.baseUrl)) ||
-      (llmSettings.chatProvider === 'webllm' && !llmSettings.webllmModel)
-    ) return
-    setLlmStatus('normalizing')
-    try {
-      // Count items in large categories
-      const categoryCounts = new Map<string, number>()
-      for (const t of tabs) {
-        if (t.category) categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1)
-      }
-      const large = [...categoryCounts.entries()].filter(([, c]) => c > 15)
-      console.group('[Pass 3] Split large categories')
-      console.log('Categories to split:', large)
-
-      await splitLargeClusters(
-        tabs.map(t => ({
-          url: t.url,
-          title: t.title,
-          domain: t.domain,
-          category: t.category ?? '',
-        })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          console.log('Split batch updates:', updates.map(u => u.category))
-          setTabs(prev =>
-            prev.map(t => {
-              const hit = updates.find(u => u.url === t.url)
-              return hit ? { ...t, category: hit.category } : t
-            }),
-          )
-        },
-      )
-      console.groupEnd()
-    } catch (err) {
-      console.error('[Pass 3] Failed:', err)
-    }
-    setLlmStatus('ready')
-  }
-
-  // Run tags only
-  const handleRunTags = async () => {
-    const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-tags-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-tags-bookmarks', bookmarks.length)
-    if (llmSettings.chatProvider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void tagWithGeminiNano(tabs, 'tab', (updates) => {
-        tabsLog.progress(updates.length)
-        setTabs(prev =>
-          prev.map(t => {
-            const hit = updates.find(u => u.url === t.url)
-            return hit ? { ...t, tags: hit.tags } : t
-          }),
-        )
-      }).then(() =>
-        tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-          bookmarksLog.progress(updates.length)
-          setBookmarks(prev =>
-            prev.map(b => {
-              const hit = updates.find(u => u.url === b.url)
-              return hit ? { ...b, tags: hit.tags } : b
-            }),
-          )
-        }).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (
-      (llmSettings.chatProvider === 'lmstudio' && llmSettings.model && llmSettings.baseUrl) ||
-      (llmSettings.chatProvider === 'webllm' && llmSettings.webllmModel)
-    ) {
-      setLlmStatus('classifying')
-      void tagWithLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          setTabs(prev =>
-            prev.map(t => {
-              const hit = updates.find(u => u.url === t.url)
-              return hit ? { ...t, tags: hit.tags } : t
-            }),
-          )
-        },
-      ).then(() =>
-        tagWithLmStudio(
-          bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          llmSettings,
-          (updates) => {
-            bookmarksLog.progress(updates.length)
-            setBookmarks(prev =>
-              prev.map(b => {
-                const hit = updates.find(u => u.url === b.url)
-                return hit ? { ...b, tags: hit.tags } : b
-              }),
-            )
-          },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
-      })
-    } else {
-      setLlmStatus('unavailable')
-    }
-  }
   // Export categorized bookmarks to Chrome folders
   const handleExport = async () => {
     const withCategory = bookmarks.filter(b => b.category && !b.isDuplicate)
@@ -796,109 +217,19 @@ export function App() {
     setActiveFacets([])
   }, [])
 
-  // Embedding + projection pass
-  const runEmbeddingPass = useCallback(async (
-    tb: TabItem[],
-    bm: BookmarkItem[],
-    settings: LlmSettings,
-  ) => {
-    if (settings.embeddingProvider === 'lmstudio' && !settings.model && !settings.embeddingModel) return
-
-    const allItems = [
-      ...tb.map(t => ({ url: t.url, title: t.title || t.url, domain: t.domain, category: t.category })),
-      ...bm.map(b => ({ url: b.url, title: b.title || b.url, domain: b.domain, category: b.category })),
-    ]
-
-    // Fetch embeddings (stores in IndexedDB, doesn't persist raw vectors in chrome.storage)
-    const embeddingLog = createTaskLogger('embeddings', allItems.length)
-    await fetchEmbeddingsBatch(allItems, settings, (updates) => {
-      embeddingLog.progress(updates.length)
-      // Progress callback — reproject on each new embedding
-    })
-
-    // Re-project all cached embeddings to 2D
-    const map = await reprojectAllEmbeddings()
-    embeddingLog.done({ projectedPoints: map.size })
-    if (map.size > 0) setProjectedPoints(map)
-  }, [])
-
-  const handleReembedAll = useCallback(async () => {
-    if (!confirm('Re-embed all pages using the new text format? This clears cached embeddings first.')) return
-    await clearEmbeddingCache()
-    setProjectedPoints(new Map())
-    await runEmbeddingPass(tabs, bookmarks, llmSettings)
-  }, [tabs, bookmarks, llmSettings, runEmbeddingPass])
-
   function renderActiveView() {
-    const common = {
+    const common: ViewProps = {
       bookmarks: filteredBookmarks,
       tabs: filteredTabs,
       loading,
+      projectedPoints,
       onRunTags: handleRunTags,
       onRunEmbeddings: () => runEmbeddingPass(filteredTabs, filteredBookmarks, llmSettings),
     }
 
-    switch (activeView) {
-      case 'list':
-        return (
-          <ListView
-            bookmarks={filteredBookmarks}
-            tabs={filteredTabs}
-            sourceFilter={sourceFilter}
-            settings={llmSettings}
-            loading={loading}
-            onDeleteBookmark={async (id) => {
-              await chrome.bookmarks.remove(id)
-              setBookmarks((prev) => prev.filter((b) => b.id !== id))
-            }}
-            onExport={handleExport}
-            onCloseTab={async (id) => {
-              await chrome.tabs.remove(id)
-              setTabs((prev) => prev.filter((t) => t.id !== id))
-            }}
-            onActivateTab={activateTab}
-          />
-        )
-      case 'triage':
-        return <TriageView {...common} />
-      case 'kanban':
-        return <KanbanView {...common} />
-      case 'timeline':
-        return <TimelineView {...common} />
-      case 'magazine':
-        return <MagazineView {...common} />
-      case 'treemap':
-        return <TreemapView {...common} />
-      case 'semantic':
-        return <SemanticMapView {...common} projectedPoints={projectedPoints} />
-      case 'heatmap':
-        return <ActivityHeatmapView {...common} />
-      case 'domain-graph':
-        return <DomainGraphView {...common} />
-      case 'reading-queue':
-        return <ReadingQueueView {...common} />
-      case 'tag-constellation':
-        return <TagConstellationView {...common} />
-      case 'personal-radar':
-        return <PersonalRadarView {...common} />
-      case 'topic-river':
-        return <TopicRiverView {...common} />
-      case 'domain-drill-down':
-        return <DomainDrillDownView {...common} />
-      case 'focus-rings':
-        return <FocusRingsView {...common} />
-      case 'tag-cooccurrence':
-        return <TagCooccurrenceView {...common} />
-      case 'shelf-view':
-        return <ShelfView {...common} />
-      case 'overlap-explorer':
-        return <OverlapExplorerView {...common} />
-      case 'shadow-map':
-        return <ShadowMapView {...common} />
-      case 'session-story':
-        return <SessionStoryView {...common} />
-      default:
-        return <ListView
+    if (activeView === 'list') {
+      return (
+        <ListView
           bookmarks={filteredBookmarks}
           tabs={filteredTabs}
           sourceFilter={sourceFilter}
@@ -915,7 +246,11 @@ export function App() {
           }}
           onActivateTab={activateTab}
         />
+      )
     }
+
+    const ActiveView = VIEW_COMPONENTS[activeView]
+    return <ActiveView {...common} />
   }
 
   return (

@@ -47,8 +47,8 @@ export async function getAllBookmarks(): Promise<BookmarkItem[]> {
           folder,
           dateAdded: node.dateAdded ?? Date.now(),
         })
-      } catch {
-        // skip malformed URLs
+      } catch (err) {
+        console.warn('[bookmarks] skip malformed bookmark URL', { url: node.url, err })
       }
     }
     for (const child of node.children ?? []) {
@@ -93,8 +93,8 @@ async function enrichWithHistory(bookmarks: BookmarkItem[]): Promise<BookmarkIte
             const latest = Math.max(...visits.map(v => v.visitTime ?? 0))
             result[i + j] = { ...bm, lastVisited: latest, visitCount: visits.length }
           }
-        } catch {
-          // chrome.history may throw — ignore
+        } catch (err) {
+          console.warn('[bookmarks] failed to fetch history visits', { url: bm.url, err })
         }
       }),
     )

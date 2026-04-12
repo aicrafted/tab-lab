@@ -32,7 +32,8 @@ export async function loadCached2D(): Promise<Map<string, [number, number]>> {
     const points = await getAllFromStore<Point2DRow>(db, PROJECTION_STORE)
     if (!points?.length) return new Map()
     return new Map(points.map(p => [p.url, [p.x, p.y] as [number, number]]))
-  } catch {
+  } catch (err) {
+    console.warn('[embedder] failed to load cached 2D projection', err)
     return new Map()
   }
 }
@@ -63,7 +64,8 @@ export async function clearEmbeddingCache(): Promise<void> {
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
-  } catch {
+  } catch (err) {
+    console.warn('[embedder] failed to clear embedding cache', err)
   }
 }
 
@@ -104,7 +106,8 @@ export async function loadCachedEmbeddings(): Promise<Map<string, number[]>> {
       if (vector.length > 0) map.set(row.url, vector)
     }
     return map
-  } catch {
+  } catch (err) {
+    console.warn('[embedder] failed to load cached embeddings', err)
     return new Map()
   }
 }
@@ -196,7 +199,8 @@ export async function fetchEmbeddingsBatch(
         cachedUrls.add(row.url)
       }
     }
-  } catch {
+  } catch (err) {
+    console.warn('[embedder] failed to read cached embedding urls', err)
   }
 
   const uncached = items.filter(item => !cachedUrls.has(item.url))

@@ -45,7 +45,8 @@ export async function getCached(prefix: 'tab' | 'bm', url: string): Promise<Cach
       req.onsuccess = () => resolve(req.result ?? null)
       req.onerror = () => reject(req.error)
     })
-  } catch {
+  } catch (err) {
+    console.warn('[cacheDb] getCached failed', { prefix, url, err })
     return null
   }
 }
@@ -86,7 +87,8 @@ export async function getCachedBatch(prefix: 'tab' | 'bm', urls: string[]): Prom
         req.onerror = () => reject(req.error)
       }
     })
-  } catch {
+  } catch (err) {
+    console.warn('[cacheDb] getCachedBatch failed', { prefix, count: urls.length, err })
     return new Map()
   }
 }
@@ -101,8 +103,8 @@ export async function clearAll(): Promise<void> {
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
-  } catch {
-    // DB may not exist yet
+  } catch (err) {
+    console.warn('[cacheDb] clearAll failed', err)
   }
 }
 
@@ -124,7 +126,8 @@ export async function getAll(): Promise<Map<string, CacheEntry>> {
       }
       req.onerror = () => reject(req.error)
     })
-  } catch {
+  } catch (err) {
+    console.warn('[cacheDb] getAll failed', err)
     return new Map()
   }
 }

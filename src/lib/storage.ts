@@ -6,38 +6,26 @@
  */
 
 import * as cacheDb from './cacheDb'
+import { clearEmbeddingCache } from './embedder'
+import { DEFAULT_LLM_SETTINGS } from './types'
 import type { CacheEntry, LlmSettings } from './types'
 import type { SourceFilter } from '@/components/views/types'
-
-const LAST_SCAN_KEY = 'lastScan'
-const SOURCE_FILTER_KEY = 'sourceFilter'
-const STORAGE_KEEP_KEYS = new Set(['settings', LAST_SCAN_KEY, SOURCE_FILTER_KEY, 'sidebarWidth'])
+import {
+  LAST_SCAN_KEY,
+  SETTINGS_KEY,
+  SOURCE_FILTER_KEY,
+  STORAGE_KEEP_KEYS,
+} from './storage-keys'
 
 export { clearAll as clearCache } from './cacheDb'
 
 /** Clear ALL AI caches (IndexedDB for per-URL cache + embeddings). */
 export async function clearAllAICache(): Promise<void> {
   await cacheDb.clearAll()
-  const DB_NAME = 'tabmind-embeddings'
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 2)
-      req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
-    })
-
-    const stores = ['embeddings', ...(db.objectStoreNames.contains('projection2d') ? ['projection2d'] : [])]
-    const tx = db.transaction(stores, 'readwrite')
-    tx.objectStore('embeddings').clear()
-    if (db.objectStoreNames.contains('projection2d')) {
-      tx.objectStore('projection2d').clear()
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
-  } catch {
+    await clearEmbeddingCache()
+  } catch (err) {
+    console.warn('[storage] failed to clear embedding cache', err)
   }
 }
 
@@ -56,18 +44,10 @@ export async function setCached(
   return cacheDb.setCached(prefix, url, entry)
 }
 
-const SETTINGS_KEY = 'settings'
-
 export async function getLlmSettings(): Promise<LlmSettings> {
   const result = await chrome.storage.local.get(SETTINGS_KEY)
   return {
-    chatProvider: 'lmstudio',
-    embeddingProvider: 'lmstudio',
-    baseUrl: 'http://localhost:1234/v1',
-    apiKey: '',
-    model: '',
-    embeddingModel: '',
-    webllmModel: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',
+    ...DEFAULT_LLM_SETTINGS,
     ...(result[SETTINGS_KEY] ?? {}),
   }
 }

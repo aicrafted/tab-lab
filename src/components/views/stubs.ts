@@ -33,9 +33,9 @@ export function getStubIsAlive(): boolean {
 }
 
 /** Fallback intent when LLM hasn't classified this URL yet. */
-export function getStubIntent(_url: string, _title: string): PageIntent {
+export function getStubIntent(url: string, _title: string): PageIntent {
   // Weighted toward article (most common intent)
-  const pick = Math.floor(Math.random() * 10)
+  const pick = Math.floor(hash32(url, 77) * 10)
   if (pick < 4) return 'article'
   if (pick < 6) return 'reference'
   if (pick < 7) return 'tool'

@@ -6,6 +6,31 @@ export interface WebllmChatOptions {
   disableThinking?: boolean
 }
 
+interface ChatMessage {
+  role: 'system' | 'user'
+  content: string
+}
+
+interface CompletionRequest {
+  messages: ChatMessage[]
+  max_tokens: number
+  temperature: number
+  extra_body?: {
+    enable_thinking: boolean
+  }
+  response_format?: {
+    type: 'json_object'
+  }
+}
+
+interface CompletionResponse {
+  choices?: Array<{
+    message?: {
+      content?: string
+    }
+  }>
+}
+
 // Some WebLLM runtimes throw BindingError in GrammarCompiler.CompileJSONSchema
 // when response_format is used. Keep this off for stability.
 const WEBLLM_JSON_MODE_ENABLED = false
@@ -30,7 +55,7 @@ export async function webllmChat(
   options: WebllmChatOptions = {},
 ): Promise<string> {
   const eng = await getEngine(modelId)
-  const baseRequest: any = {
+  const baseRequest: CompletionRequest = {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
@@ -42,10 +67,10 @@ export async function webllmChat(
       : {}),
   }
 
-  const createCompletion = (request: any) =>
-    eng.chat.completions.create(request as any) as Promise<any>
+  const createCompletion = (request: CompletionRequest): Promise<CompletionResponse> =>
+    eng.chat.completions.create(request as unknown as never) as Promise<CompletionResponse>
 
-  let reply: any
+  let reply: CompletionResponse
   if (options.responseFormat === 'json' && WEBLLM_JSON_MODE_ENABLED) {
     try {
       reply = await createCompletion({
@@ -71,7 +96,7 @@ export async function webllmChat(
     reply = await createCompletion(baseRequest)
   }
 
-  return reply.choices[0]?.message.content?.trim() ?? ''
+  return reply.choices?.[0]?.message?.content?.trim() ?? ''
 }
 
 export async function preloadWebllmModel(modelId: string): Promise<void> {

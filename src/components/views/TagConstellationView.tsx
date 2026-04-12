@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey, getStubIntent } from '@/components/views/stubs'
+import { getTagConstellationLayout } from '@/lib/tag-constellation-layout'
 
 interface TagPage {
   id: string
@@ -140,14 +141,15 @@ export function TagConstellationView({ bookmarks, tabs, loading, onRunTags }: Vi
       }
     })
 
-    const layout = runForceLayout(nodesBase, edgesBase, WIDTH, HEIGHT)
+    const layout = getTagConstellationLayout(nodesBase, edgesBase, WIDTH, HEIGHT)
     const nodes: TagNode[] = nodesBase.map((node) => ({
       ...node,
       x: layout.get(node.id)?.x ?? WIDTH / 2,
       y: layout.get(node.id)?.y ?? HEIGHT / 2,
     }))
 
-    return { nodes, edges: edgesBase }
+    const nodeById = new Map(nodes.map((node) => [node.id, node]))
+    return { nodes, edges: edgesBase, nodeById }
   }, [effectivePages])
 
   const [minCount, maxCount] = useMemo(() => {
@@ -251,8 +253,8 @@ export function TagConstellationView({ bookmarks, tabs, loading, onRunTags }: Vi
             <rect x={0} y={0} width={WIDTH} height={HEIGHT} fill="hsl(var(--background))" />
             <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
               {graph.edges.map((edge) => {
-                const sourceNode = graph.nodes.find((node) => node.id === edge.source)
-                const targetNode = graph.nodes.find((node) => node.id === edge.target)
+                const sourceNode = graph.nodeById.get(edge.source)
+                const targetNode = graph.nodeById.get(edge.target)
                 if (!sourceNode || !targetNode) return null
 
                 const connectedToHover = hoverNodeId
@@ -413,98 +415,5 @@ function lightenColor(color: string, lift: number): string {
   const sat = Number.parseInt(match[2], 10)
   const light = Math.min(92, Number.parseInt(match[3], 10) + lift)
   return `hsl(${hue} ${sat}% ${light}%)`
-}
-
-function hashString(input: string): number {
-  let hash = 0
-  for (const char of input) {
-    hash = (hash * 33 + char.charCodeAt(0)) | 0
-  }
-  return Math.abs(hash)
-}
-
-function runForceLayout(
-  nodes: Array<{ id: string }>,
-  edges: Array<{ source: string; target: string; weight: number }>,
-  width: number,
-  height: number,
-): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
-
-  for (const node of nodes) {
-    const hash = hashString(node.id)
-    const angle = (hash % 360) * (Math.PI / 180)
-    const radius = 100 + (hash % 180)
-    positions.set(node.id, {
-      x: width / 2 + Math.cos(angle) * radius,
-      y: height / 2 + Math.sin(angle) * radius,
-      vx: 0,
-      vy: 0,
-    })
-  }
-
-  const repulsion = 7600
-  const springLength = 120
-  const springStrength = 0.002
-  const centering = 0.001
-  const damping = 0.9
-
-  for (let step = 0; step < 260; step += 1) {
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const a = positions.get(nodes[i].id)
-        const b = positions.get(nodes[j].id)
-        if (!a || !b) continue
-        const dx = a.x - b.x
-        const dy = a.y - b.y
-        const distSq = dx * dx + dy * dy + 0.01
-        const dist = Math.sqrt(distSq)
-        const force = repulsion / distSq
-        const fx = (dx / dist) * force
-        const fy = (dy / dist) * force
-        a.vx += fx
-        a.vy += fy
-        b.vx -= fx
-        b.vy -= fy
-      }
-    }
-
-    for (const edge of edges) {
-      const a = positions.get(edge.source)
-      const b = positions.get(edge.target)
-      if (!a || !b) continue
-      const dx = b.x - a.x
-      const dy = b.y - a.y
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1
-      const stretch = dist - springLength
-      const force = stretch * springStrength * Math.max(1, edge.weight)
-      const fx = (dx / dist) * force
-      const fy = (dy / dist) * force
-      a.vx += fx
-      a.vy += fy
-      b.vx -= fx
-      b.vy -= fy
-    }
-
-    for (const node of nodes) {
-      const pos = positions.get(node.id)
-      if (!pos) continue
-      pos.vx += (width / 2 - pos.x) * centering
-      pos.vy += (height / 2 - pos.y) * centering
-      pos.vx *= damping
-      pos.vy *= damping
-      pos.x = Math.max(24, Math.min(width - 24, pos.x + pos.vx))
-      pos.y = Math.max(24, Math.min(height - 24, pos.y + pos.vy))
-    }
-  }
-
-  const result = new Map<string, { x: number; y: number }>()
-  for (const node of nodes) {
-    const pos = positions.get(node.id)
-    if (!pos) continue
-    result.set(node.id, { x: pos.x, y: pos.y })
-  }
-
-  return result
 }
 

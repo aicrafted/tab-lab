@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-
-const SIDEBAR_WIDTH_KEY = 'sidebarWidth'
-const STORAGE_KEEP_KEYS = new Set(['settings', 'lastScan', SIDEBAR_WIDTH_KEY])
+import { SIDEBAR_WIDTH_KEY, STORAGE_KEEP_KEYS } from '@/lib/storage-keys'
 
 function useResizable(
   initial: number,
@@ -17,19 +15,22 @@ function useResizable(
         const w = result[SIDEBAR_WIDTH_KEY] as number | undefined
         if (w && w >= min && w <= max) setWidth(w)
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn('[useResizable] failed to read sidebar width', err)
       })
   }, [min, max])
 
   const startDrag = useCallback((e: React.MouseEvent) => {
     const startX = e.clientX
     const startW = width
+    let currentWidth = startW
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
 
     function onMove(e: MouseEvent) {
       const next = Math.min(max, Math.max(min, startW + e.clientX - startX))
+      currentWidth = next
       setWidth(next)
     }
     function onUp() {
@@ -37,7 +38,7 @@ function useResizable(
       document.body.style.userSelect = ''
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      void saveSidebarWidth(width)
+      void saveSidebarWidth(currentWidth)
     }
 
     window.addEventListener('mousemove', onMove)
@@ -62,7 +63,8 @@ async function saveSidebarWidth(width: number): Promise<void> {
         await chrome.storage.local.remove(staleKeys)
         await chrome.storage.local.set({ [SIDEBAR_WIDTH_KEY]: width })
       }
-    } catch {
+    } catch (err) {
+      console.warn('[useResizable] failed to prune storage after quota error', err)
     }
   }
 }

@@ -13,7 +13,8 @@ function parseCategoryJson(raw: string): string {
     if (typeof parsed.category === 'string') {
       return parsed.category.slice(0, 40)
     }
-  } catch {
+  } catch (err) {
+    console.warn('[classifier] category JSON parse failed, falling back to plain text', err)
   }
   return raw.trim().slice(0, 40) || 'Other'
 }
@@ -35,7 +36,8 @@ export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmS
     if (caps.available === 'no') return 'unavailable'
     if (caps.available === 'after-download') return 'after-download'
     return 'ready'
-  } catch {
+  } catch (err) {
+    console.warn('[classifier] failed to check Gemini Nano availability', err)
     return 'unavailable'
   }
 }
@@ -179,7 +181,8 @@ Reply with JSON only, no explanation.`
       if (!(label in parsed)) parsed[label] = label
     }
     return parsed
-  } catch {
+  } catch (err) {
+    console.warn('[classifier] normalizeCategoryLabels JSON parse failed, keeping original labels', err)
     return Object.fromEntries(labels.map((label) => [label, label]))
   }
 }
