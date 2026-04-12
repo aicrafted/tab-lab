@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabLab — Privacy Policy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 720px;
+      margin: 60px auto;
+      padding: 0 24px;
+      color: #1e293b;
+      line-height: 1.7;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 4px; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; color: #334155; }
+    p, li { color: #475569; }
+    ul { padding-left: 1.4rem; }
+    .meta { color: #94a3b8; font-size: 0.875rem; margin-bottom: 2.5rem; }
+    .highlight {
+      background: #f1f5f9;
+      border-left: 3px solid #6366f1;
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    a { color: #6366f1; }
+  </style>
+</head>
+<body>
+
+  <h1>TabLab — Privacy Policy</h1>
+  <p class="meta">Effective date: April 12, 2025</p>
+
+  <div class="highlight">
+    TabLab is a local-first extension. It does not collect, store, or transmit
+    your personal data to any server operated by TabLab.
+  </div>
+
+  <h2>What data TabLab accesses</h2>
+  <p>To provide its functionality, TabLab reads the following data directly
+  from your browser using Chrome extension APIs:</p>
+  <ul>
+    <li><strong>Bookmarks</strong> — titles, URLs, and folder structure</li>
+    <li><strong>Open tabs</strong> — titles, URLs, and last-accessed timestamps</li>
+    <li><strong>Browsing history</strong> — visit timestamps for bookmarked URLs only,
+        used to identify stale or unvisited bookmarks</li>
+  </ul>
+  <p>This data is processed locally and cached in <code>chrome.storage.local</code>
+  on your device. It is never sent to TabLab's servers (TabLab has none).</p>
+
+  <h2>AI processing and external providers</h2>
+  <p>TabLab supports two AI backends for classification and semantic search:</p>
+  <ul>
+    <li>
+      <strong>Gemini Nano (built-in)</strong> — runs entirely in the browser via
+      Chrome's on-device AI API. No data leaves your device.
+    </li>
+    <li>
+      <strong>External provider (Ollama, LM Studio, or any OpenAI-compatible
+      local server)</strong> — if you configure a custom endpoint in Settings,
+      tab and bookmark titles/URLs will be sent to that endpoint to perform
+      inference. TabLab sends the request and returns the result; it does not
+      log, store, or forward this data itself. The privacy practices of the
+      external provider are governed solely by that provider. TabLab is not
+      responsible for how external providers handle your data.
+    </li>
+  </ul>
+  <p>
+    By default, no external provider is configured. You opt in explicitly by
+    entering a custom API endpoint in the TabLab settings.
+  </p>
+
+  <h2>No tracking, analytics, or advertising</h2>
+  <p>TabLab contains no analytics SDKs, no crash reporters, no advertising
+  networks, and no telemetry of any kind.</p>
+
+  <h2>Data retention</h2>
+  <p>All data stored by TabLab lives in <code>chrome.storage.local</code> on
+  your device. Uninstalling the extension permanently removes all stored data.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be published at this URL
+  and the effective date above will be updated.</p>
+
+  <h2>Contact</h2>
+  <p>Questions? Open an issue on
+  <a href="https://github.com/nicktretyakov/tab-mind" target="_blank">GitHub</a>.
+  </p>
+
+</body>
+</html>
