@@ -28,33 +28,103 @@ export const VIEW_HINTS: Record<ViewId, string> = Object.fromEntries(
   VIEWS.map((view) => [view.id, view.hint]),
 ) as Record<ViewId, string>
 
+const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewId[] }> = [
+  {
+    id: 'basic',
+    label: 'Basic',
+    hint: 'Core working views for everyday sorting and cleanup.',
+    views: ['list', 'triage', 'kanban', 'reading-queue', 'shelf-view'],
+  },
+  {
+    id: 'domains-tags-intents',
+    label: 'Domains, tags, intents',
+    hint: 'Relationship and structure views across domains, tags and clusters.',
+    views: ['domain-drill-down', 'domain-graph', 'overlap-explorer', 'tag-cooccurrence', 'tag-constellation', 'treemap'],
+  },
+  {
+    id: 'semantic',
+    label: 'Semantic',
+    hint: 'Embedding-driven maps and semantic neighborhood exploration.',
+    views: ['personal-radar', 'semantic', 'shadow-map'],
+  },
+  {
+    id: 'history',
+    label: 'History',
+    hint: 'Timeline and activity-oriented representations over time.',
+    views: ['heatmap', 'focus-rings', 'session-story', 'timeline', 'topic-river'],
+  },
+  {
+    id: 'net-heavy',
+    label: 'Net-heavy',
+    hint: 'Views that rely more on remote assets/content.',
+    views: ['magazine'],
+  },
+]
+
+const VIEW_BY_ID: Record<ViewId, { id: ViewId; label: string; hint: string }> = Object.fromEntries(
+  VIEWS.map((view) => [view.id, view]),
+) as Record<ViewId, { id: ViewId; label: string; hint: string }>
+
+const GROUP_BY_VIEW: Record<ViewId, string> = Object.fromEntries(
+  VIEW_GROUPS.flatMap((group) => group.views.map((viewId) => [viewId, group.id])),
+) as Record<ViewId, string>
+
 interface ViewBarProps {
   activeView: ViewId
   onChange: (view: ViewId) => void
 }
 
 export function ViewBar({ activeView, onChange }: ViewBarProps) {
+  const activeGroupId = GROUP_BY_VIEW[activeView] ?? VIEW_GROUPS[0].id
+  const activeGroup = VIEW_GROUPS.find((group) => group.id === activeGroupId) ?? VIEW_GROUPS[0]
+
   return (
     <div className="overflow-x-auto rounded-md border border-border bg-card">
-      <div className="flex min-w-max items-center gap-1 p-1.5">
-        {VIEWS.map((view) => (
-          <button
-            key={view.id}
-            type="button"
-            title={view.hint}
-            onClick={() => onChange(view.id)}
-            className={cn(
-              'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
-              activeView === view.id
-                ? 'bg-primary/20 text-primary'
-                : 'text-muted-foreground hover:bg-background hover:text-foreground',
-            )}
-          >
-            {view.label}
-          </button>
-        ))}
+      <div className="flex min-w-max flex-col gap-1.5 p-1.5">
+        <div className="flex items-center gap-1">
+          {VIEW_GROUPS.map((group) => {
+            const isActive = group.id === activeGroup.id
+            return (
+              <button
+                key={group.id}
+                type="button"
+                title={group.hint}
+                onClick={() => onChange(group.views[0])}
+                className={cn(
+                  'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
+                  isActive
+                    ? 'bg-primary/20 text-primary ring-1 ring-primary/45 shadow-sm'
+                    : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                )}
+              >
+                {group.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center gap-1">
+          {activeGroup.views.map((viewId) => {
+            const view = VIEW_BY_ID[viewId]
+            return (
+              <button
+                key={view.id}
+                type="button"
+                title={view.hint}
+                onClick={() => onChange(view.id)}
+                className={cn(
+                  'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
+                  activeView === view.id
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                )}
+              >
+                {view.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
 }
-

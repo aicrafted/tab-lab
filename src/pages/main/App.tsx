@@ -246,7 +246,10 @@ export function App() {
     for (const t of sourceScopedTabs) {
       if (t.domain) counts.set(t.domain, (counts.get(t.domain) ?? 0) + 1)
     }
-    return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
+    return Array.from(counts.entries())
+      .map(([value, count]) => ({ value, count }))
+      .filter((item) => item.count > 1)
+      .sort((a, b) => b.count - a.count)
   }, [sourceScopedBookmarks, sourceScopedTabs])
 
   const categoriesFacet = useMemo(() => {
@@ -352,9 +355,6 @@ export function App() {
         />
         <div className="mt-3">
           <ViewBar activeView={activeView} onChange={handleViewChange} />
-          {VIEW_HINTS[activeView] && (
-            <p className="mt-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
-          )}
         </div>
         <LlmSettingsPanel
           open={showSettings}
@@ -389,6 +389,9 @@ export function App() {
         />
 
         <div className="min-w-0 flex-1 overflow-auto px-6 py-4">
+          {VIEW_HINTS[activeView] && (
+            <p className="mb-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
+          )}
           {renderActiveView()}
         </div>
       </div>

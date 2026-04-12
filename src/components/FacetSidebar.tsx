@@ -31,7 +31,7 @@ export function FacetSidebar({
 
   return (
     <div
-      className="flex h-full flex-col border-r border-border bg-background"
+      className="ml-6 flex h-full flex-col border-r border-border bg-background"
       style={{ width }}
     >
       {/* Mode tabs */}
