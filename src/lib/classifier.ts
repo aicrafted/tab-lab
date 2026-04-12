@@ -1,4 +1,4 @@
-import { chatComplete } from './llm'
+import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
@@ -12,7 +12,7 @@ Example output: {"category": "Development"}`
 
 function parseCategoryJson(raw: string): string {
   try {
-    const parsed = JSON.parse(raw) as { category?: unknown }
+    const parsed = JSON.parse(extractJson(raw)) as { category?: unknown }
     if (typeof parsed.category === 'string') {
       return parsed.category.slice(0, 40)
     }
@@ -251,7 +251,7 @@ Reply with JSON only, no explanation.`
   )
 
   try {
-    const parsed = JSON.parse(raw) as Record<string, string>
+    const parsed = JSON.parse(extractJson(raw)) as Record<string, string>
     for (const label of labels) {
       if (!(label in parsed)) parsed[label] = label
     }

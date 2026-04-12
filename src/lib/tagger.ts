@@ -1,4 +1,4 @@
-import { chatComplete } from './llm'
+import { chatComplete, extractJson } from './llm'
 import { getCached, setCached } from './storage'
 import type { LlmSettings } from './types'
 import { DEFAULT_LLM_SETTINGS } from './types'
@@ -18,7 +18,7 @@ function parseTags(raw: string): string[] {
 
 function parseTagsJson(raw: string): string[] {
   try {
-    const parsed = JSON.parse(raw) as { tags?: unknown }
+    const parsed = JSON.parse(extractJson(raw)) as { tags?: unknown }
     if (Array.isArray(parsed.tags)) {
       return (parsed.tags as unknown[])
         .filter((tag): tag is string => typeof tag === 'string')

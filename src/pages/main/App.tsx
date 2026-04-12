@@ -4,14 +4,26 @@ import { StatusBar } from '@/components/StatusBar'
 import { LlmSettingsPanel } from '@/components/LlmSettings'
 import { FacetSidebar } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
-import { exportToChromeFolders } from '@/lib/bookmarks'
+import {
+  exportToChromeFolders,
+  getBookmarkFolderDescendantIds,
+  getBookmarkFolderOptions,
+  type BookmarkFolderOption,
+} from '@/lib/bookmarks'
 import { type LlmStatus } from '@/lib/classifier'
 import { loadCached2D } from '@/lib/embedder'
 import { loadHydratedData } from '@/lib/initial-load'
-import { getLlmSettings, getSourceFilter, setLlmSettings, setSourceFilter } from '@/lib/storage'
+import {
+  getBookmarkScopeFilter,
+  getLlmSettings,
+  getSourceFilter,
+  setBookmarkScopeFilter,
+  setLlmSettings,
+  setSourceFilter,
+} from '@/lib/storage'
 import { useResizable } from '@/hooks/useResizable'
 import { useAiPipelines } from '@/hooks/useAiPipelines'
-import type { BookmarkItem, TabItem, LlmSettings } from '@/lib/types'
+import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { TriageView } from '@/components/views/TriageView'
@@ -66,6 +78,9 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [activeView, setActiveView] = useState<ViewId>('list')
   const [sourceFilter, setSourceFilterState] = useState<SourceFilter>('both')
+  const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
+  const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
+  const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
   const [facetMode, setFacetMode] = useState<'domains' | 'categories'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const { width: sidebarWidth, startDrag } = useResizable(220, 160, 400)
@@ -73,15 +88,21 @@ export function App() {
 
   // Load settings on mount
   useEffect(() => {
-    void Promise.all([getLlmSettings(), getSourceFilter()]).then(([settings, source]) => {
+    void Promise.all([getLlmSettings(), getSourceFilter(), getBookmarkScopeFilter()]).then(([settings, source, scope]) => {
       setLlmSettingsState(settings)
       setSourceFilterState(source)
+      setBookmarkScopeFilterState(scope)
     })
   }, [])
 
   const handleSourceFilterChange = useCallback((value: SourceFilter) => {
     setSourceFilterState(value)
     void setSourceFilter(value)
+  }, [])
+
+  const handleBookmarkScopeChange = useCallback((scope: BookmarkScopeFilter) => {
+    setBookmarkScopeFilterState(scope)
+    void setBookmarkScopeFilter(scope)
   }, [])
 
   function reload() {
@@ -114,9 +135,13 @@ export function App() {
   })
 
   async function doLoad() {
-    const hydrated = await loadHydratedData()
+    const [hydrated, folderOptions] = await Promise.all([
+      loadHydratedData(),
+      getBookmarkFolderOptions(),
+    ])
     setBookmarks(hydrated.bookmarks)
     setTabs(hydrated.tabs)
+    setBookmarkFolderOptions(folderOptions)
 
     // Restore cached 2D projection (Semantic Map coords)
     const cached2D = await loadCached2D()
@@ -136,6 +161,38 @@ export function App() {
     setLoading(true)
     void doLoad()
   }, [])
+
+  useEffect(() => {
+    if (bookmarkScopeFilter.mode === 'root') {
+      setBookmarkScopeDescendants(null)
+      return
+    }
+    const targetFolderId = bookmarkScopeFilter.folderId
+    if (!targetFolderId) {
+      setBookmarkScopeFilterState({ mode: 'root' })
+      void setBookmarkScopeFilter({ mode: 'root' })
+      setBookmarkScopeDescendants(null)
+      return
+    }
+
+    let active = true
+    void getBookmarkFolderDescendantIds(targetFolderId).then((descendants) => {
+      if (!active) return
+      if (!descendants) {
+        setBookmarkScopeFilterState({ mode: 'root' })
+        void setBookmarkScopeFilter({ mode: 'root' })
+        setBookmarkScopeDescendants(null)
+        return
+      }
+      setBookmarkScopeDescendants(descendants)
+    }).catch(() => {
+      if (!active) return
+      setBookmarkScopeFilterState({ mode: 'root' })
+      void setBookmarkScopeFilter({ mode: 'root' })
+      setBookmarkScopeDescendants(null)
+    })
+    return () => { active = false }
+  }, [bookmarkScopeFilter])
 
   async function activateTab(id: number) {
     try {
@@ -165,8 +222,15 @@ export function App() {
   }
 
   const sourceScopedBookmarks = useMemo(
-    () => (sourceFilter === 'tabs' ? [] : bookmarks),
-    [sourceFilter, bookmarks],
+    () => {
+      if (sourceFilter === 'tabs') return []
+      if (bookmarkScopeFilter.mode === 'root') return bookmarks
+      if (!bookmarkScopeDescendants) return bookmarks
+      return bookmarks.filter((bookmark) => (
+        bookmark.folderId ? bookmarkScopeDescendants.has(bookmark.folderId) : false
+      ))
+    },
+    [bookmarkScopeDescendants, bookmarkScopeFilter.mode, sourceFilter, bookmarks],
   )
   const sourceScopedTabs = useMemo(
     () => (sourceFilter === 'bookmarks' ? [] : tabs),
@@ -272,6 +336,9 @@ export function App() {
           onSettingsClick={() => setShowSettings(s => !s)}
           sourceFilter={sourceFilter}
           onSourceFilterChange={handleSourceFilterChange}
+          bookmarkScopeFilter={bookmarkScopeFilter}
+          bookmarkFolderOptions={bookmarkFolderOptions}
+          onBookmarkScopeChange={handleBookmarkScopeChange}
           ai={{
             onClearCache: handleClearCache,
             onClassify: handleClassify,

@@ -1,4 +1,4 @@
-import { chatComplete } from './llm'
+import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
@@ -89,7 +89,7 @@ function parseIntent(raw: string): PageIntent {
 
 function parseIntentJson(raw: string): PageIntent {
   try {
-    const parsed = JSON.parse(raw) as { intent?: unknown }
+    const parsed = JSON.parse(extractJson(raw)) as { intent?: unknown }
     if (typeof parsed.intent === 'string') {
       return VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
     }

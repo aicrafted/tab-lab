@@ -3,6 +3,7 @@ export interface BookmarkItem {
   url: string
   title: string
   domain: string
+  folderId?: string
   folder: string           // full path e.g. "Dev/Tools/AI"
   dateAdded: number
   // dedup within source
@@ -69,6 +70,11 @@ export type ChatProvider = 'gemini-nano' | 'webllm' | 'lmstudio' | 'openrouter'
 export type EmbeddingProvider = 'transformers' | 'lmstudio' | 'openrouter'
 export type ClassificationMethod = 'llm' | 'nli'
 export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
+export interface BookmarkScopeFilter {
+  mode: 'root' | 'folder'
+  folderId?: string
+  folderPath?: string
+}
 
 export interface LlmSettings {
   providers: {

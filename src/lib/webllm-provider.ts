@@ -1,6 +1,8 @@
 import { CreateMLCEngine } from '@mlc-ai/web-llm'
 import { hasModelInCache } from '@mlc-ai/web-llm'
+import { prebuiltAppConfig } from '@mlc-ai/web-llm'
 import type { MLCEngine } from '@mlc-ai/web-llm'
+import { patchRequestAdapterForWindows } from './webgpu-compat'
 
 export interface WebllmChatOptions {
   responseFormat?: 'json'
@@ -21,6 +23,9 @@ interface CompletionRequest {
   }
   response_format?: {
     type: 'json_object'
+    // WebLLM requires schema as a JSON Schema string; undefined causes a WASM BindingError
+    // in GrammarCompiler.CompileJSONSchema. Use '{}' for unconstrained JSON objects.
+    schema: string
   }
 }
 
@@ -32,18 +37,31 @@ interface CompletionResponse {
   }>
 }
 
-// Some WebLLM runtimes throw BindingError in GrammarCompiler.CompileJSONSchema
-// when response_format is used. Keep this off for stability.
-const WEBLLM_JSON_MODE_ENABLED = false
+const WEBLLM_JSON_MODE_ENABLED = true
 
 let engine: MLCEngine | null = null
 let currentModel = ''
+const SUPPORTED_WEBLLM_MODELS = new Set(prebuiltAppConfig.model_list.map((model) => model.model_id))
+
+function ensureSupportedWebllmModel(modelId: string): void {
+  if (!SUPPORTED_WEBLLM_MODELS.has(modelId)) {
+    throw new Error(`Unsupported WebLLM model id: ${modelId}. Choose a model from the built-in list.`)
+  }
+}
 
 async function getEngine(modelId: string): Promise<MLCEngine> {
+  patchRequestAdapterForWindows()
+  ensureSupportedWebllmModel(modelId)
   if (engine && currentModel === modelId) return engine
   engine = null
   currentModel = ''
-  engine = await CreateMLCEngine(modelId)
+  try {
+    engine = await CreateMLCEngine(modelId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const short = message.split('\n')[0] || 'Unknown WebLLM initialization error'
+    throw new Error(`Failed to initialize WebLLM model "${modelId}": ${short}`)
+  }
   currentModel = modelId
   return engine
 }
@@ -76,20 +94,22 @@ export async function webllmChat(
     try {
       reply = await createCompletion({
         ...baseRequest,
-        response_format: { type: 'json_object' as const },
+        response_format: { type: 'json_object' as const, schema: '{}' },
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const schemaCompileFailure =
-        message.includes('CompileJSONSchema') ||
-        message.includes('Cannot pass non-string to std::string') ||
-        message.includes('BindingError')
+      // Use String(err) so the error type prefix (e.g. "BindingError: ...") is included —
+      // err.message alone strips it when BindingError extends Error.
+      const full = String(err)
+      const isWasmGrammarError =
+        full.includes('BindingError') ||
+        full.includes('CompileJSONSchema') ||
+        full.includes('VectorInt')
 
-      if (!schemaCompileFailure) throw err
+      if (!isWasmGrammarError) throw err
 
-      console.warn('[webllm] JSON mode not supported by this runtime/model, retrying without response_format', {
+      console.warn('[webllm] grammar-constrained JSON not supported by this runtime, retrying without response_format', {
         modelId,
-        error: message,
+        error: full,
       })
       reply = await createCompletion(baseRequest)
     }
@@ -97,17 +117,25 @@ export async function webllmChat(
     reply = await createCompletion(baseRequest)
   }
 
-  return reply.choices?.[0]?.message?.content?.trim() ?? ''
+  const raw = reply.choices?.[0]?.message?.content ?? ''
+  return stripThinkBlocks(raw).trim()
+}
+
+function stripThinkBlocks(text: string): string {
+  // Remove <think>...</think> blocks (including multiline) produced by reasoning models like Qwen
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '')
 }
 
 export async function preloadWebllmModel(modelId: string): Promise<void> {
-  if (!modelId.trim()) throw new Error('WebLLM model ID is required')
-  await getEngine(modelId)
+  const normalized = modelId.trim()
+  if (!normalized) throw new Error('WebLLM model ID is required')
+  await getEngine(normalized)
 }
 
 export async function isWebllmModelCached(modelId: string): Promise<boolean> {
   const normalized = modelId.trim()
   if (!normalized) return false
+  if (!SUPPORTED_WEBLLM_MODELS.has(normalized)) return false
   try {
     return await hasModelInCache(normalized)
   } catch (err) {

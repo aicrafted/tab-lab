@@ -8,9 +8,10 @@
 import * as cacheDb from './cacheDb'
 import { clearEmbeddingCache } from './embedder'
 import { migrateLlmSettings } from './types'
-import type { CacheEntry, LlmSettings } from './types'
+import type { BookmarkScopeFilter, CacheEntry, LlmSettings } from './types'
 import type { SourceFilter } from '@/components/views/types'
 import {
+  BOOKMARK_SCOPE_FILTER_KEY,
   LAST_SCAN_KEY,
   SETTINGS_KEY,
   SOURCE_FILTER_KEY,
@@ -78,6 +79,36 @@ export async function getSourceFilter(): Promise<SourceFilter> {
 
 export async function setSourceFilter(sourceFilter: SourceFilter): Promise<void> {
   await safeLocalSet({ [SOURCE_FILTER_KEY]: sourceFilter })
+}
+
+export async function getBookmarkScopeFilter(): Promise<BookmarkScopeFilter> {
+  const result = await chrome.storage.local.get(BOOKMARK_SCOPE_FILTER_KEY)
+  const raw = result[BOOKMARK_SCOPE_FILTER_KEY]
+  if (raw && typeof raw === 'object') {
+    const mode = (raw as Record<string, unknown>).mode
+    const folderId = (raw as Record<string, unknown>).folderId
+    const folderPath = (raw as Record<string, unknown>).folderPath
+    if (mode === 'root') return { mode: 'root' }
+    if (mode === 'folder' && typeof folderId === 'string' && folderId.trim()) {
+      return {
+        mode: 'folder',
+        folderId: folderId.trim(),
+        ...(typeof folderPath === 'string' ? { folderPath } : {}),
+      }
+    }
+  }
+  return { mode: 'root' }
+}
+
+export async function setBookmarkScopeFilter(filter: BookmarkScopeFilter): Promise<void> {
+  const payload: BookmarkScopeFilter = filter.mode === 'folder' && filter.folderId
+    ? {
+      mode: 'folder',
+      folderId: filter.folderId,
+      ...(filter.folderPath ? { folderPath: filter.folderPath } : {}),
+    }
+    : { mode: 'root' }
+  await safeLocalSet({ [BOOKMARK_SCOPE_FILTER_KEY]: payload })
 }
 
 async function safeLocalSet(payload: Record<string, unknown>): Promise<void> {

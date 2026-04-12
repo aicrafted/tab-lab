@@ -1,36 +1,62 @@
 import type { BookmarkItem } from './types'
 import { parseDomain } from './utils'
 
-/** Recursively builds a map of folderId → full path string. */
-function buildPathMap(
-  node: chrome.bookmarks.BookmarkTreeNode,
-  pathMap: Map<string, string>,
-  parentPath = '',
-): void {
-  if (node.children === undefined) return // leaf bookmark, not a folder
+export interface BookmarkFolderOption {
+  id: string
+  path: string
+}
 
-  const myPath = parentPath
-    ? `${parentPath}/${node.title}`
-    : node.title
+interface FolderIndex {
+  pathById: Map<string, string>
+  descendantIdsById: Map<string, Set<string>>
+  options: BookmarkFolderOption[]
+}
 
-  // Only store named folders (root nodes have empty titles)
-  if (node.title) {
-    pathMap.set(node.id, myPath)
+function buildFolderIndex(tree: chrome.bookmarks.BookmarkTreeNode[]): FolderIndex {
+  const pathById = new Map<string, string>()
+  const descendantIdsById = new Map<string, Set<string>>()
+  const options: BookmarkFolderOption[] = []
+
+  const visit = (node: chrome.bookmarks.BookmarkTreeNode, parentPath = ''): Set<string> => {
+    if (node.children === undefined) return new Set()
+
+    const myPath = parentPath
+      ? `${parentPath}/${node.title}`
+      : node.title
+    const hasTitle = Boolean(node.title)
+
+    if (hasTitle) {
+      pathById.set(node.id, myPath)
+      options.push({ id: node.id, path: myPath })
+    }
+
+    const descendants = new Set<string>()
+    if (hasTitle) descendants.add(node.id)
+
+    for (const child of node.children) {
+      for (const childId of visit(child, hasTitle ? myPath : '')) {
+        descendants.add(childId)
+      }
+    }
+
+    if (hasTitle) {
+      descendantIdsById.set(node.id, descendants)
+    }
+    return descendants
   }
 
-  for (const child of node.children) {
-    buildPathMap(child, pathMap, node.title ? myPath : '')
+  for (const root of tree) {
+    visit(root)
   }
+
+  options.sort((a, b) => a.path.localeCompare(b.path))
+  return { pathById, descendantIdsById, options }
 }
 
 /** Returns all bookmarks, deduplicated by URL (first occurrence wins). */
 export async function getAllBookmarks(): Promise<BookmarkItem[]> {
   const tree = await chrome.bookmarks.getTree()
-
-  const pathMap = new Map<string, string>()
-  for (const root of tree) {
-    buildPathMap(root, pathMap)
-  }
+  const folderIndex = buildFolderIndex(tree)
 
   const collected: BookmarkItem[] = []
 
@@ -38,12 +64,14 @@ export async function getAllBookmarks(): Promise<BookmarkItem[]> {
     if (node.url) {
       try {
         const domain = parseDomain(node.url)
-        const folder = node.parentId ? (pathMap.get(node.parentId) ?? '') : ''
+        const folderId = node.parentId
+        const folder = folderId ? (folderIndex.pathById.get(folderId) ?? '') : ''
         collected.push({
           id: node.id,
           url: node.url,
           title: node.title || node.url,
           domain,
+          folderId,
           folder,
           dateAdded: node.dateAdded ?? Date.now(),
         })
@@ -69,6 +97,17 @@ export async function getAllBookmarks(): Promise<BookmarkItem[]> {
   })
 
   return enrichWithHistory(deduped)
+}
+
+export async function getBookmarkFolderOptions(): Promise<BookmarkFolderOption[]> {
+  const tree = await chrome.bookmarks.getTree()
+  return buildFolderIndex(tree).options
+}
+
+export async function getBookmarkFolderDescendantIds(folderId: string): Promise<Set<string> | null> {
+  const tree = await chrome.bookmarks.getTree()
+  const descendants = buildFolderIndex(tree).descendantIdsById.get(folderId)
+  return descendants ?? null
 }
 
 const SKIPPED_SCHEMES = ['chrome://', 'about:', 'file://', 'edge://', 'brave://']

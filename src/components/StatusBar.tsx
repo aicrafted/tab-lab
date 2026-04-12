@@ -1,9 +1,18 @@
 import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { formatAge } from '@/lib/utils'
 import type { LlmStatus } from '@/lib/classifier'
 import { SourceFilterToggle } from '@/components/SourceFilter'
 import type { SourceFilter } from '@/components/views/types'
+import type { BookmarkFolderOption } from '@/lib/bookmarks'
+import type { BookmarkScopeFilter } from '@/lib/types'
 
 interface StatusBarAiActions {
   onClearCache?: () => Promise<void>
@@ -26,6 +35,9 @@ interface StatusBarProps {
   onSettingsClick: () => void
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
+  bookmarkScopeFilter: BookmarkScopeFilter
+  bookmarkFolderOptions: BookmarkFolderOption[]
+  onBookmarkScopeChange: (value: BookmarkScopeFilter) => void
   ai?: StatusBarAiActions
 }
 
@@ -39,10 +51,16 @@ export function StatusBar({
   onSettingsClick,
   sourceFilter,
   onSourceFilterChange,
+  bookmarkScopeFilter,
+  bookmarkFolderOptions,
+  onBookmarkScopeChange,
   ai,
 }: StatusBarProps) {
   const aiActions = ai ?? {}
   const hasAi = Object.values(aiActions).some(Boolean)
+  const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
+    ? bookmarkScopeFilter.folderId
+    : 'root'
   return (
     <div className="flex items-center gap-4 rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
       <span>
@@ -72,6 +90,36 @@ export function StatusBar({
 
       <span className="text-border">·</span>
       <SourceFilterToggle value={sourceFilter} onChange={onSourceFilterChange} />
+      <span className="text-border">·</span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Bookmark folder</span>
+        <Select
+          value={bookmarkScopeValue}
+          onValueChange={(value) => {
+            if (value === 'root') {
+              onBookmarkScopeChange({ mode: 'root' })
+              return
+            }
+            const folder = bookmarkFolderOptions.find((option) => option.id === value)
+            onBookmarkScopeChange({
+              mode: 'folder',
+              folderId: value,
+              ...(folder ? { folderPath: folder.path } : {}),
+            })
+          }}
+          disabled={sourceFilter === 'tabs'}
+        >
+          <SelectTrigger className="h-7 w-64 text-xs">
+            <SelectValue placeholder="Root (all bookmarks)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="root">Root (all bookmarks)</SelectItem>
+            {bookmarkFolderOptions.map((option) => (
+              <SelectItem key={option.id} value={option.id}>{option.path}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {hasAi && (
         <div className="flex items-center gap-1 text-xs">

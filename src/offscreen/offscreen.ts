@@ -1,7 +1,9 @@
 import { env, pipeline } from '@xenova/transformers'
+import { patchRequestAdapterForWindows } from '@/lib/webgpu-compat'
 
 env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/')
 env.allowRemoteModels = true
+patchRequestAdapterForWindows()
 
 interface FeatureExtractionOutput {
   data: Float32Array | number[]
