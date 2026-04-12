@@ -1,5 +1,5 @@
 .cache/
+.docs/
 node_modules/
 tasks/
 dist/
-docs/
