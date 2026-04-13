@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
 import { StatusBar } from '@/components/StatusBar'
 import { LlmSettingsPanel } from '@/components/LlmSettings'
@@ -86,6 +86,7 @@ export function App() {
   const [facetMode, setFacetMode] = useState<'domains' | 'categories'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
+  const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(220, 160, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
 
@@ -114,9 +115,11 @@ export function App() {
   }, [llmSettings, settingsHydrated])
 
   const handleSourceFilterChange = useCallback((value: SourceFilter) => {
-    setSourceFilterState(value)
+    startFilterTransition(() => {
+      setSourceFilterState(value)
+    })
     void setSourceFilter(value)
-  }, [])
+  }, [startFilterTransition])
 
   const handleBookmarkScopeChange = useCallback((scope: BookmarkScopeFilter) => {
     setBookmarkScopeFilterState(scope)

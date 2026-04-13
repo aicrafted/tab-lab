@@ -2,6 +2,7 @@ import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
@@ -34,6 +35,8 @@ interface DataTableProps<TData, TValue> {
   toolbar?: React.ReactNode
   /** Initial sorting state */
   initialSorting?: SortingState
+  /** Rows per page, default 100 */
+  initialPageSize?: number
 }
 
 export function DataTable<TData, TValue>({
@@ -46,9 +49,14 @@ export function DataTable<TData, TValue>({
   loading = false,
   toolbar,
   initialSorting = [],
+  initialPageSize = 100,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting)
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: initialPageSize,
+  })
 
   const table = useReactTable({
     data,
@@ -56,14 +64,21 @@ export function DataTable<TData, TValue>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    state: { sorting, columnFilters },
+    onPaginationChange: setPagination,
+    state: { sorting, columnFilters, pagination },
   })
+
+  const filteredCount = table.getFilteredRowModel().rows.length
+  const pageIndex = table.getState().pagination.pageIndex
+  const pageSize = table.getState().pagination.pageSize
+  const pageStart = filteredCount === 0 ? 0 : pageIndex * pageSize + 1
+  const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredCount)
 
   return (
     <div className="space-y-3">
-      {/* Toolbar */}
       <div className="flex items-center gap-2">
         {(searchKey || onSearchChange) && (
           <Input
@@ -79,11 +94,10 @@ export function DataTable<TData, TValue>({
         )}
         {toolbar}
         <span className="ml-auto text-xs text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} / {data.length}
+          {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
         </span>
       </div>
 
-      {/* Table */}
       <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
@@ -138,6 +152,29 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Prev
+        </button>
+        <span className="text-xs text-muted-foreground">
+          Page {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
+        </span>
+        <button
+          type="button"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
     </div>
   )
 }
+

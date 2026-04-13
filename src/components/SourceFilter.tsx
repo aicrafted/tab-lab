@@ -8,7 +8,7 @@ interface SourceFilterProps {
 
 export function SourceFilterToggle({ value, onChange }: SourceFilterProps) {
   return (
-    <div className="flex items-center gap-1 rounded border border-border bg-background/60 p-1">
+    <div className="flex items-center gap-1">
       {(['bookmarks', 'tabs', 'both'] as const).map((option) => (
         <button
           key={option}
@@ -25,4 +25,3 @@ export function SourceFilterToggle({ value, onChange }: SourceFilterProps) {
     </div>
   )
 }
-
