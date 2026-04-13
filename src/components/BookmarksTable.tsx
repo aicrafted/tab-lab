@@ -185,9 +185,10 @@ interface BookmarksTableProps {
   loading?: boolean
   onDelete: (id: string) => void
   onExport?: () => Promise<void>
+  menuHost?: HTMLElement | null
 }
 
-export function BookmarksTable({ data, settings, loading, onDelete, onExport }: BookmarksTableProps) {
+export function BookmarksTable({ data, settings, loading, onDelete, onExport, menuHost }: BookmarksTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const { results, state, error, search, clear } = useSemanticSearch(settings)
@@ -276,6 +277,7 @@ export function BookmarksTable({ data, settings, loading, onDelete, onExport }: 
       loading={loading}
       toolbar={toolbar}
       initialSorting={initialSorting}
+      menuHost={menuHost}
     />
   )
 }

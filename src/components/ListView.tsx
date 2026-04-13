@@ -13,6 +13,7 @@ interface ListViewProps {
   onExport?: () => Promise<void>
   onCloseTab: (id: number) => Promise<void>
   onActivateTab: (id: number) => Promise<void>
+  viewMenuHost?: HTMLElement | null
 }
 
 export function ListView({
@@ -25,6 +26,7 @@ export function ListView({
   onExport,
   onCloseTab,
   onActivateTab,
+  viewMenuHost,
 }: ListViewProps) {
   if (sourceFilter === 'bookmarks') {
     return (
@@ -34,6 +36,7 @@ export function ListView({
         loading={loading}
         onDelete={(id) => void onDeleteBookmark(id)}
         onExport={onExport}
+        menuHost={viewMenuHost}
       />
     )
   }
@@ -46,6 +49,7 @@ export function ListView({
         loading={loading}
         onClose={(id) => void onCloseTab(id)}
         onActivate={(id) => void onActivateTab(id)}
+        menuHost={viewMenuHost}
       />
     )
   }
@@ -69,4 +73,3 @@ export function ListView({
     </div>
   )
 }
-

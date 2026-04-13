@@ -89,6 +89,7 @@ export function App() {
   const [facetMode, setFacetMode] = useState<'domains' | 'categories'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
+  const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
   const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
@@ -378,6 +379,7 @@ export function App() {
           sourceFilter={sourceFilter}
           settings={llmSettings}
           loading={loading}
+          viewMenuHost={viewMenuHost}
           onDeleteBookmark={async (id) => {
             await chrome.bookmarks.remove(id)
             setBookmarks((prev) => prev.filter((b) => b.id !== id))
@@ -505,13 +507,18 @@ export function App() {
           className="relative w-2 shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/35 after:transition-colors hover:after:bg-border/70"
         />
 
-        <div className="min-w-0 flex flex-1 flex-col px-6">
-          <div className="shrink-0 pb-3">
+        <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden px-6">
+          <div className="shrink-0">
             <ViewBar activeView={activeView} onChange={handleViewChange} />
+          </div>
+
+          <div className="shrink-0 pb-3">
             {VIEW_HINTS[activeView] && (
               <p className="mt-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
             )}
+            <div ref={setViewMenuHost} />
           </div>
+
           <div className="min-h-0 flex-1 overflow-auto pb-4">
             {renderActiveView()}
           </div>

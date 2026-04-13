@@ -10,6 +10,7 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
@@ -37,6 +38,8 @@ interface DataTableProps<TData, TValue> {
   initialSorting?: SortingState
   /** Rows per page, default 100 */
   initialPageSize?: number
+  /** Optional host element to render search/pagination controls outside table content */
+  menuHost?: HTMLElement | null
 }
 
 export function DataTable<TData, TValue>({
@@ -50,6 +53,7 @@ export function DataTable<TData, TValue>({
   toolbar,
   initialSorting = [],
   initialPageSize = 100,
+  menuHost = null,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting)
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -77,47 +81,51 @@ export function DataTable<TData, TValue>({
   const pageStart = filteredCount === 0 ? 0 : pageIndex * pageSize + 1
   const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredCount)
 
-  return (
-    <div className="space-y-3 pr-2">
-      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background/95 py-2 backdrop-blur-sm">
-        {(searchKey || onSearchChange) && (
-          <Input
-            placeholder={searchPlaceholder}
-            value={searchValue ?? (searchKey ? (table.getColumn(searchKey)?.getFilterValue() as string) : '') ?? ''}
-            onChange={(e) => {
-              const value = e.target.value
-              if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
-              onSearchChange?.(value)
-            }}
-            className="max-w-xs"
-          />
-        )}
-        {toolbar}
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Prev
-          </button>
-          <span className="text-xs text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
-          </span>
-          <button
-            type="button"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Next
-          </button>
-          <span className="text-xs text-muted-foreground">
-            {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
-          </span>
-        </div>
+  const controls = (
+    <div className="flex items-center gap-2 py-2">
+      {(searchKey || onSearchChange) && (
+        <Input
+          placeholder={searchPlaceholder}
+          value={searchValue ?? (searchKey ? (table.getColumn(searchKey)?.getFilterValue() as string) : '') ?? ''}
+          onChange={(e) => {
+            const value = e.target.value
+            if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
+            onSearchChange?.(value)
+          }}
+          className="max-w-xs"
+        />
+      )}
+      {toolbar}
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Prev
+        </button>
+        <span className="text-xs text-muted-foreground">
+          Page {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
+        </span>
+        <button
+          type="button"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+        <span className="text-xs text-muted-foreground">
+          {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
+        </span>
       </div>
+    </div>
+  )
+
+  return (
+    <div className="pr-2">
+      {menuHost ? createPortal(controls, menuHost) : controls}
 
       <div className="rounded-md border border-border">
         <Table>
@@ -173,7 +181,6 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-
     </div>
   )
 }

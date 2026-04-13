@@ -196,9 +196,10 @@ interface TabsTableProps {
   loading?: boolean
   onClose: (id: number) => void
   onActivate: (id: number) => void
+  menuHost?: HTMLElement | null
 }
 
-export function TabsTable({ data, settings, loading, onClose, onActivate }: TabsTableProps) {
+export function TabsTable({ data, settings, loading, onClose, onActivate, menuHost }: TabsTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const { results, state, error, search, clear } = useSemanticSearch(settings)
@@ -276,6 +277,7 @@ export function TabsTable({ data, settings, loading, onClose, onActivate }: Tabs
       loading={loading}
       toolbar={toolbar}
       initialSorting={initialSorting}
+      menuHost={menuHost}
     />
   )
 }
