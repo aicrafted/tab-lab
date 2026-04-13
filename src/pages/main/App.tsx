@@ -400,9 +400,6 @@ export function App() {
             onReembed: handleReembedAll,
           }}
         />
-        <div className="mt-3">
-          <ViewBar activeView={activeView} onChange={handleViewChange} />
-        </div>
         <LlmSettingsPanel
           open={showSettings}
           settings={llmSettings}
@@ -436,6 +433,9 @@ export function App() {
         />
 
         <div className="min-w-0 flex-1 overflow-auto px-6 py-4">
+          <div className="mb-3">
+            <ViewBar activeView={activeView} onChange={handleViewChange} />
+          </div>
           {VIEW_HINTS[activeView] && (
             <p className="mb-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
           )}
