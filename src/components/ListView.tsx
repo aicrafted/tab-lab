@@ -1,5 +1,4 @@
-import { BookmarksTable } from '@/components/BookmarksTable'
-import { TabsTable } from '@/components/TabsTable'
+import { CombinedListTable } from '@/components/CombinedListTable'
 import type { SourceFilter } from '@/components/views/types'
 import type { BookmarkItem, LlmSettings, TabItem } from '@/lib/types'
 
@@ -28,48 +27,18 @@ export function ListView({
   onActivateTab,
   viewMenuHost,
 }: ListViewProps) {
-  if (sourceFilter === 'bookmarks') {
-    return (
-      <BookmarksTable
-        data={bookmarks}
-        settings={settings}
-        loading={loading}
-        onDelete={(id) => void onDeleteBookmark(id)}
-        onExport={onExport}
-        menuHost={viewMenuHost}
-      />
-    )
-  }
-
-  if (sourceFilter === 'tabs') {
-    return (
-      <TabsTable
-        data={tabs}
-        settings={settings}
-        loading={loading}
-        onClose={(id) => void onCloseTab(id)}
-        onActivate={(id) => void onActivateTab(id)}
-        menuHost={viewMenuHost}
-      />
-    )
-  }
-
   return (
-    <div className="space-y-5">
-      <TabsTable
-        data={tabs}
-        settings={settings}
-        loading={loading}
-        onClose={(id) => void onCloseTab(id)}
-        onActivate={(id) => void onActivateTab(id)}
-      />
-      <BookmarksTable
-        data={bookmarks}
-        settings={settings}
-        loading={loading}
-        onDelete={(id) => void onDeleteBookmark(id)}
-        onExport={onExport}
-      />
-    </div>
+    <CombinedListTable
+      bookmarks={bookmarks}
+      tabs={tabs}
+      sourceFilterLabel={sourceFilter}
+      settings={settings}
+      loading={loading}
+      onDeleteBookmark={(id) => void onDeleteBookmark(id)}
+      onCloseTab={(id) => void onCloseTab(id)}
+      onActivateTab={(id) => void onActivateTab(id)}
+      onExport={onExport}
+      menuHost={viewMenuHost}
+    />
   )
 }
