@@ -1,6 +1,7 @@
 import { getAllBookmarks } from './bookmarks'
 import { loadCachedCategories, loadCachedIntents, loadCachedTags } from './classifier'
 import { crossLink } from './crosslink'
+import { detectStaticIntent } from './static-intent'
 import type { BookmarkItem, TabItem } from './types'
 import { getAllTabs } from './tabs'
 
@@ -21,7 +22,17 @@ export async function loadHydratedData(): Promise<HydratedData> {
     getAllBookmarks(),
     getAllTabs(),
   ])
-  const linked = crossLink(rawBookmarks, rawTabs)
+  const linkedRaw = crossLink(rawBookmarks, rawTabs)
+  const linked: LinkedData = {
+    bookmarks: linkedRaw.bookmarks.map((bookmark) => ({
+      ...bookmark,
+      staticIntent: detectStaticIntent(bookmark.url),
+    })),
+    tabs: linkedRaw.tabs.map((tab) => ({
+      ...tab,
+      staticIntent: detectStaticIntent(tab.url),
+    })),
+  }
 
   const [tabCache, bmCache] = await Promise.all([
     loadCachedCategories(linked.tabs, 'tab'),

@@ -16,6 +16,7 @@ export interface BookmarkItem {
   category?: string
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
+  staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
   clusterId?: number
   processedAt?: number
 }
@@ -42,6 +43,7 @@ export interface TabItem {
   category?: string
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
+  staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
   clusterId?: number
   processedAt?: number
 }
@@ -55,6 +57,12 @@ export type PageIntent =
   | 'video'          // YouTube, Vimeo, Loom — primarily video
   | 'social'         // Reddit, HN, Twitter — conversational
   | 'repository'     // GitHub/GitLab repo, npm package — code asset
+  | 'document'       // static file docs: pdf/doc/xls/csv/txt/md/...
+  | 'image'          // static image files
+  | 'audio'          // static audio files
+  | 'archive'        // archives and disk images
+  | 'data'           // structured data and database files
+  | 'code'           // source/config files
   | 'other'          // catch-all
 
 export interface CacheEntry {

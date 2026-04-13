@@ -3,7 +3,7 @@
   "name": "TabLab",
   "version": "0.1.0",
   "description": "Analytics lab for bookmark hoarders — local AI classification, semantic search, and visual exploration.",
-  "permissions": ["bookmarks", "tabs", "storage", "history", "tabGroups", "offscreen"],
+  "permissions": ["bookmarks", "tabs", "storage", "history", "tabGroups", "offscreen", "sidePanel"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
@@ -12,12 +12,26 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open TabLab",
+    "default_popup": "popup.html",
+    "default_title": "TabLab",
     "default_icon": {
       "16":  "icons/icon-16.png",
       "32":  "icons/icon-32.png",
       "48":  "icons/icon-48.png",
       "128": "icons/icon-128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/pages/sidepanel/index.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+T" },
+      "description": "Open TabLab"
+    },
+    "open-side-panel": {
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Open Side Panel"
     }
   },
   "icons": {

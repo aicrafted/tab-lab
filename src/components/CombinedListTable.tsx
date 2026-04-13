@@ -5,12 +5,15 @@ import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/DataTable'
 import { Favicon } from '@/components/Favicon'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
+import { effectiveIntent } from '@/lib/static-intent'
 import { cn, formatAge, formatDate } from '@/lib/utils'
 import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
 
 const INTENT_EMOJI: Record<PageIntent, string> = {
   article: '📄', reference: '📚', tool: '🔧', service: '🌐',
-  transactional: '🎫', video: '🎬', social: '💬', repository: '📦', other: '•',
+  transactional: '🎫', video: '🎬', social: '💬', repository: '📦',
+  document: '📑', image: '🖼️', audio: '🎧', archive: '🗜️', data: '🧮', code: '💻',
+  other: '•',
 }
 
 type SourceKind = 'bookmark' | 'tab' | 'both'
@@ -28,6 +31,7 @@ interface CombinedRow {
   folder: string
   category?: string
   intent?: PageIntent
+  staticIntent?: PageIntent
   tags: string[]
   dateAdded?: number
   lastAccessed?: number
@@ -69,6 +73,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         folder: b.folder ?? '',
         category: b.category,
         intent: b.intent,
+        staticIntent: b.staticIntent,
         tags: [...(b.tags ?? [])],
         dateAdded: b.dateAdded,
         lastVisited: b.lastVisited,
@@ -84,6 +89,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
     if (!current.folder && b.folder) current.folder = b.folder
     if (!current.category && b.category) current.category = b.category
     if (!current.intent && b.intent) current.intent = b.intent
+    if (!current.staticIntent && b.staticIntent) current.staticIntent = b.staticIntent
     if (!current.dateAdded || b.dateAdded > current.dateAdded) current.dateAdded = b.dateAdded
     if (!current.lastVisited || (b.lastVisited ?? 0) > current.lastVisited) current.lastVisited = b.lastVisited
     if ((b.visitCount ?? 0) > (current.visitCount ?? 0)) current.visitCount = b.visitCount
@@ -110,6 +116,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         folder: t.bookmarkFolder ?? '',
         category: t.category,
         intent: t.intent,
+        staticIntent: t.staticIntent,
         tags: [...(t.tags ?? [])],
         lastAccessed: t.lastAccessed,
         visitCount: t.visitCount,
@@ -126,6 +133,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
     if (!current.favIconUrl && t.favIconUrl) current.favIconUrl = t.favIconUrl
     if (!current.category && t.category) current.category = t.category
     if (!current.intent && t.intent) current.intent = t.intent
+    if (!current.staticIntent && t.staticIntent) current.staticIntent = t.staticIntent
     if (!current.lastAccessed || t.lastAccessed > current.lastAccessed) current.lastAccessed = t.lastAccessed
     if ((t.visitCount ?? 0) > (current.visitCount ?? 0)) current.visitCount = t.visitCount
     if (t.isDuplicate) current.isDuplicate = true
@@ -261,11 +269,14 @@ export function CombinedListTable({
       id: 'intent',
       header: 'Intent',
       enableSorting: false,
-      cell: ({ row }) => (
-        <span className="text-sm" title={row.original.intent ?? ''}>
-          {row.original.intent ? INTENT_EMOJI[row.original.intent] : <span className="opacity-30">—</span>}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const intent = effectiveIntent(row.original)
+        return (
+          <span className="text-sm" title={intent ?? ''}>
+            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
+          </span>
+        )
+      },
     },
     {
       id: 'status',

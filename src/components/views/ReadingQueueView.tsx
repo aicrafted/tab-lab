@@ -3,6 +3,7 @@ import { AlarmClock, ExternalLink, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { BookmarkItem, PageIntent } from '@/lib/types'
 import type { ViewProps } from '@/components/views/types'
+import { effectiveIntent } from '@/lib/static-intent'
 import {
   getStubIntent,
   getStubReadingTime,
@@ -33,7 +34,7 @@ export function ReadingQueueView({ bookmarks, loading }: ViewProps) {
     return bookmarks
       .filter((bookmark) => !removedSet.has(bookmark.id))
       .map((bookmark) => {
-        const intent = bookmark.intent ?? getStubIntent(bookmark.url, bookmark.title || bookmark.url)
+        const intent = effectiveIntent(bookmark) ?? getStubIntent(bookmark.url, bookmark.title || bookmark.url)
         const readingTime = getStubReadingTime(bookmark.title || bookmark.url)
         const summary = getStubSummary(bookmark.title || bookmark.url)
         return { bookmark, intent, readingTime, summary }

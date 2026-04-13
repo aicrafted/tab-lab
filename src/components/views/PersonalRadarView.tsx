@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
+import { effectiveIntent } from '@/lib/static-intent'
 import type { PageIntent } from '@/lib/types'
 
 const AXES = ['Work', 'Learning', 'Entertainment', 'Tools', 'Reference', 'Social', 'News', 'Other'] as const
@@ -20,12 +21,18 @@ interface RadarItem {
 
 const INTENT_TO_AXIS: Partial<Record<PageIntent, AxisName>> = {
   article: 'Learning',
+  document: 'Learning',
   reference: 'Reference',
   tool: 'Tools',
+  code: 'Work',
+  data: 'Work',
   service: 'Tools',
   social: 'Social',
   video: 'Entertainment',
+  image: 'Entertainment',
+  audio: 'Entertainment',
   transactional: 'Other',
+  archive: 'Other',
   repository: 'Work',
   other: 'Other',
 }
@@ -41,7 +48,7 @@ export function PersonalRadarView({ bookmarks, tabs, loading }: ViewProps) {
         title: bookmark.title || bookmark.url,
         url: bookmark.url,
         domain: bookmark.domain,
-        axis: axisFromItem(bookmark.intent, bookmark.category),
+        axis: axisFromItem(effectiveIntent(bookmark), bookmark.category),
       })),
     [bookmarks],
   )
@@ -57,7 +64,7 @@ export function PersonalRadarView({ bookmarks, tabs, loading }: ViewProps) {
         favIconUrl: tab.favIconUrl,
         tabId: tab.id,
         windowId: tab.windowId,
-        axis: axisFromItem(tab.intent, tab.category),
+        axis: axisFromItem(effectiveIntent(tab), tab.category),
       })),
     [tabs],
   )

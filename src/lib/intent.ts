@@ -1,5 +1,6 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
+import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
@@ -101,7 +102,7 @@ function parseIntentJson(raw: string): PageIntent {
 export type IntentUpdate = { url: string; intent: PageIntent }
 
 export async function classifyIntent(
-  items: { url: string; title: string; domain: string }[],
+  items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
@@ -111,6 +112,8 @@ export async function classifyIntent(
 
   await Promise.all(
     items.map(async (item) => {
+      const staticIntent = item.staticIntent ?? detectStaticIntent(item.url)
+      if (staticIntent) return
       const entry = await getCached(prefix, item.url)
       if (entry?.intent) cached.push({ url: item.url, intent: entry.intent })
       else uncached.push(item)
@@ -165,7 +168,7 @@ export async function classifyIntent(
 }
 
 export async function classifyIntentGeminiNano(
-  items: { url: string; title: string; domain: string }[],
+  items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
   prefix: 'tab' | 'bm',
   onProgress: (updates: IntentUpdate[]) => void,
 ): Promise<void> {
@@ -186,7 +189,7 @@ export async function classifyIntentGeminiNano(
 }
 
 export async function classifyIntentLmStudio(
-  items: { url: string; title: string; domain: string }[],
+  items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,

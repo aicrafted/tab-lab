@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0; width: 180px; font-family: system-ui, -apple-system, sans-serif;
+      background: #111; color: #f0e6d0;
+    }
+    .popup { padding: 6px 0; }
+    button {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      padding: 8px 14px; border: none; background: none; cursor: pointer;
+      font-size: 13px; color: #d4c9b8; text-align: left;
+    }
+    button:hover { background: #1e1e1e; color: #f0e6d0; }
+    .sep { height: 1px; background: #2a2a2a; margin: 4px 8px; }
+  </style>
+</head>
+<body>
+  <div class="popup">
+    <button id="openPanel">🗂  Open Side Panel</button>
+    <div class="sep"></div>
+    <button id="openFull">⛶  Open Full View</button>
+  </div>
+  <script type="module" src="/src/pages/popup/index.ts"></script>
+</body>
+</html>

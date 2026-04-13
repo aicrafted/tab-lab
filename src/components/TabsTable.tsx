@@ -4,13 +4,16 @@ import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
 import { DataTable } from './DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
+import { effectiveIntent } from '@/lib/static-intent'
 import { cn, formatAge } from '@/lib/utils'
 import type { TabItem, PageIntent, LlmSettings } from '@/lib/types'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 const INTENT_EMOJI: Record<PageIntent, string> = {
   article: '📄', reference: '📚', tool: '🔧', service: '🌐',
-  transactional: '🎫', video: '🎬', social: '💬', repository: '📦', other: '•',
+  transactional: '🎫', video: '🎬', social: '💬', repository: '📦',
+  document: '📑', image: '🖼️', audio: '🎧', archive: '🗜️', data: '🧮', code: '💻',
+  other: '•',
 }
 
 const ZOMBIE_DAYS = 7
@@ -81,6 +84,7 @@ function makeColumns(
         const top = group.representative
         const isExpanded = expanded.has(group.url)
         const hasDuplicates = group.tabs.length > 1
+        const intent = effectiveIntent(top)
 
         return (
           <div className="min-w-0 space-y-1">
@@ -109,6 +113,15 @@ function makeColumns(
                 )}
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
               </button>
+            </div>
+            <div className="text-xs text-muted-foreground/65">
+              <span className="inline-flex items-center gap-1.5">
+                <span title={intent ?? ''}>
+                  {intent ? INTENT_EMOJI[intent] : '•'}
+                </span>
+                <span>#{top.windowId}</span>
+                <span>{top.domain}</span>
+              </span>
             </div>
             {hasDuplicates && isExpanded && (
               <div className="ml-7 space-y-1 rounded border border-border/60 bg-card/30 p-2">
@@ -171,13 +184,16 @@ function makeColumns(
     {
       id: 'intent',
       header: 'Intent',
-      accessorFn: (row) => row.representative.intent ?? '',
+      accessorFn: (row) => effectiveIntent(row.representative) ?? '',
       enableSorting: false,
-      cell: ({ row }) => (
-        <span className="text-sm" title={row.original.representative.intent ?? ''}>
-          {row.original.representative.intent ? INTENT_EMOJI[row.original.representative.intent] : <span className="opacity-30">—</span>}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const intent = effectiveIntent(row.original.representative)
+        return (
+          <span className="text-sm" title={intent ?? ''}>
+            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
+          </span>
+        )
+      },
     },
     {
       id: 'status',

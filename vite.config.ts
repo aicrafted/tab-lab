@@ -11,7 +11,12 @@ export default defineConfig({
     react(),
     webExtension({
       manifest: './manifest.json',
-      additionalInputs: ['src/pages/main/index.html', 'offscreen.html'],
+      additionalInputs: [
+        'src/pages/main/index.html',
+        'src/pages/sidepanel/index.html',
+        'offscreen.html',
+        'popup.html',
+      ],
       browser: 'chrome',
     }),
     viteStaticCopy({

@@ -3,6 +3,7 @@ import { ExternalLink, FolderTree, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { BookmarkItem } from '@/lib/types'
 import type { ViewProps } from '@/components/views/types'
+import { effectiveIntent } from '@/lib/static-intent'
 import { formatAge, formatDate } from '@/lib/utils'
 
 const STALE_AFTER_MS = 180 * 86_400_000
@@ -36,7 +37,7 @@ export function TriageView({ bookmarks, tabs, loading }: ViewProps) {
   )
 
   const transactional = useMemo(
-    () => visibleBookmarks.filter((bookmark) => bookmark.intent === 'transactional'),
+    () => visibleBookmarks.filter((bookmark) => effectiveIntent(bookmark) === 'transactional'),
     [visibleBookmarks],
   )
 

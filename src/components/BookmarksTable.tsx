@@ -4,13 +4,16 @@ import { ChevronDown, ChevronRight, ExternalLink, FolderOutput, Trash2 } from 'l
 import { DataTable } from './DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
+import { effectiveIntent } from '@/lib/static-intent'
 import type { BookmarkItem, PageIntent, LlmSettings } from '@/lib/types'
 import { cn, formatDate, formatAge } from '@/lib/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 const INTENT_EMOJI: Record<PageIntent, string> = {
   article: '📄', reference: '📚', tool: '🔧', service: '🌐',
-  transactional: '🎫', video: '🎬', social: '💬', repository: '📦', other: '•',
+  transactional: '🎫', video: '🎬', social: '💬', repository: '📦',
+  document: '📑', image: '🖼️', audio: '🎧', archive: '🗜️', data: '🧮', code: '💻',
+  other: '•',
 }
 
 interface BookmarkGroupRow {
@@ -155,13 +158,16 @@ function makeColumns(
     {
       id: 'intent',
       header: 'Intent',
-      accessorFn: (row) => row.representative.intent ?? '',
+      accessorFn: (row) => effectiveIntent(row.representative) ?? '',
       enableSorting: false,
-      cell: ({ row }) => (
-        <span className="text-sm" title={row.original.representative.intent ?? ''}>
-          {row.original.representative.intent ? INTENT_EMOJI[row.original.representative.intent] : <span className="opacity-30">—</span>}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const intent = effectiveIntent(row.original.representative)
+        return (
+          <span className="text-sm" title={intent ?? ''}>
+            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
+          </span>
+        )
+      },
     },
     {
       id: 'status',

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey, urlToCoords } from '@/components/views/stubs'
+import { effectiveIntent } from '@/lib/static-intent'
 import type { PageIntent } from '@/lib/types'
 
 type ColorMode = 'category' | 'domain' | 'intent'
@@ -59,7 +60,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
         url: bookmark.url,
         domain: bookmark.domain,
         category,
-        intent: bookmark.intent,
+        intent: effectiveIntent(bookmark),
         visitCount: bookmark.visitCount ?? 1,
         x,
         y,
@@ -77,7 +78,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
         url: tab.url,
         domain: tab.domain,
         category,
-        intent: tab.intent,
+        intent: effectiveIntent(tab),
         visitCount: tab.visitCount ?? 1,
         x,
         y,

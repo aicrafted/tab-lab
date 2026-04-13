@@ -8,6 +8,7 @@ import {
   getStubSummary,
   getThumbnailPlaceholder,
 } from '@/components/views/stubs'
+import { effectiveIntent } from '@/lib/static-intent'
 import type { PageIntent } from '@/lib/types'
 
 interface MagazineCardItem {
@@ -44,7 +45,7 @@ export function MagazineView({ bookmarks, loading }: ViewProps) {
       summary: getStubSummary(bookmark.title || bookmark.url),
       readingTime: getStubReadingTime(bookmark.title || bookmark.url),
       featured: false,
-      intent: bookmark.intent,
+      intent: effectiveIntent(bookmark),
       tags: bookmark.tags ?? [],
     }))
 
