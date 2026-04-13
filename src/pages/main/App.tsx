@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
-import { StatusBar } from '@/components/StatusBar'
 import { LlmSettingsPanel } from '@/components/LlmSettings'
 import { FacetSidebar } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   exportToChromeFolders,
   getBookmarkFolderDescendantIds,
@@ -27,6 +28,8 @@ import type { PipelineTaskProgress } from '@/hooks/useAiPipelines'
 import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
+import { formatAge } from '@/lib/utils'
+import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -165,6 +168,17 @@ export function App() {
       })
     },
   })
+
+  const aiActionItems: AiActionItem[] = [
+    { key: 'classify', label: 'Classify', icon: Wand2, title: 'Run category classification (pass 1)', onClick: handleClassify },
+    { key: 'tags', label: 'Tags', icon: Hash, title: 'Generate tags for all items', onClick: handleRunTags },
+    { key: 'intent', label: 'Intent', icon: Tag, title: 'Classify pages by intent', onClick: handleRunIntent },
+    { key: 'merge', label: 'Merge', icon: GitMerge, title: 'Merge similar category labels', onClick: handlePass2 },
+    { key: 'split', label: 'Split', icon: Split, title: 'Split large categories', onClick: handlePass3 },
+    { key: 'embeddings', label: 'Embeddings', icon: Brain, title: 'Run embeddings + 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
+    { key: 'reembed', label: 'Re-embed', icon: Brain, title: 'Clear embedding cache and re-embed all pages', onClick: handleReembedAll },
+    { key: 'clear', label: 'Clear', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
+  ]
 
   const footerTaskStatus = useMemo(() => {
     const running = Object.values(activeTasks)
@@ -385,31 +399,74 @@ export function App() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <div className="shrink-0 px-6 py-4">
-        <header className="mb-3 flex items-center gap-3">
-          <img src="/icons/aicrafted.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
-          <h1 className="text-xl font-bold tracking-tight text-foreground">TabLab</h1>
-          <span className="text-sm text-muted-foreground">Lab for bookmark hoarders</span>
-        </header>
+        <header className="flex items-center justify-between gap-4 pb-3">
+          <div className="flex items-center gap-3">
+            <img src="/icons/aicrafted.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
+            <h1 className="text-xl font-bold tracking-tight text-foreground">TabLab</h1>
+            <span className="text-sm text-muted-foreground">Lab for bookmark hoarders</span>
+          </div>
 
-        <StatusBar
-          bookmarkCount={bookmarks.length}
-          tabCount={tabs.length}
-          loading={loading}
-          lastUpdated={lastUpdated}
-          onReload={reload}
-          llmStatus={llmStatus}
-          onSettingsClick={() => setShowSettings(s => !s)}
-          ai={{
-            onClearCache: handleClearCache,
-            onClassify: handleClassify,
-            onRunTags: handleRunTags,
-            onMergeCategories: handlePass2,
-            onSplitLarge: handlePass3,
-            onRunIntent: handleRunIntent,
-            onRunEmbeddings: () => runEmbeddingPass(tabs, bookmarks, llmSettings),
-            onReembed: handleReembedAll,
-          }}
-        />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {loading && (
+              <span className="flex items-center gap-1.5 text-accent">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                Loading…
+              </span>
+            )}
+            {!loading && lastUpdated && (
+              <span>Updated {formatAge(lastUpdated)}</span>
+            )}
+            <span className="text-border">·</span>
+            <DropdownMenu trigger="AI Actions" align="right">
+              <>
+                {aiActionItems.map((item) => (
+                  <DropdownMenuItem
+                    key={item.key}
+                    onClick={item.onClick}
+                    title={item.title}
+                    className={
+                      item.danger
+                        ? 'text-muted-foreground/70 hover:bg-card hover:text-destructive'
+                        : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                    }
+                  >
+                    <item.icon className="h-3.5 w-3.5" />
+                    <span>{item.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            </DropdownMenu>
+            <span className="text-border">·</span>
+            <span>
+              {llmStatus === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
+              {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
+              {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
+              {llmStatus === 'ready' && <span className="text-primary">LLM: ready</span>}
+              {llmStatus === 'classifying' && <span className="text-accent">LLM: classifying…</span>}
+              {llmStatus === 'normalizing' && <span className="text-accent">LLM: normalizing…</span>}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings((s) => !s)}
+              className="h-7 w-7"
+              title="LLM Settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={reload}
+              disabled={loading}
+              className="h-7 w-7"
+              title="Reload"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </header>
+        <div className="h-px bg-border/60" />
         <LlmSettingsPanel
           open={showSettings}
           settings={llmSettings}
@@ -487,4 +544,13 @@ function formatProgressPercent(percent: number): string {
   if (!Number.isFinite(percent)) return '0'
   if (Math.abs(percent - Math.round(percent)) < 0.05) return String(Math.round(percent))
   return percent.toFixed(1)
+}
+
+interface AiActionItem {
+  key: string
+  label: string
+  icon: LucideIcon
+  title: string
+  onClick: () => Promise<void>
+  danger?: boolean
 }
