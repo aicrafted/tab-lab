@@ -5,11 +5,13 @@ import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
 import { RelatedBookmarks } from './sections/RelatedBookmarks'
 import { Search } from './sections/Search'
+import { RecentTabs } from './sections/RecentTabs'
 import { parseDomain } from '@/lib/utils'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]
   bookmarks: chrome.bookmarks.BookmarkTreeNode[]
+  tabHistory: { tabId: number; windowId: number; url: string; title: string; favIconUrl?: string; ts: number }[]
 }
 
 type DockSide = 'left' | 'right'
@@ -99,6 +101,13 @@ export function SidePanel() {
           <Search data={data} currentTabId={currentTabData.id} currentWindowId={currentWindowId} />
         )}
         {currentTabData && <CurrentTab tab={currentTabData} />}
+        {data && (
+          <RecentTabs
+            history={data.tabHistory ?? []}
+            currentTabId={activeTabId}
+            currentWindowId={currentWindowId}
+          />
+        )}
         {currentTabData && data && (
           <Duplicates
             currentTab={currentTabData}

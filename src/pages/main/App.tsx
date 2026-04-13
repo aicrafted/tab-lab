@@ -471,7 +471,7 @@ export function App() {
       <div className="shrink-0 px-6 py-4">
         <header className="flex items-center justify-between gap-4 pb-3">
           <div className="flex items-center gap-3">
-            <img src="/icons/aicrafted.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
+            <img src="/icons/icon-48.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
             <h1 className="text-xl font-bold tracking-tight text-foreground">TabLab</h1>
             <span className="text-sm text-muted-foreground">Lab for bookmark hoarders</span>
           </div>
@@ -595,20 +595,30 @@ export function App() {
       </div>
 
       <footer className="shrink-0 border-t border-border/40 px-6 py-2 text-[11px] text-muted-foreground/50 flex items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <img src="/icons/aicrafted.png" alt="" className="h-3 w-3 rounded-sm opacity-60" />
-          <span>© {new Date().getFullYear()} AICrafted</span>
+        <div className="flex min-w-0 items-center gap-1">
+          <img src="/icons/aicrafted.png" alt="" className="h-4 w-4 rounded-sm opacity-60" />
+          <span>{new Date().getFullYear()} AICrafted</span>
           <span>·</span>
           <a
-            href="https://github.com/aicrafted/tab-lab"
+            href="https://github.com/aicrafted/tab-lab/issues"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-muted-foreground transition-colors"
           >
-            github.com/aicrafted/tab-lab
+            Bugreport / feature request
           </a>
+          <span>·</span>
+          <a
+            href="https://github.io/aicrafted/tab-lab/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-muted-foreground transition-colors"
+          >
+            Privacy policy
+          </a>          
         </div>
         <div className="min-w-0 max-w-[50%] truncate text-left text-muted-foreground/70" title={footerTaskStatus}>
+          Active tasks: &nbsp;
           {footerTaskStatus}
         </div>
       </footer>
