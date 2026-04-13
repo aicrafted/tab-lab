@@ -79,8 +79,8 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
   const activeGroup = VIEW_GROUPS.find((group) => group.id === activeGroupId) ?? VIEW_GROUPS[0]
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border bg-card">
-      <div className="flex min-w-max flex-col gap-1.5 p-2">
+    <div className="overflow-x-auto">
+      <div className="flex min-w-max flex-col gap-1.5 pb-2">
         <div className="flex items-center gap-1">
           {VIEW_GROUPS.map((group) => {
             const isActive = group.id === activeGroup.id
@@ -91,7 +91,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 title={group.hint}
                 onClick={() => onChange(group.views[0])}
                 className={cn(
-                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-xs transition-colors',
+                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-sm transition-colors',
                   isActive
                     ? 'border-primary/70 bg-primary/10 text-primary'
                     : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',

@@ -506,7 +506,7 @@ export function App() {
         />
 
         <div className="min-w-0 flex flex-1 flex-col px-6">
-          <div className="shrink-0 py-3">
+          <div className="shrink-0 pb-3">
             <ViewBar activeView={activeView} onChange={handleViewChange} />
             {VIEW_HINTS[activeView] && (
               <p className="mt-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
