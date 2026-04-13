@@ -384,8 +384,6 @@ export function App() {
           onReload={reload}
           llmStatus={llmStatus}
           onSettingsClick={() => setShowSettings(s => !s)}
-          sourceFilter={sourceFilter}
-          onSourceFilterChange={handleSourceFilterChange}
           bookmarkScopeFilter={bookmarkScopeFilter}
           bookmarkFolderOptions={bookmarkFolderOptions}
           onBookmarkScopeChange={handleBookmarkScopeChange}
@@ -413,6 +411,8 @@ export function App() {
 
       <div className="flex min-h-0 flex-1">
         <FacetSidebar
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={handleSourceFilterChange}
           domains={domainsFacet}
           categories={categoriesFacet}
           activeMode={facetMode}

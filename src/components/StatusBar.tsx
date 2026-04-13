@@ -9,8 +9,6 @@ import {
 } from '@/components/ui/select'
 import { formatAge } from '@/lib/utils'
 import type { LlmStatus } from '@/lib/classifier'
-import { SourceFilterToggle } from '@/components/SourceFilter'
-import type { SourceFilter } from '@/components/views/types'
 import type { BookmarkFolderOption } from '@/lib/bookmarks'
 import type { BookmarkScopeFilter } from '@/lib/types'
 
@@ -33,8 +31,6 @@ interface StatusBarProps {
   onReload: () => void
   llmStatus: LlmStatus
   onSettingsClick: () => void
-  sourceFilter: SourceFilter
-  onSourceFilterChange: (value: SourceFilter) => void
   bookmarkScopeFilter: BookmarkScopeFilter
   bookmarkFolderOptions: BookmarkFolderOption[]
   onBookmarkScopeChange: (value: BookmarkScopeFilter) => void
@@ -49,8 +45,6 @@ export function StatusBar({
   onReload,
   llmStatus,
   onSettingsClick,
-  sourceFilter,
-  onSourceFilterChange,
   bookmarkScopeFilter,
   bookmarkFolderOptions,
   onBookmarkScopeChange,
@@ -158,8 +152,6 @@ export function StatusBar({
       )}
 
       <span className="text-border">·</span>
-      <SourceFilterToggle value={sourceFilter} onChange={onSourceFilterChange} />
-      <span className="text-border">·</span>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">Bookmark folder</span>
         <Select
@@ -176,7 +168,6 @@ export function StatusBar({
               ...(folder ? { folderPath: folder.path } : {}),
             })
           }}
-          disabled={sourceFilter === 'tabs'}
         >
           <SelectTrigger className="h-7 w-64 text-xs">
             <span className="truncate" title={selectedFolder?.path ?? 'Root (all bookmarks)'}>

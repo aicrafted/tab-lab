@@ -1,3 +1,5 @@
+import { SourceFilterToggle } from '@/components/SourceFilter'
+import type { SourceFilter } from '@/components/views/types'
 import { cn } from '@/lib/utils'
 
 interface FacetItem {
@@ -6,6 +8,8 @@ interface FacetItem {
 }
 
 interface FacetSidebarProps {
+  sourceFilter: SourceFilter
+  onSourceFilterChange: (value: SourceFilter) => void
   domains: FacetItem[]
   categories: FacetItem[]
   activeMode: 'domains' | 'categories'
@@ -17,6 +21,8 @@ interface FacetSidebarProps {
 }
 
 export function FacetSidebar({
+  sourceFilter,
+  onSourceFilterChange,
   domains,
   categories,
   activeMode,
@@ -34,7 +40,10 @@ export function FacetSidebar({
       className="ml-6 flex h-full flex-col border-r border-border bg-background"
       style={{ width }}
     >
-      {/* Mode tabs */}
+      <div className="shrink-0 border-b border-border px-2 py-2">
+        <SourceFilterToggle value={sourceFilter} onChange={onSourceFilterChange} />
+      </div>
+
       <div className="flex shrink-0 border-b border-border">
         {(['domains', 'categories'] as const).map(mode => (
           <button
@@ -53,7 +62,6 @@ export function FacetSidebar({
         ))}
       </div>
 
-      {/* Facet list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showEmpty ? (
           <p className="p-4 text-xs text-muted-foreground">No categories yet</p>
@@ -70,7 +78,6 @@ export function FacetSidebar({
         )}
       </div>
 
-      {/* Clear button */}
       {activeValues.length > 0 && (
         <div className="shrink-0 border-t border-border p-2">
           <button
@@ -127,3 +134,4 @@ function FacetRow({
     </button>
   )
 }
+
