@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
-import { Favicon } from '@/components/Favicon'
 import { parseDomain } from '@/lib/utils'
 
 interface SidePanelData {
@@ -77,38 +76,33 @@ export function Search({
     results.sameWindow.length + results.otherWindows.length + results.bookmarks.length > 0
 
   return (
-    <details open className="group rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]">
-      <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-[#888] select-none">
-        Search
-      </summary>
-      <div className="px-2 pb-2">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tabs & bookmarks…"
-          className="w-full rounded border border-[#2a2a2a] bg-[#111] px-2 py-1.5 text-xs text-[#f0e6d0] placeholder:text-[#555] focus:border-[#60863D]/50 focus:outline-none"
-        />
-        {query.trim() && hasResults && (
-          <div className="mt-1 space-y-0.5">
-            {results.sameWindow.map((tab) => (
-              <TabResult key={tab.id} tab={tab} onActivate={activateTab} />
-            ))}
-            {results.otherWindows.length > 0 && (
-              <div className="px-2 py-1 text-[10px] text-[#555]">
-                Opened in other windows
-              </div>
-            )}
-            {results.otherWindows.map((tab) => (
-              <TabResult key={tab.id} tab={tab} onActivate={activateTab} />
-            ))}
-            {results.bookmarks.map((bm) => (
-              <BookmarkResult key={bm.id} bookmark={bm} />
-            ))}
-          </div>
-        )}
-      </div>
-    </details>
+    <div className="px-0 pb-1">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search tabs & bookmarks…"
+        className="w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1.5 text-xs text-[#f0e6d0] placeholder:text-[#555] focus:border-[#60863D]/50 focus:outline-none"
+      />
+      {query.trim() && hasResults && (
+        <div className="mt-1 space-y-0.5">
+          {results.sameWindow.map((tab) => (
+            <TabResult key={tab.id} tab={tab} onActivate={activateTab} />
+          ))}
+          {results.otherWindows.length > 0 && (
+            <div className="px-2 py-1 text-[10px] text-[#555]">
+              Opened in other windows
+            </div>
+          )}
+          {results.otherWindows.map((tab) => (
+            <TabResult key={tab.id} tab={tab} onActivate={activateTab} />
+          ))}
+          {results.bookmarks.map((bm) => (
+            <BookmarkResult key={bm.id} bookmark={bm} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

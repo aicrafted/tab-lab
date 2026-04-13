@@ -2,19 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { ChevronDown, ChevronRight, ExternalLink, FolderOutput, Trash2 } from 'lucide-react'
 import { DataTable } from './DataTable'
+import { IntentIcon } from './IntentIcon'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
 import { effectiveIntent } from '@/lib/static-intent'
-import type { BookmarkItem, PageIntent, LlmSettings } from '@/lib/types'
+import type { BookmarkItem, LlmSettings } from '@/lib/types'
 import { cn, formatDate, formatAge } from '@/lib/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
-
-const INTENT_EMOJI: Record<PageIntent, string> = {
-  article: '📄', reference: '📚', tool: '🔧', service: '🌐',
-  transactional: '🎫', video: '🎬', social: '💬', repository: '📦',
-  document: '📑', image: '🖼️', audio: '🎧', archive: '🗜️', data: '🧮', code: '💻',
-  other: '•',
-}
 
 interface BookmarkGroupRow {
   key: string
@@ -164,7 +158,7 @@ function makeColumns(
         const intent = effectiveIntent(row.original.representative)
         return (
           <span className="text-sm" title={intent ?? ''}>
-            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
+            {intent ? <IntentIcon intent={intent} /> : <span className="opacity-30">—</span>}
           </span>
         )
       },

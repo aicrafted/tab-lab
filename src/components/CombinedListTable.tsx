@@ -4,17 +4,11 @@ import { ExternalLink, FolderOutput, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/DataTable'
 import { Favicon } from '@/components/Favicon'
+import { IntentIcon } from '@/components/IntentIcon'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 import { effectiveIntent } from '@/lib/static-intent'
 import { cn, formatAge, formatDate } from '@/lib/utils'
 import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
-
-const INTENT_EMOJI: Record<PageIntent, string> = {
-  article: '📄', reference: '📚', tool: '🔧', service: '🌐',
-  transactional: '🎫', video: '🎬', social: '💬', repository: '📦',
-  document: '📑', image: '🖼️', audio: '🎧', archive: '🗜️', data: '🧮', code: '💻',
-  other: '•',
-}
 
 type SourceKind = 'bookmark' | 'tab' | 'both'
 
@@ -273,7 +267,7 @@ export function CombinedListTable({
         const intent = effectiveIntent(row.original)
         return (
           <span className="text-sm" title={intent ?? ''}>
-            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
+            {intent ? <IntentIcon intent={intent} /> : <span className="opacity-30">—</span>}
           </span>
         )
       },

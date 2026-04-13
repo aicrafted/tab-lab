@@ -1,4 +1,5 @@
 import { SourceFilterToggle } from '@/components/SourceFilter'
+import { IntentIcon } from '@/components/IntentIcon'
 import {
   Select,
   SelectContent,
@@ -29,9 +30,10 @@ interface FacetSidebarProps {
   domains: FacetItem[]
   categories: FacetItem[]
   intents: FacetItem[]
-  activeMode: 'domains' | 'categories' | 'intent'
+  platforms: FacetItem[]
+  activeMode: 'domains' | 'categories' | 'intent' | 'platform'
   activeValues: string[]
-  onModeChange: (mode: 'domains' | 'categories' | 'intent') => void
+  onModeChange: (mode: 'domains' | 'categories' | 'intent' | 'platform') => void
   onToggle: (value: string) => void
   onClear: () => void
   width: number
@@ -48,6 +50,7 @@ export function FacetSidebar({
   domains,
   categories,
   intents,
+  platforms,
   activeMode,
   activeValues,
   onModeChange,
@@ -59,12 +62,16 @@ export function FacetSidebar({
     ? domains
     : activeMode === 'categories'
       ? categories
-      : intents
+      : activeMode === 'intent'
+        ? intents
+        : platforms
   const showEmpty = activeMode === 'categories'
     ? categories.length === 0
     : activeMode === 'intent'
       ? intents.length === 0
-      : false
+      : activeMode === 'platform'
+        ? platforms.length === 0
+        : false
   const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
   const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
@@ -133,7 +140,7 @@ export function FacetSidebar({
       </div>
 
       <div className="flex shrink-0 border-b border-border">
-        {(['domains', 'categories', 'intent'] as const).map(mode => (
+        {(['domains', 'categories', 'intent', 'platform'] as const).map(mode => (
           <button
             key={mode}
             type="button"
@@ -145,7 +152,13 @@ export function FacetSidebar({
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            {mode === 'domains' ? 'Domains' : mode === 'categories' ? 'Categories' : 'Intent'}
+            {mode === 'domains'
+              ? 'Domains'
+              : mode === 'categories'
+                ? 'Categories'
+                : mode === 'intent'
+                  ? 'Intent'
+                  : 'Platform'}
           </button>
         ))}
       </div>
@@ -153,7 +166,11 @@ export function FacetSidebar({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showEmpty ? (
           <p className="p-4 text-xs text-muted-foreground">
-            {activeMode === 'intent' ? 'No intents yet' : 'No categories yet'}
+            {activeMode === 'intent'
+              ? 'No intents yet'
+              : activeMode === 'platform'
+                ? 'No platforms yet'
+                : 'No categories yet'}
           </p>
         ) : (
           items.map(item => (
@@ -161,6 +178,7 @@ export function FacetSidebar({
               key={item.value}
               value={item.value}
               count={item.count}
+              showIntentIcon={activeMode === 'intent'}
               active={activeValues.includes(item.value)}
               onClick={() => onToggle(item.value)}
             />
@@ -235,11 +253,13 @@ function trimSystemRoot(parts: string[]): string[] {
 function FacetRow({
   value,
   count,
+  showIntentIcon,
   active,
   onClick,
 }: {
   value: string
   count: number
+  showIntentIcon: boolean
   active: boolean
   onClick: () => void
 }) {
@@ -260,12 +280,13 @@ function FacetRow({
       />
       <span
         className={cn(
-          'flex-1 truncate',
+          'flex min-w-0 flex-1 items-center gap-1.5 truncate',
           active ? 'text-primary' : 'text-muted-foreground',
         )}
         title={value}
       >
-        {value}
+        {showIntentIcon && <IntentIcon intent={value} className={active ? 'text-primary/80' : undefined} />}
+        <span className="truncate">{value}</span>
       </span>
       <span className="shrink-0 tabular-nums text-muted-foreground/60">
         {count}

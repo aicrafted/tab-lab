@@ -17,6 +17,7 @@ export interface BookmarkItem {
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
   staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
+  platform?: KnownPlatform // detected from domain, static
   clusterId?: number
   processedAt?: number
 }
@@ -44,6 +45,7 @@ export interface TabItem {
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
   staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
+  platform?: KnownPlatform // detected from domain, static
   clusterId?: number
   processedAt?: number
 }
@@ -64,6 +66,18 @@ export type PageIntent =
   | 'data'           // structured data and database files
   | 'code'           // source/config files
   | 'other'          // catch-all
+
+export type KnownPlatform =
+  | 'social'
+  | 'video'
+  | 'code'
+  | 'registry'
+  | 'qa'
+  | 'blog'
+  | 'docs'
+  | 'shopping'
+  | 'news'
+  | 'ai'
 
 export interface CacheEntry {
   category: string

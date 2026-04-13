@@ -5,8 +5,8 @@ import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
-const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title and domain you receive, reply with ONE short category label (2-4 words, Title Case). Choose from common topics like: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. If unsure, use "Other". Reply with the category label only — no explanation, no punctuation.`
-const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title and domain, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case). Choose from: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. Use "Other" if unsure.
+const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case). Choose from common topics like: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. If unsure, use "Other". Reply with the category label only — no explanation, no punctuation.`
+const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case). Choose from: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. Use "Other" if unsure.
 
 Example output: {"category": "Development"}`
 
@@ -22,7 +22,7 @@ function parseCategoryJson(raw: string): string {
   return raw.trim().slice(0, 40) || 'Other'
 }
 
-export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing'
+export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing' | 'error'
 export const SPLIT_THRESHOLD = 15
 const CATEGORY_CANDIDATES = [
   'Development',
@@ -43,6 +43,28 @@ const CATEGORY_CANDIDATES = [
   'Other',
 ] as const
 
+// Rich descriptors for NLI: keywords that actually appear on pages of this type,
+// not a generic label suffix. all-MiniLM-L6-v2 works by semantic proximity,
+// so descriptors should sound like the content of pages in that category.
+const CATEGORY_DESCRIPTORS: Record<string, string> = {
+  'Development':    'code programming software engineering GitHub Stack Overflow npm package library framework debugging API backend frontend',
+  'Design':         'UI UX design Figma prototype wireframe typography color layout visual interface creative',
+  'AI & ML':        'machine learning neural network LLM artificial intelligence deep learning model training dataset transformer',
+  'Science':        'research paper study scientific biology chemistry physics mathematics experiment journal Nature arXiv',
+  'News':           'breaking news article latest update report journalist headline politics world current events',
+  'Finance':        'stock market investment trading portfolio cryptocurrency banking budget personal finance economy',
+  'Shopping':       'buy product price review store checkout cart deal discount Amazon eBay ecommerce',
+  'Social Media':   'feed post profile follow like comment tweet Reddit Twitter Instagram social network',
+  'Entertainment':  'game movie music entertainment fun streaming podcast Spotify Netflix gaming',
+  'Productivity':   'task todo calendar note email meeting schedule workflow Notion Obsidian Jira project management',
+  'Documentation':  'documentation manual guide API reference specification changelog README readthedocs',
+  'Video':          'YouTube video watch streaming episode series channel Vimeo Twitch stream',
+  'Research':       'academic paper abstract methodology findings survey analysis literature review citation',
+  'Education':      'course lesson tutorial learning education Coursera Khan Academy university online class',
+  'Health':         'health medical symptom treatment fitness diet wellness nutrition exercise doctor',
+  'Other':          'miscellaneous general page',
+}
+
 let categoryLabelEmbeddingsPromise: Promise<Map<string, number[]>> | null = null
 
 async function getCategoryLabelEmbeddings(model: string): Promise<Map<string, number[]>> {
@@ -54,7 +76,7 @@ async function getCategoryLabelEmbeddings(model: string): Promise<Map<string, nu
 
   const map = new Map<string, number[]>()
   for (const label of CATEGORY_CANDIDATES) {
-    const descriptor = `${label}. Browser page category.`
+    const descriptor = CATEGORY_DESCRIPTORS[label] ?? label
     map.set(label, await webgpuEmbed(descriptor, model))
   }
   if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
@@ -63,8 +85,18 @@ async function getCategoryLabelEmbeddings(model: string): Promise<Map<string, nu
   return map
 }
 
+function urlPathSnippet(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/$/, '')
+    return path.slice(0, 80)
+  } catch {
+    return ''
+  }
+}
+
 async function classifyItemNLI(item: ClassifiedItem, model: string): Promise<string> {
-  const text = `${item.title}\n${item.domain}`
+  const path = urlPathSnippet(item.url)
+  const text = [item.title, item.domain, path].filter(Boolean).join(' ')
   const queryEmbedding = await webgpuEmbed(text, model)
   const labelEmbeddings = await getCategoryLabelEmbeddings(model)
   let bestLabel = 'Other'
@@ -152,26 +184,28 @@ export async function classifyItems(
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
     const batch = uncached.slice(i, i + BATCH)
-    const results = await Promise.all(
-      batch.map(async (item) => {
+    const results: { url: string; category: string }[] = []
+
+    for (const item of batch) {
+      try {
         let category = 'Other'
         if (useNli) {
           category = await classifyItemNLI(item, nliModel)
         } else {
-          const raw = await chatComplete(
-            systemPrompt,
-            `Title: ${item.title}\nDomain: ${item.domain}`,
-            settings,
-            40,
-            options,
-          )
+          const path = urlPathSnippet(item.url)
+          const userMsg = path
+            ? `Title: ${item.title}\nDomain: ${item.domain}\nPath: ${path}`
+            : `Title: ${item.title}\nDomain: ${item.domain}`
+          const raw = await chatComplete(systemPrompt, userMsg, settings, 40, options)
           category = isWebLLM ? parseCategoryJson(raw) : (raw.trim().slice(0, 40) || 'Other')
         }
         await setCached(prefix, item.url, { category, processedAt: Date.now() })
-        return { url: item.url, category }
-      }),
-    )
-    onProgress(results)
+        results.push({ url: item.url, category })
+      } catch (err) {
+        console.warn(`[classifier] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    if (results.length > 0) onProgress(results)
   }
 }
 
@@ -285,11 +319,15 @@ export async function splitLargeClusters(
     const BATCH = 5
     for (let i = 0; i < members.length; i += BATCH) {
       const batch = members.slice(i, i + BATCH)
-      const updates = await Promise.all(
-        batch.map(async (item) => {
+      const updates: { url: string; category: string }[] = []
+
+      for (const item of batch) {
+        try {
+          const path = urlPathSnippet(item.url)
+          const pathPart = path ? `\nPath: ${path}` : ''
           const userMsg = isWebLLM
-            ? `Title: ${item.title}\nDomain: ${item.domain}\nParent: ${parentCategory}\nAssign a more specific sub-category.`
-            : `Title: ${item.title}\nDomain: ${item.domain}\nCurrent category: ${parentCategory}\nAssign a more specific sub-category (2-4 words, Title Case). Reply with the label only.`
+            ? `Title: ${item.title}\nDomain: ${item.domain}${pathPart}\nParent: ${parentCategory}\nAssign a more specific sub-category.`
+            : `Title: ${item.title}\nDomain: ${item.domain}${pathPart}\nCurrent category: ${parentCategory}\nAssign a more specific sub-category (2-4 words, Title Case). Reply with the label only.`
           const raw = await chatComplete(
             systemPrompt,
             userMsg,
@@ -301,10 +339,12 @@ export async function splitLargeClusters(
             ? (parseCategoryJson(raw) || parentCategory)
             : (raw.trim().slice(0, 40) || parentCategory)
           await setCached(prefix, item.url, { category, processedAt: Date.now() })
-          return { url: item.url, category }
-        }),
-      )
-      onProgress(updates)
+          updates.push({ url: item.url, category })
+        } catch (err) {
+          console.warn(`[split] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      if (updates.length > 0) onProgress(updates)
     }
   }
 }

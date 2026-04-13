@@ -22,6 +22,7 @@ interface StatusBarProps {
   lastUpdated: number | null
   onReload: () => void
   llmStatus: LlmStatus
+  llmError?: string
   onSettingsClick: () => void
   ai?: StatusBarAiActions
 }
@@ -33,6 +34,7 @@ export function StatusBar({
   lastUpdated,
   onReload,
   llmStatus,
+  llmError,
   onSettingsClick,
   ai,
 }: StatusBarProps) {
@@ -149,7 +151,13 @@ export function StatusBar({
         </div>
       )}
 
-      <span className="ml-auto text-xs">
+      <span className="ml-auto flex items-center gap-2 text-xs">
+        {llmStatus === 'error' && (
+          <span className="flex items-center gap-1 text-destructive" title={llmError}>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+            LLM: error
+          </span>
+        )}
         {llmStatus === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
         {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
         {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}

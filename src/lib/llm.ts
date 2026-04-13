@@ -2,6 +2,24 @@ import { webllmChat } from './webllm-provider'
 import type { LlmSettings } from './types'
 
 /**
+ * Sanitize a string for safe transmission to an LLM.
+ * Removes control characters, replacement characters, and strips
+ * characters outside the BMP that might cause encoding issues.
+ */
+export function sanitizeForLlm(text: string): string {
+  return text
+    // Replace replacement characters and other invalid Unicode
+    .replace(/\uFFFD/g, '')
+    // Remove control characters except newline and tab
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    // Remove Unicode control characters
+    .replace(/[\u0080-\u009F]/g, '')
+    // Strip any remaining problematic sequences
+    .replace(/\p{C}/gu, '')
+    .trim()
+}
+
+/**
  * Extract the first JSON object or array from arbitrary text.
  * Handles cases where the model wraps JSON in prose or code blocks.
  */
@@ -32,6 +50,21 @@ export interface ChatOptions {
   disableThinking?: boolean
 }
 
+// Retry helper with exponential backoff for HTTP requests
+async function withHttpRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (attempt === maxRetries - 1) throw err
+      const delay = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
+      console.warn(`[llm] attempt ${attempt + 1} failed, retrying in ${delay}ms…`, err)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  throw new Error('unreachable')
+}
+
 export async function chatComplete(
   systemPrompt: string,
   userMessage: string,
@@ -39,19 +72,20 @@ export async function chatComplete(
   maxTokens = 40,
   options: ChatOptions = {},
 ): Promise<string> {
+  const cleanMessage = sanitizeForLlm(userMessage)
   const provider = settings.tasks.chat.provider
   switch (provider) {
     case 'gemini-nano': {
       if (!window.ai?.languageModel) throw new Error('Gemini Nano unavailable')
       const session = await window.ai.languageModel.create({ systemPrompt })
       try {
-        return (await session.prompt(userMessage)).trim()
+        return (await session.prompt(cleanMessage)).trim()
       } finally {
         session.destroy()
       }
     }
     case 'webllm':
-      return webllmChat(systemPrompt, userMessage, settings.tasks.chat.model, maxTokens, options)
+      return webllmChat(systemPrompt, cleanMessage, settings.tasks.chat.model, maxTokens, options)
     case 'openrouter':
     case 'lmstudio':
     default: {
@@ -63,28 +97,33 @@ export async function chatComplete(
         : settings.providers.lmstudio.apiKey
       const model = settings.tasks.chat.model
 
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage },
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.1,
-          ...(options.responseFormat === 'json'
-            ? { response_format: { type: 'json_object' } }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(15_000),
+      const body = JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: sanitizeForLlm(userMessage) },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.1,
+        ...(options.responseFormat === 'json'
+          ? { response_format: { type: 'json_object' } }
+          : {}),
       })
-      if (!res.ok) throw new Error(`LM Studio: ${res.status}`)
+
+      const res = await withHttpRetry(async () => {
+        const r = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
+          },
+          body,
+          signal: AbortSignal.timeout(30_000),
+        })
+        if (!r.ok) throw new Error(`LM Studio: ${r.status}`)
+        return r
+      })
       const json = (await res.json()) as { choices: { message: { content: string } }[] }
       return json.choices[0]?.message.content?.trim() ?? ''
     }

@@ -122,6 +122,7 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [llmStatus, setLlmStatus] = useState<LlmStatus>('checking')
+  const [llmError, setLlmError] = useState<string | undefined>(undefined)
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -130,7 +131,7 @@ export function App() {
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
-  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent'>('domains')
+  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent' | 'platform'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
@@ -211,6 +212,7 @@ export function App() {
     setBookmarks,
     setTabs,
     setLlmStatus,
+    setLlmError,
     setProjectedPoints,
     reload,
     onTaskProgress: (update) => {
@@ -251,6 +253,7 @@ export function App() {
   useEffect(() => {
     if (llmStatus === 'ready' || llmStatus === 'unavailable') {
       setActiveTasks({})
+      setLlmError(undefined)
     }
   }, [llmStatus])
 
@@ -421,6 +424,17 @@ export function App() {
     return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
+  const platformFacet = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of sourceScopedTabs) {
+      if (t.platform) counts.set(t.platform, (counts.get(t.platform) ?? 0) + 1)
+    }
+    for (const b of sourceScopedBookmarks) {
+      if (b.platform) counts.set(b.platform, (counts.get(b.platform) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
+  }, [sourceScopedTabs, sourceScopedBookmarks])
+
   const filteredBookmarks = useMemo(() => {
     if (activeFacets.length === 0) return sourceScopedBookmarks
     if (facetMode === 'domains') {
@@ -428,6 +442,9 @@ export function App() {
     }
     if (facetMode === 'intent') {
       return sourceScopedBookmarks.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
+    }
+    if (facetMode === 'platform') {
+      return sourceScopedBookmarks.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
     return sourceScopedBookmarks.filter((item) => item.category != null && activeFacets.includes(item.category))
   }, [sourceScopedBookmarks, activeFacets, facetMode])
@@ -439,6 +456,9 @@ export function App() {
     }
     if (facetMode === 'intent') {
       return sourceScopedTabs.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
+    }
+    if (facetMode === 'platform') {
+      return sourceScopedTabs.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
     return sourceScopedTabs.filter((item) => item.category != null && activeFacets.includes(item.category))
   }, [sourceScopedTabs, activeFacets, facetMode])
@@ -527,7 +547,13 @@ export function App() {
               </>
             </DropdownMenu>
             <span className="text-border">·</span>
-            <span>
+            <span className="flex items-center gap-1">
+              {llmStatus === 'error' && (
+                <span className="flex items-center gap-1 text-destructive" title={llmError}>
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+                  LLM: error
+                </span>
+              )}
               {llmStatus === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
               {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
               {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
@@ -580,6 +606,7 @@ export function App() {
           domains={domainsFacet}
           categories={categoriesFacet}
           intents={intentFacet}
+          platforms={platformFacet}
           activeMode={facetMode}
           activeValues={activeFacets}
           onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}

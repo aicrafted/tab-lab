@@ -123,6 +123,7 @@ interface UseAiPipelinesArgs {
   setBookmarks: React.Dispatch<React.SetStateAction<BookmarkItem[]>>
   setTabs: React.Dispatch<React.SetStateAction<TabItem[]>>
   setLlmStatus: React.Dispatch<React.SetStateAction<LlmStatus>>
+  setLlmError: (msg: string | undefined) => void
   setProjectedPoints: React.Dispatch<React.SetStateAction<Map<string, [number, number]>>>
   reload: () => void
   onTaskProgress?: (update: PipelineTaskProgress) => void
@@ -135,6 +136,7 @@ export function useAiPipelines({
   setBookmarks,
   setTabs,
   setLlmStatus,
+  setLlmError,
   setProjectedPoints,
   reload,
   onTaskProgress,
@@ -201,34 +203,49 @@ export function useAiPipelines({
     })
 
     if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+      const tabsLog = createTaskLogger('auto-classify-tabs', 'Auto NLI tabs', tb.length, onTaskProgress)
+      const bookmarksLog = createTaskLogger('auto-classify-bookmarks', 'Auto NLI bookmarks', bm.length, onTaskProgress)
       setLlmStatus('classifying')
-      void classifyWithLmStudio(
-        tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        applyTabCategoryBatch,
-      ).then(() =>
-        classifyWithLmStudio(
+      try {
+        await classifyWithLmStudio(
+          tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            tabsLog.progress(updates.length)
+            applyTabCategoryBatch(updates)
+          },
+        )
+        await classifyWithLmStudio(
           bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
-          applyBookmarkCategoryBatch,
-        ).then(() => {
-          setLlmStatus('ready')
-          void classifyIntentLmStudio(
-            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            llmSettings,
-            applyTabIntentBatch,
-          )
-          void classifyIntentLmStudio(
-            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            llmSettings,
-            applyBookmarkIntentBatch,
-          )
-        }),
-      )
+          (updates) => {
+            bookmarksLog.progress(updates.length)
+            applyBookmarkCategoryBatch(updates)
+          },
+        )
+        tabsLog.done()
+        bookmarksLog.done()
+        setLlmStatus('ready')
+        void classifyIntentLmStudio(
+          tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          applyTabIntentBatch,
+        )
+        void classifyIntentLmStudio(
+          bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          llmSettings,
+          applyBookmarkIntentBatch,
+        )
+      } catch (err) {
+        tabsLog.failed(err)
+        bookmarksLog.failed(err)
+        setLlmError(String(err))
+        setLlmStatus('error')
+      }
       return
     }
 
@@ -406,7 +423,8 @@ export function useAiPipelines({
       ).catch((err) => {
         tabsLog.failed(err)
         bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
+        setLlmError(String(err))
+        setLlmStatus('error')
       })
     } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
@@ -450,7 +468,8 @@ export function useAiPipelines({
       ).catch((err) => {
         tabsLog.failed(err)
         bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
+        setLlmError(String(err))
+        setLlmStatus('error')
       })
     } else {
       setLlmStatus('unavailable')
@@ -497,7 +516,8 @@ export function useAiPipelines({
       ).catch((err) => {
         tabsLog.failed(err)
         bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
+        setLlmError(String(err))
+        setLlmStatus('error')
       })
     } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
@@ -541,7 +561,8 @@ export function useAiPipelines({
       ).catch((err) => {
         tabsLog.failed(err)
         bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
+        setLlmError(String(err))
+        setLlmStatus('error')
       })
     } else {
       setLlmStatus('unavailable')
@@ -682,7 +703,8 @@ export function useAiPipelines({
       ).catch((err) => {
         tabsLog.failed(err)
         bookmarksLog.failed(err)
-        setLlmStatus('unavailable')
+        setLlmError(String(err))
+        setLlmStatus('error')
       })
     } else {
       setLlmStatus('unavailable')

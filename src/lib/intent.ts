@@ -1,5 +1,6 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
+import { detectPlatform, intentFromPlatform } from './platform-detection'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
@@ -47,6 +48,26 @@ const VALID_INTENTS: PageIntent[] = [
   'repository',
   'other',
 ]
+// Rich descriptors for NLI intent classification.
+// Keywords matching what page titles/domains of that intent look like.
+const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
+  article:       'blog post tutorial guide news article essay how-to read story opinion',
+  reference:     'documentation API reference docs cheatsheet specification manual MDN readthedocs',
+  tool:          'dashboard editor app generator converter calculator online tool SaaS platform',
+  service:       'pricing signup login register account settings product landing page',
+  transactional: 'order confirmation booking receipt invoice tracking ticket payment',
+  video:         'YouTube watch video stream episode channel playlist Vimeo Twitch',
+  social:        'Reddit thread discussion Hacker News Twitter forum comments community',
+  repository:    'GitHub GitLab repository source code npm package crates.io releases',
+  document:      'PDF document spreadsheet Word Excel presentation file download',
+  image:         'image photo picture PNG JPG SVG gallery wallpaper',
+  audio:         'audio MP3 podcast sound music track recording',
+  archive:       'archive ZIP download release DMG installer package',
+  data:          'JSON XML data export database SQL dataset structured',
+  code:          'source file script configuration YAML TOML CSS JavaScript TypeScript',
+  other:         'miscellaneous page',
+}
+
 let intentLabelEmbeddingsPromise: Promise<Map<PageIntent, number[]>> | null = null
 
 async function getIntentLabelEmbeddings(model: string): Promise<Map<PageIntent, number[]>> {
@@ -58,7 +79,7 @@ async function getIntentLabelEmbeddings(model: string): Promise<Map<PageIntent, 
 
   const map = new Map<PageIntent, number[]>()
   for (const intent of VALID_INTENTS) {
-    map.set(intent, await webgpuEmbed(`Intent label: ${intent}. Browser page usage mode.`, model))
+    map.set(intent, await webgpuEmbed(INTENT_DESCRIPTORS[intent] ?? intent, model))
   }
   if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
     intentLabelEmbeddingsPromise = Promise.resolve(map)
@@ -66,8 +87,18 @@ async function getIntentLabelEmbeddings(model: string): Promise<Map<PageIntent, 
   return map
 }
 
-async function classifyIntentNLI(item: { title: string; domain: string }, model: string): Promise<PageIntent> {
-  const query = await webgpuEmbed(`${item.title}\n${item.domain}`, model)
+function urlPathSnippet(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/$/, '')
+    return path.slice(0, 80)
+  } catch {
+    return ''
+  }
+}
+
+async function classifyIntentNLI(item: { url: string; title: string; domain: string }, model: string): Promise<PageIntent> {
+  const path = urlPathSnippet(item.url)
+  const query = await webgpuEmbed([item.title, item.domain, path].filter(Boolean).join(' '), model)
   const labels = await getIntentLabelEmbeddings(model)
   let bestIntent: PageIntent = 'other'
   let bestScore = -Infinity
@@ -112,7 +143,9 @@ export async function classifyIntent(
 
   await Promise.all(
     items.map(async (item) => {
-      const staticIntent = item.staticIntent ?? detectStaticIntent(item.url)
+      const staticIntent = item.staticIntent
+        ?? detectStaticIntent(item.url)
+        ?? intentFromPlatform(detectPlatform(item.domain))
       if (staticIntent) return
       const entry = await getCached(prefix, item.url)
       if (entry?.intent) cached.push({ url: item.url, intent: entry.intent })
@@ -137,19 +170,19 @@ export async function classifyIntent(
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
     const batch = uncached.slice(i, i + BATCH)
-    const results = await Promise.all(
-      batch.map(async (item) => {
+    const results: IntentUpdate[] = []
+
+    for (const item of batch) {
+      try {
         let intent: PageIntent = 'other'
         if (useNli) {
           intent = await classifyIntentNLI(item, nliModel)
         } else {
-          const raw = await chatComplete(
-            prompt,
-            `Title: ${item.title}\nDomain: ${item.domain}`,
-            settings,
-            15,
-            options,
-          )
+          const path = urlPathSnippet(item.url)
+          const userMsg = path
+            ? `Title: ${item.title}\nDomain: ${item.domain}\nPath: ${path}`
+            : `Title: ${item.title}\nDomain: ${item.domain}`
+          const raw = await chatComplete(prompt, userMsg, settings, 15, options)
           intent = isWebLLM ? parseIntentJson(raw) : parseIntent(raw)
         }
         const existing = await getCached(prefix, item.url)
@@ -160,10 +193,12 @@ export async function classifyIntent(
           embedding: existing?.embedding,
           intent,
         })
-        return { url: item.url, intent }
-      }),
-    )
-    onProgress(results)
+        results.push({ url: item.url, intent })
+      } catch (err) {
+        console.warn(`[intent] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    if (results.length > 0) onProgress(results)
   }
 }
 

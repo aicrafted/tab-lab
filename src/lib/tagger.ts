@@ -3,10 +3,19 @@ import { getCached, setCached } from './storage'
 import type { LlmSettings } from './types'
 import { DEFAULT_LLM_SETTINGS } from './types'
 
-const TAG_SYSTEM_PROMPT = `You are a web page tagger. For each browser tab title and domain, reply with exactly 3-5 lowercase tags separated by commas. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet". Reply with tags only — no explanation, no extra punctuation.`
+const TAG_SYSTEM_PROMPT = `You are a web page tagger. For each browser tab title, domain, and URL path, reply with exactly 3-5 lowercase tags separated by commas. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet". Reply with tags only — no explanation, no extra punctuation.`
 const TAG_SYSTEM_PROMPT_JSON = `You are a web page tagger. Output a JSON object with a "tags" key containing an array of 3-5 lowercase tags. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet".
 
 Example output: {"tags": ["rust", "async", "performance"]}`
+
+function urlPathSnippet(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/$/, '')
+    return path.slice(0, 80)
+  } catch {
+    return ''
+  }
+}
 
 function parseTags(raw: string): string[] {
   return raw
@@ -58,27 +67,33 @@ export async function tagItems(
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
     const batch = uncached.slice(i, i + BATCH)
-    const results = await Promise.all(
-      batch.map(async (item) => {
-        const raw = await chatComplete(
-          systemPrompt,
-          `Title: ${item.title}\nDomain: ${item.domain}`,
-          settings,
-          60,
-          options,
+    const results: { url: string; tags: string[] }[] = []
+
+    for (const item of batch) {
+      try {
+        const path = urlPathSnippet(item.url)
+        const userMsg = path
+          ? `Title: ${item.title}\nDomain: ${item.domain}\nPath: ${path}`
+          : `Title: ${item.title}\nDomain: ${item.domain}`
+        const raw = await chatComplete(systemPrompt, userMsg, settings, 60, options,
         )
         const tags = isWebLLM ? parseTagsJson(raw) : parseTags(raw)
-        const existing = await getCached(prefix, item.url)
-        await setCached(prefix, item.url, {
-          category: existing?.category ?? 'Other',
-          processedAt: Date.now(),
-          tags,
-          intent: existing?.intent,
-        })
-        return { url: item.url, tags }
-      }),
-    )
-    onProgress(results)
+        if (tags.length > 0) {
+          const existing = await getCached(prefix, item.url)
+          await setCached(prefix, item.url, {
+            category: existing?.category ?? 'Other',
+            processedAt: Date.now(),
+            tags,
+            intent: existing?.intent,
+          })
+          results.push({ url: item.url, tags })
+        }
+      } catch (err) {
+        // Skip this item — log but don't abort the batch
+        console.warn(`[tagger] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    if (results.length > 0) onProgress(results)
   }
 }
 
