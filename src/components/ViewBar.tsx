@@ -80,7 +80,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-max flex-col gap-1.5 pb-2">
+      <div className="flex min-w-max flex-col gap-0 pb-2">
         <div className="flex items-center gap-1">
           {VIEW_GROUPS.map((group) => {
             const isActive = group.id === activeGroup.id
@@ -103,7 +103,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
           })}
         </div>
 
-        <div className="rounded-md border border-border/60 bg-background/55 px-2 py-1.5">
+        <div className="bg-primary/5 px-2 py-1.5">
           <div className="flex items-center gap-1">
           {activeGroup.views.map((viewId) => {
             const view = VIEW_BY_ID[viewId]
@@ -116,7 +116,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 className={cn(
                   'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
                   activeView === view.id
-                    ? 'bg-primary/20 text-primary ring-1 ring-primary/35'
+                    ? 'bg-primary/20 text-primary ring-1 ring-primary/45'
                     : 'text-muted-foreground hover:bg-background hover:text-foreground',
                 )}
               >
