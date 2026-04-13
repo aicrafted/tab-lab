@@ -432,7 +432,7 @@ export function App() {
           className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40"
         />
 
-        <div className="min-w-0 flex-1 overflow-auto px-6 py-4">
+        <div className="min-w-0 flex-1 overflow-auto px-6">
           <div className="mb-3">
             <ViewBar activeView={activeView} onChange={handleViewChange} />
           </div>
