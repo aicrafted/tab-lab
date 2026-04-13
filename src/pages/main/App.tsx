@@ -271,20 +271,32 @@ export function App() {
     }
   }
 
-  const sourceScopedBookmarks = useMemo(
+  const bookmarkScopeBookmarks = useMemo(
     () => {
-      if (sourceFilter === 'tabs') return []
       if (bookmarkScopeFilter.mode === 'root') return bookmarks
       if (!bookmarkScopeDescendants) return bookmarks
       return bookmarks.filter((bookmark) => (
         bookmark.folderId ? bookmarkScopeDescendants.has(bookmark.folderId) : false
       ))
     },
-    [bookmarkScopeDescendants, bookmarkScopeFilter.mode, sourceFilter, bookmarks],
+    [bookmarkScopeDescendants, bookmarkScopeFilter.mode, bookmarks],
+  )
+
+  const sourceScopedBookmarks = useMemo(
+    () => (sourceFilter === 'tabs' ? [] : bookmarkScopeBookmarks),
+    [bookmarkScopeBookmarks, sourceFilter],
   )
   const sourceScopedTabs = useMemo(
     () => (sourceFilter === 'bookmarks' ? [] : tabs),
     [sourceFilter, tabs],
+  )
+
+  const sourceCounts = useMemo(
+    () => ({
+      bookmarks: bookmarkScopeBookmarks.length,
+      tabs: tabs.length,
+    }),
+    [bookmarkScopeBookmarks.length, tabs.length],
   )
 
   // --- Facet computation ---
@@ -416,6 +428,7 @@ export function App() {
         <FacetSidebar
           sourceFilter={sourceFilter}
           onSourceFilterChange={handleSourceFilterChange}
+          sourceCounts={sourceCounts}
           domains={domainsFacet}
           categories={categoriesFacet}
           activeMode={facetMode}
@@ -435,14 +448,16 @@ export function App() {
           className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40"
         />
 
-        <div className="min-w-0 flex-1 overflow-auto px-6">
-          <div className="mb-3">
+        <div className="min-w-0 flex flex-1 flex-col px-6">
+          <div className="shrink-0 py-3">
             <ViewBar activeView={activeView} onChange={handleViewChange} />
+            {VIEW_HINTS[activeView] && (
+              <p className="mt-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
+            )}
           </div>
-          {VIEW_HINTS[activeView] && (
-            <p className="mb-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
-          )}
-          {renderActiveView()}
+          <div className="min-h-0 flex-1 overflow-auto pb-4">
+            {renderActiveView()}
+          </div>
         </div>
       </div>
 

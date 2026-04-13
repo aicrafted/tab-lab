@@ -10,6 +10,10 @@ interface FacetItem {
 interface FacetSidebarProps {
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
+  sourceCounts: {
+    bookmarks: number
+    tabs: number
+  }
   domains: FacetItem[]
   categories: FacetItem[]
   activeMode: 'domains' | 'categories'
@@ -23,6 +27,7 @@ interface FacetSidebarProps {
 export function FacetSidebar({
   sourceFilter,
   onSourceFilterChange,
+  sourceCounts,
   domains,
   categories,
   activeMode,
@@ -41,7 +46,11 @@ export function FacetSidebar({
       style={{ width }}
     >
       <div className="shrink-0 border-b border-border px-2 py-2">
-        <SourceFilterToggle value={sourceFilter} onChange={onSourceFilterChange} />
+        <SourceFilterToggle
+          value={sourceFilter}
+          onChange={onSourceFilterChange}
+          counts={sourceCounts}
+        />
       </div>
 
       <div className="flex shrink-0 border-b border-border">
@@ -134,4 +143,3 @@ function FacetRow({
     </button>
   )
 }
-

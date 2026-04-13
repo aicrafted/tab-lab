@@ -78,8 +78,8 @@ export function DataTable<TData, TValue>({
   const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredCount)
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3 pr-2">
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background/95 py-2 backdrop-blur-sm">
         {(searchKey || onSearchChange) && (
           <Input
             placeholder={searchPlaceholder}
@@ -93,9 +93,30 @@ export function DataTable<TData, TValue>({
           />
         )}
         {toolbar}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <span className="text-xs text-muted-foreground">
+            Page {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
+          </span>
+          <button
+            type="button"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Next
+          </button>
+          <span className="text-xs text-muted-foreground">
+            {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
+          </span>
+        </div>
       </div>
 
       <div className="rounded-md border border-border">
@@ -153,28 +174,6 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Prev
-        </button>
-        <span className="text-xs text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} / {Math.max(1, table.getPageCount())}
-        </span>
-        <button
-          type="button"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Next
-        </button>
-      </div>
     </div>
   )
 }
-
