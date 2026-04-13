@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { PanelLeft, X } from 'lucide-react'
 import { CurrentTab } from './sections/CurrentTab'
 import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
@@ -17,8 +17,8 @@ type DockSide = 'left' | 'right'
 export function SidePanel() {
   const [data, setData] = useState<SidePanelData | null>(null)
   const [activeTabId, setActiveTabId] = useState<number | null>(null)
+  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [dockSide, setDockSide] = useState<DockSide>('right')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -28,6 +28,7 @@ export function SidePanel() {
         setData(result)
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
         setActiveTabId(tab?.id ?? null)
+        setCurrentWindowId(tab?.windowId ?? null)
       }
     } catch {
       // ignore
@@ -63,10 +64,6 @@ export function SidePanel() {
       }
     : null
 
-  const toggleDock = () => {
-    setDockSide(prev => prev === 'left' ? 'right' : 'left')
-  }
-
   if (loading && !data) {
     return (
       <div className="flex h-full items-center justify-center bg-[#111] p-4 text-sm text-[#888]">
@@ -79,44 +76,43 @@ export function SidePanel() {
     <div className="flex h-full flex-col overflow-y-auto bg-[#111] text-[#f0e6d0]">
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#2a2a2a] bg-[#111]/95 px-3 py-2 backdrop-blur">
         <h1 className="text-sm font-semibold text-[#f0e6d0]">TabLab Panel</h1>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={toggleDock}
-            className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-[#666] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
-            title="Toggle dock side — drag panel edge to actually move it"
-          >
-            {dockSide === 'left' ? (
-              <>
-                <ChevronLeft className="h-3 w-3" />
-                left
-              </>
-            ) : (
-              <>
-                right
-                <ChevronRight className="h-3 w-3" />
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => window.close()}
-            className="rounded p-1 text-[#888] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
-            title="Close panel"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => window.close()}
+          className="rounded p-1 text-[#888] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
+          title="Close panel"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Move side panel hint */}
+      <div className="flex items-center gap-1.5 border-b border-[#2a2a2a] bg-[#1a1a1a] px-3 py-1.5 text-[10px] text-[#666] leading-snug">
+        <PanelLeft className="h-3 w-3 shrink-0 text-[#555]" />
+        <span>
+          To move to other side: <span className="text-[#888]">⋮ → Settings → Appearance → Side panel</span>
+        </span>
       </div>
 
       <div className="flex-1 space-y-1 p-2">
-        {currentTabData && <Search data={data!} currentTabId={currentTabData.id} />}
+        {currentTabData && data && (
+          <Search data={data} currentTabId={currentTabData.id} currentWindowId={currentWindowId} />
+        )}
         {currentTabData && <CurrentTab tab={currentTabData} />}
         {currentTabData && data && (
-          <Duplicates currentTab={currentTabData} allTabs={data.tabs} onReload={loadData} />
+          <Duplicates
+            currentTab={currentTabData}
+            allTabs={data.tabs}
+            currentWindowId={currentWindowId}
+            onReload={loadData}
+          />
         )}
         {currentTabData && data && (
-          <SimilarTabs currentTab={currentTabData} allTabs={data.tabs} />
+          <SimilarTabs
+            currentTab={currentTabData}
+            allTabs={data.tabs}
+            currentWindowId={currentWindowId}
+          />
         )}
         {currentTabData && bookmarkItems.length > 0 && (
           <RelatedBookmarks currentTab={currentTabData} bookmarks={bookmarkItems} />

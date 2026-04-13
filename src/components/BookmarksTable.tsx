@@ -85,7 +85,7 @@ function makeColumns(
                 href={top.url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex max-w-xs min-w-0 items-center gap-1.5 truncate text-foreground hover:text-primary hover:underline"
+                className="flex w-full min-w-0 items-center gap-1.5 truncate text-foreground hover:text-primary hover:underline"
                 title={top.url}
               >
                 <span className="truncate">{top.title}</span>

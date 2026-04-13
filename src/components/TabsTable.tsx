@@ -102,7 +102,7 @@ function makeColumns(
               <button
                 type="button"
                 onClick={() => onActivate(top.id)}
-                className="flex max-w-xs min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
+                className="flex w-full min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
                 title={top.url}
               >
                 <span className="truncate">{top.title}</span>
@@ -153,25 +153,6 @@ function makeColumns(
       },
     },
     {
-      id: 'domain',
-      accessorFn: (row) => row.representative.domain,
-      header: 'Domain',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">{row.original.representative.domain}</span>
-      ),
-    },
-    {
-      id: 'windowId',
-      accessorFn: (row) => row.representative.windowId,
-      header: 'Window',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          #{row.original.representative.windowId}
-          {row.original.tabs.length > 1 ? ` (+${row.original.tabs.length - 1})` : ''}
-        </span>
-      ),
-    },
-    {
       id: 'category',
       accessorFn: (row) => row.representative.category ?? '',
       header: 'Category',
@@ -180,20 +161,6 @@ function makeColumns(
           {row.original.representative.category ?? <span className="opacity-30">—</span>}
         </span>
       ),
-    },
-    {
-      id: 'intent',
-      header: 'Intent',
-      accessorFn: (row) => effectiveIntent(row.representative) ?? '',
-      enableSorting: false,
-      cell: ({ row }) => {
-        const intent = effectiveIntent(row.original.representative)
-        return (
-          <span className="text-sm" title={intent ?? ''}>
-            {intent ? INTENT_EMOJI[intent] : <span className="opacity-30">—</span>}
-          </span>
-        )
-      },
     },
     {
       id: 'status',

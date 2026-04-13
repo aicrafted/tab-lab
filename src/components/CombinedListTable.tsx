@@ -219,7 +219,7 @@ export function CombinedListTable({
             if (row.original.tabIds.length > 0) onActivateTab(row.original.tabIds[0])
             else void chrome.tabs.create({ url: row.original.url })
           }}
-          className="flex max-w-xs items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
+          className="flex w-full min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
           title={row.original.url}
         >
           <span className="truncate">{row.original.title}</span>

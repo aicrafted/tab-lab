@@ -8,16 +8,19 @@ interface TabInfo {
   title: string
   url: string
   domain: string
+  windowId?: number
   favIconUrl?: string
 }
 
 export function Duplicates({
   currentTab,
   allTabs,
+  currentWindowId,
   onReload,
 }: {
   currentTab: TabInfo
   allTabs: chrome.tabs.Tab[]
+  currentWindowId: number | null
   onReload: () => void
 }) {
   const [closed, setClosed] = useState<Set<number>>(new Set())
@@ -25,32 +28,53 @@ export function Duplicates({
   // Normalize URL: strip hash and sort query params for matching
   const normalizedCurrent = normalizeUrl(currentTab.url)
 
-  const duplicates = allTabs.filter((t) => {
-    if (t.id === currentTab.id || !t.url || closed.has(t.id!)) return false
-    return normalizeUrl(t.url) === normalizedCurrent
-  })
+  const duplicates = allTabs
+    .filter((t) => t.id !== currentTab.id && t.url && !closed.has(t.id!) && normalizeUrl(t.url) === normalizedCurrent)
+    .map((t) => ({
+      id: t.id!,
+      title: t.title || t.url!,
+      url: t.url!,
+      domain: parseDomain(t.url!),
+      windowId: t.windowId,
+      favIconUrl: t.favIconUrl,
+    }))
 
-  if (duplicates.length === 0) return null
+  const sameWindow = duplicates.filter((t) => t.windowId === currentWindowId)
+  const otherWindows = duplicates.filter((t) => t.windowId !== currentWindowId)
+
+  if (sameWindow.length === 0 && otherWindows.length === 0) return null
 
   return (
-    <details open className="group rounded-lg border border-[#2a2a2a] bg-[#1e1e1e]/50">
+    <details open className="group rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-[#888] select-none">
         Duplicates · {duplicates.length}
       </summary>
       <div className="space-y-0.5 px-1 pb-2">
-        {duplicates.map((tab) => {
-          const tabInfo = {
-            id: tab.id!,
-            title: tab.title || tab.url!,
-            url: tab.url!,
-            domain: parseDomain(tab.url!),
-            favIconUrl: tab.favIconUrl,
-          }
-          return <DupRow key={tab.id} tab={tabInfo} onClose={() => {
-            setClosed(prev => new Set(prev).add(tab.id!))
-            void chrome.tabs.remove(tab.id!)
-          }} />
-        })}
+        {sameWindow.map((tab) => (
+          <DupRow
+            key={tab.id}
+            tab={tab}
+            onClose={() => {
+              setClosed(prev => new Set(prev).add(tab.id))
+              void chrome.tabs.remove(tab.id)
+            }}
+          />
+        ))}
+        {otherWindows.length > 0 && (
+          <div className="px-2 py-1 text-[10px] text-[#555]">
+            Opened in other windows
+          </div>
+        )}
+        {otherWindows.map((tab) => (
+          <DupRow
+            key={tab.id}
+            tab={tab}
+            onClose={() => {
+              setClosed(prev => new Set(prev).add(tab.id))
+              void chrome.tabs.remove(tab.id)
+            }}
+          />
+        ))}
       </div>
     </details>
   )
@@ -77,7 +101,6 @@ function normalizeUrl(url: string): string {
   try {
     const u = new URL(url)
     u.hash = ''
-    // Sort query params for consistent comparison
     const params = new URLSearchParams(u.search)
     const sorted = new URLSearchParams([...params.entries()].sort())
     u.search = sorted.toString()

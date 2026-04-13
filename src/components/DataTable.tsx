@@ -128,7 +128,7 @@ export function DataTable<TData, TValue>({
       {menuHost ? createPortal(controls, menuHost) : controls}
 
       <div className="rounded-md border border-border">
-        <Table className="w-max">
+        <Table className="min-w-full">
           <TableHeader>
             {table.getHeaderGroups().map(hg => (
               <TableRow key={hg.id} className="hover:bg-transparent">
@@ -139,6 +139,8 @@ export function DataTable<TData, TValue>({
                     className={cn(
                       header.column.getCanSort() && 'cursor-pointer select-none',
                       header.column.id === 'favicon' && 'w-8 min-w-8 px-2',
+                      header.column.id === 'title' && 'w-full max-w-0',
+                      header.column.id !== 'title' && header.column.id !== 'favicon' && 'whitespace-nowrap',
                     )}
                   >
                     {header.isPlaceholder ? null : (
@@ -170,7 +172,11 @@ export function DataTable<TData, TValue>({
                   {row.getVisibleCells().map(cell => (
                     <TableCell
                       key={cell.id}
-                      className={cn(cell.column.id === 'favicon' && 'w-8 min-w-8 px-2')}
+                      className={cn(
+                        cell.column.id === 'favicon' && 'w-8 min-w-8 px-2',
+                        cell.column.id === 'title' && 'w-full max-w-0',
+                        cell.column.id !== 'title' && cell.column.id !== 'favicon' && 'whitespace-nowrap',
+                      )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
