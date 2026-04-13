@@ -1,5 +1,6 @@
-import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2 } from 'lucide-react'
+import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -56,7 +57,66 @@ export function StatusBar({
   ai,
 }: StatusBarProps) {
   const aiActions = ai ?? {}
-  const hasAi = Object.values(aiActions).some(Boolean)
+  const aiActionItems: AiActionItem[] = [
+    aiActions.onClassify ? {
+      key: 'classify',
+      label: 'Classify',
+      icon: Wand2,
+      title: 'Run category classification (pass 1)',
+      onClick: aiActions.onClassify,
+    } : null,
+    aiActions.onRunTags ? {
+      key: 'tags',
+      label: 'Tags',
+      icon: Hash,
+      title: 'Generate tags for all items',
+      onClick: aiActions.onRunTags,
+    } : null,
+    aiActions.onRunIntent ? {
+      key: 'intent',
+      label: 'Intent',
+      icon: Tag,
+      title: 'Classify pages by intent',
+      onClick: aiActions.onRunIntent,
+    } : null,
+    aiActions.onMergeCategories ? {
+      key: 'merge',
+      label: 'Merge',
+      icon: GitMerge,
+      title: 'Merge similar category labels',
+      onClick: aiActions.onMergeCategories,
+    } : null,
+    aiActions.onSplitLarge ? {
+      key: 'split',
+      label: 'Split',
+      icon: Split,
+      title: 'Split large categories',
+      onClick: aiActions.onSplitLarge,
+    } : null,
+    aiActions.onRunEmbeddings ? {
+      key: 'embeddings',
+      label: 'Embeddings',
+      icon: Brain,
+      title: 'Run embeddings + 2D projection',
+      onClick: aiActions.onRunEmbeddings,
+    } : null,
+    aiActions.onReembed ? {
+      key: 'reembed',
+      label: 'Re-embed',
+      icon: Brain,
+      title: 'Clear embedding cache and re-embed all pages',
+      onClick: aiActions.onReembed,
+    } : null,
+    aiActions.onClearCache ? {
+      key: 'clear',
+      label: 'Clear',
+      icon: Eraser,
+      title: 'Clear all cached AI data',
+      onClick: aiActions.onClearCache,
+      danger: true,
+    } : null,
+  ].filter((item): item is AiActionItem => item !== null)
+  const hasAi = aiActionItems.length > 0
   const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
   const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
@@ -141,96 +201,27 @@ export function StatusBar({
       </div>
 
       {hasAi && (
-        <div className="flex items-center gap-1 text-xs">
+        <div className="flex items-center gap-2 text-xs">
           <span className="text-border">·</span>
-          {aiActions.onClassify && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onClassify?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Run category classification (pass 1)"
-            >
-              <Wand2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Classify</span>
-            </button>
-          )}
-          {aiActions.onRunTags && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onRunTags?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Generate tags for all items"
-            >
-              <Hash className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Tags</span>
-            </button>
-          )}
-          {aiActions.onRunIntent && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onRunIntent?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Classify pages by intent"
-            >
-              <Tag className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Intent</span>
-            </button>
-          )}
-          {aiActions.onMergeCategories && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onMergeCategories?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Merge similar category labels"
-            >
-              <GitMerge className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Merge</span>
-            </button>
-          )}
-          {aiActions.onSplitLarge && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onSplitLarge?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Split large categories"
-            >
-              <Split className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Split</span>
-            </button>
-          )}
-          {aiActions.onRunEmbeddings && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onRunEmbeddings?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Run embeddings + 2D projection"
-            >
-              <Brain className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Embeddings</span>
-            </button>
-          )}
-          {aiActions.onReembed && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onReembed?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
-              title="Clear embedding cache and re-embed all pages"
-            >
-              <Brain className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Re-embed</span>
-            </button>
-          )}
-          {aiActions.onClearCache && (
-            <button
-              type="button"
-              onClick={() => void aiActions.onClearCache?.()}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground/50 hover:bg-card hover:text-destructive transition-colors"
-              title="Clear all cached AI data"
-            >
-              <Eraser className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Clear</span>
-            </button>
-          )}
+          <DropdownMenu trigger="AI Actions">
+            <>
+              {aiActionItems.map((item) => (
+                <DropdownMenuItem
+                  key={item.key}
+                  onClick={item.onClick}
+                  title={item.title}
+                  className={
+                    item.danger
+                      ? 'text-muted-foreground/70 hover:bg-card hover:text-destructive'
+                      : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                  }
+                >
+                  <item.icon className="h-3.5 w-3.5" />
+                  <span>{item.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          </DropdownMenu>
         </div>
       )}
 
@@ -265,6 +256,15 @@ export function StatusBar({
       </Button>
     </div>
   )
+}
+
+interface AiActionItem {
+  key: string
+  label: string
+  icon: LucideIcon
+  title: string
+  onClick: () => Promise<void>
+  danger?: boolean
 }
 
 function formatFolderPathForTrigger(path: string): string {

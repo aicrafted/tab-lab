@@ -229,7 +229,6 @@ export function useAiPipelines({
           )
         }),
       )
-      void runEmbeddingPass(tb, bm, llmSettings)
       return
     }
 
@@ -349,7 +348,6 @@ export function useAiPipelines({
           )
         })
 
-        void runEmbeddingPass(tb, bm, llmSettings)
       } catch {
         setLlmStatus('unavailable')
       }
