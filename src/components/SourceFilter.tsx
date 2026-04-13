@@ -18,7 +18,7 @@ export function SourceFilterToggle({ value, onChange, counts }: SourceFilterProp
   ]
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center">
       {options.map((option) => (
         <button
           key={option.id}
@@ -31,7 +31,7 @@ export function SourceFilterToggle({ value, onChange, counts }: SourceFilterProp
         >
           {option.label}
           {option.count != null && (
-            <span className="ml-1 tabular-nums opacity-70">({option.count})</span>
+            <sup className="ml-0.5 tabular-nums text-[10px] opacity-70">{option.count}</sup>
           )}
         </button>
       ))}

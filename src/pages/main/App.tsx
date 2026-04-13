@@ -87,7 +87,7 @@ export function App() {
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
   const [, startFilterTransition] = useTransition()
-  const { width: sidebarWidth, startDrag } = useResizable(220, 160, 400)
+  const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
 
   // Load settings on mount
@@ -399,9 +399,6 @@ export function App() {
           onReload={reload}
           llmStatus={llmStatus}
           onSettingsClick={() => setShowSettings(s => !s)}
-          bookmarkScopeFilter={bookmarkScopeFilter}
-          bookmarkFolderOptions={bookmarkFolderOptions}
-          onBookmarkScopeChange={handleBookmarkScopeChange}
           ai={{
             onClearCache: handleClearCache,
             onClassify: handleClassify,
@@ -429,6 +426,9 @@ export function App() {
           sourceFilter={sourceFilter}
           onSourceFilterChange={handleSourceFilterChange}
           sourceCounts={sourceCounts}
+          bookmarkScopeFilter={bookmarkScopeFilter}
+          bookmarkFolderOptions={bookmarkFolderOptions}
+          onBookmarkScopeChange={handleBookmarkScopeChange}
           domains={domainsFacet}
           categories={categoriesFacet}
           activeMode={facetMode}
@@ -445,7 +445,7 @@ export function App() {
           role="separator"
           aria-orientation="vertical"
           onMouseDown={startDrag}
-          className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40"
+          className="relative w-2 shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/35 after:transition-colors hover:after:bg-border/70"
         />
 
         <div className="min-w-0 flex flex-1 flex-col px-6">
