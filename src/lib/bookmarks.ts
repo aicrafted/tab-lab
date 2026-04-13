@@ -4,6 +4,8 @@ import { parseDomain } from './utils'
 export interface BookmarkFolderOption {
   id: string
   path: string
+  title: string
+  depth: number
 }
 
 interface FolderIndex {
@@ -17,24 +19,29 @@ function buildFolderIndex(tree: chrome.bookmarks.BookmarkTreeNode[]): FolderInde
   const descendantIdsById = new Map<string, Set<string>>()
   const options: BookmarkFolderOption[] = []
 
-  const visit = (node: chrome.bookmarks.BookmarkTreeNode, parentPath = ''): Set<string> => {
+  const visit = (
+    node: chrome.bookmarks.BookmarkTreeNode,
+    parentPath = '',
+    parentDepth = -1,
+  ): Set<string> => {
     if (node.children === undefined) return new Set()
 
     const myPath = parentPath
       ? `${parentPath}/${node.title}`
       : node.title
     const hasTitle = Boolean(node.title)
+    const myDepth = parentDepth + 1
 
     if (hasTitle) {
       pathById.set(node.id, myPath)
-      options.push({ id: node.id, path: myPath })
+      options.push({ id: node.id, path: myPath, title: node.title, depth: myDepth })
     }
 
     const descendants = new Set<string>()
     if (hasTitle) descendants.add(node.id)
 
     for (const child of node.children) {
-      for (const childId of visit(child, hasTitle ? myPath : '')) {
+      for (const childId of visit(child, hasTitle ? myPath : '', hasTitle ? myDepth : parentDepth)) {
         descendants.add(childId)
       }
     }

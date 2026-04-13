@@ -5,7 +5,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { formatAge } from '@/lib/utils'
 import type { LlmStatus } from '@/lib/classifier'
@@ -58,9 +57,19 @@ export function StatusBar({
 }: StatusBarProps) {
   const aiActions = ai ?? {}
   const hasAi = Object.values(aiActions).some(Boolean)
+  const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
+  const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
     ? bookmarkScopeFilter.folderId
     : 'root'
+  const selectedFolder = bookmarkScopeValue === 'root'
+    ? null
+    : visibleFolderOptions.find((option) => option.id === bookmarkScopeValue)
+      ?? bookmarkFolderOptions.find((option) => option.id === bookmarkScopeValue)
+      ?? null
+  const bookmarkScopeLabel = selectedFolder
+    ? formatFolderPathForTrigger(selectedFolder.path)
+    : 'Root (all bookmarks)'
   return (
     <div className="flex items-center gap-4 rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
       <span>
@@ -110,12 +119,22 @@ export function StatusBar({
           disabled={sourceFilter === 'tabs'}
         >
           <SelectTrigger className="h-7 w-64 text-xs">
-            <SelectValue placeholder="Root (all bookmarks)" />
+            <span className="truncate" title={selectedFolder?.path ?? 'Root (all bookmarks)'}>
+              {bookmarkScopeLabel}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="root">Root (all bookmarks)</SelectItem>
-            {bookmarkFolderOptions.map((option) => (
-              <SelectItem key={option.id} value={option.id}>{option.path}</SelectItem>
+            {visibleFolderOptions.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                <span
+                  className="inline-block"
+                  style={{ paddingLeft: `${Math.min(option.depth, 2) * 12}px` }}
+                  title={option.path}
+                >
+                  {formatFolderPathForOption(option.path, duplicateLeafTitles)}
+                </span>
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -246,4 +265,53 @@ export function StatusBar({
       </Button>
     </div>
   )
+}
+
+function formatFolderPathForTrigger(path: string): string {
+  const parts = getMeaningfulParts(path)
+  if (parts.length === 0) return 'Root (all bookmarks)'
+  if (parts.length === 1) return parts[0]
+  return parts.slice(-2).join(' / ')
+}
+
+function formatFolderPathForOption(path: string, duplicateLeafTitles: Set<string>): string {
+  const parts = getMeaningfulParts(path)
+  if (parts.length === 0) return ''
+  const leaf = parts[parts.length - 1]
+  if (!duplicateLeafTitles.has(leaf)) return leaf
+  if (parts.length === 1) return leaf
+  return parts.slice(-2).join(' / ')
+}
+
+function buildDuplicateLeafTitleSet(options: BookmarkFolderOption[]): Set<string> {
+  const counts = new Map<string, number>()
+  for (const option of options) {
+    const parts = getMeaningfulParts(option.path)
+    if (parts.length === 0) continue
+    const leaf = parts[parts.length - 1]
+    counts.set(leaf, (counts.get(leaf) ?? 0) + 1)
+  }
+  const duplicates = new Set<string>()
+  for (const [leaf, count] of counts.entries()) {
+    if (count > 1) duplicates.add(leaf)
+  }
+  return duplicates
+}
+
+function getMeaningfulParts(path: string): string[] {
+  return trimSystemRoot(path.split('/').filter(Boolean))
+}
+
+function trimSystemRoot(parts: string[]): string[] {
+  if (parts.length === 0) return parts
+  const first = parts[0].toLowerCase()
+  const systemRoots = new Set([
+    'bookmarks bar',
+    'other bookmarks',
+    'mobile bookmarks',
+    'панель закладок',
+    'другие закладки',
+    'мобильные закладки',
+  ])
+  return systemRoots.has(first) ? parts.slice(1) : parts
 }

@@ -7,26 +7,98 @@ import { clearAllAICache, setCached } from '@/lib/storage'
 import { tagWithGeminiNano, tagWithLmStudio } from '@/lib/tagger'
 import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
 
-function createTaskLogger(task: string, total: number) {
+export interface PipelineTaskProgress {
+  id: string
+  label: string
+  done: number
+  total: number
+  percent: number
+  status: 'running' | 'done' | 'failed'
+}
+
+function createTaskLogger(
+  task: string,
+  label: string,
+  total: number,
+  onProgress?: (update: PipelineTaskProgress) => void,
+) {
   const safeTotal = Math.max(1, total)
   let done = 0
+  let lastLoggedPercent = -1
+  let closed = false
   const startedAt = Date.now()
   console.info(`[llm:${task}] start`, { total })
+  const emitRunning = () => {
+    const rawPct = (done / safeTotal) * 100
+    const uiPct = Math.round(rawPct * 10) / 10
+    const logPct = Math.floor(rawPct)
+    while (lastLoggedPercent < logPct) {
+      lastLoggedPercent += 1
+      if (lastLoggedPercent >= 0) {
+        console.info(`[llm:${task}] progress ${done}/${safeTotal} (${lastLoggedPercent}%)`)
+      }
+    }
+    onProgress?.({
+      id: task,
+      label,
+      done,
+      total: safeTotal,
+      percent: uiPct,
+      status: 'running',
+    })
+  }
+  emitRunning()
 
   return {
     progress(delta: number) {
-      done = Math.min(safeTotal, done + Math.max(0, delta))
-      const pct = Math.round((done / safeTotal) * 100)
-      console.info(`[llm:${task}] progress ${done}/${safeTotal} (${pct}%)`)
+      if (closed) return
+      const safeDelta = Math.max(0, Math.floor(delta))
+      if (safeDelta === 0) {
+        emitRunning()
+        return
+      }
+      for (let i = 0; i < safeDelta && done < safeTotal; i += 1) {
+        done += 1
+        emitRunning()
+      }
     },
     done(extra?: Record<string, unknown>) {
+      if (closed) return
+      closed = true
+      done = safeTotal
+      const finalRawPct = (done / safeTotal) * 100
+      const finalLogPct = Math.floor(finalRawPct)
+      while (lastLoggedPercent < finalLogPct) {
+        lastLoggedPercent += 1
+        if (lastLoggedPercent >= 0) {
+          console.info(`[llm:${task}] progress ${done}/${safeTotal} (${lastLoggedPercent}%)`)
+        }
+      }
       console.info(`[llm:${task}] done`, {
         elapsedMs: Date.now() - startedAt,
         ...extra,
       })
+      onProgress?.({
+        id: task,
+        label,
+        done,
+        total: safeTotal,
+        percent: 100,
+        status: 'done',
+      })
     },
     failed(error: unknown) {
+      if (closed) return
+      closed = true
       console.error(`[llm:${task}] failed`, error)
+      onProgress?.({
+        id: task,
+        label,
+        done,
+        total: safeTotal,
+        percent: Math.round((done / safeTotal) * 100),
+        status: 'failed',
+      })
     },
   }
 }
@@ -53,6 +125,7 @@ interface UseAiPipelinesArgs {
   setLlmStatus: React.Dispatch<React.SetStateAction<LlmStatus>>
   setProjectedPoints: React.Dispatch<React.SetStateAction<Map<string, [number, number]>>>
   reload: () => void
+  onTaskProgress?: (update: PipelineTaskProgress) => void
 }
 
 export function useAiPipelines({
@@ -64,6 +137,7 @@ export function useAiPipelines({
   setLlmStatus,
   setProjectedPoints,
   reload,
+  onTaskProgress,
 }: UseAiPipelinesArgs) {
   const applyTabCategoryBatch = useCallback((updates: { url: string; category: string }[]) => {
     setTabs((prev) => applyCategoryUpdates(prev, updates))
@@ -103,7 +177,7 @@ export function useAiPipelines({
       ...bm.map(b => ({ url: b.url, title: b.title || b.url, domain: b.domain, category: b.category })),
     ]
 
-    const embeddingLog = createTaskLogger('embeddings', allItems.length)
+    const embeddingLog = createTaskLogger('embeddings', 'LLM calc embeddings', allItems.length, onTaskProgress)
     await fetchEmbeddingsBatch(allItems, settings, (updates) => {
       embeddingLog.progress(updates.length)
     })
@@ -111,7 +185,7 @@ export function useAiPipelines({
     const map = await reprojectAllEmbeddings()
     embeddingLog.done({ projectedPoints: map.size })
     if (map.size > 0) setProjectedPoints(map)
-  }, [setProjectedPoints])
+  }, [onTaskProgress, setProjectedPoints])
 
   const runAutoAiPipeline = useCallback(async (
     tb: TabItem[],
@@ -305,8 +379,8 @@ export function useAiPipelines({
 
   const handleClassify = useCallback(async () => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-classify-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-classify-bookmarks', bookmarks.length)
+    const tabsLog = createTaskLogger('manual-classify-tabs', 'LLM classifying tabs', tabs.length, onTaskProgress)
+    const bookmarksLog = createTaskLogger('manual-classify-bookmarks', 'LLM classifying bookmarks', bookmarks.length, onTaskProgress)
     if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
       setLlmStatus('classifying')
       void classifyWithLmStudio(
@@ -388,14 +462,15 @@ export function useAiPipelines({
     applyTabCategoryBatch,
     bookmarks,
     llmSettings,
+    onTaskProgress,
     setLlmStatus,
     tabs,
   ])
 
   const handleRunIntent = useCallback(async () => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-intent-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-intent-bookmarks', bookmarks.length)
+    const tabsLog = createTaskLogger('manual-intent-tabs', 'LLM intent tabs', tabs.length, onTaskProgress)
+    const bookmarksLog = createTaskLogger('manual-intent-bookmarks', 'LLM intent bookmarks', bookmarks.length, onTaskProgress)
 
     if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
       setLlmStatus('classifying')
@@ -478,6 +553,7 @@ export function useAiPipelines({
     applyTabIntentBatch,
     bookmarks,
     llmSettings,
+    onTaskProgress,
     setLlmStatus,
     tabs,
   ])
@@ -564,8 +640,8 @@ export function useAiPipelines({
 
   const handleRunTags = useCallback(async () => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
-    const tabsLog = createTaskLogger('manual-tags-tabs', tabs.length)
-    const bookmarksLog = createTaskLogger('manual-tags-bookmarks', bookmarks.length)
+    const tabsLog = createTaskLogger('manual-tags-tabs', 'LLM tagging tabs', tabs.length, onTaskProgress)
+    const bookmarksLog = createTaskLogger('manual-tags-bookmarks', 'LLM tagging bookmarks', bookmarks.length, onTaskProgress)
     if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
       setLlmStatus('classifying')
       void tagWithGeminiNano(tabs, 'tab', (updates) => {
@@ -618,6 +694,7 @@ export function useAiPipelines({
     applyTabTagsBatch,
     bookmarks,
     llmSettings,
+    onTaskProgress,
     setLlmStatus,
     tabs,
   ])

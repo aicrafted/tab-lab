@@ -10,7 +10,7 @@ import {
   getBookmarkFolderOptions,
   type BookmarkFolderOption,
 } from '@/lib/bookmarks'
-import { type LlmStatus } from '@/lib/classifier'
+import { checkLlmAvailability, type LlmStatus } from '@/lib/classifier'
 import { loadCached2D } from '@/lib/embedder'
 import { loadHydratedData } from '@/lib/initial-load'
 import {
@@ -23,6 +23,7 @@ import {
 } from '@/lib/storage'
 import { useResizable } from '@/hooks/useResizable'
 import { useAiPipelines } from '@/hooks/useAiPipelines'
+import type { PipelineTaskProgress } from '@/hooks/useAiPipelines'
 import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
@@ -75,6 +76,7 @@ export function App() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [llmStatus, setLlmStatus] = useState<LlmStatus>('checking')
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
+  const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [activeView, setActiveView] = useState<ViewId>('list')
   const [sourceFilter, setSourceFilterState] = useState<SourceFilter>('both')
@@ -83,6 +85,7 @@ export function App() {
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
   const [facetMode, setFacetMode] = useState<'domains' | 'categories'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
+  const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
   const { width: sidebarWidth, startDrag } = useResizable(220, 160, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
 
@@ -92,8 +95,23 @@ export function App() {
       setLlmSettingsState(settings)
       setSourceFilterState(source)
       setBookmarkScopeFilterState(scope)
+      setSettingsHydrated(true)
     })
   }, [])
+
+  useEffect(() => {
+    if (!settingsHydrated) return
+    let active = true
+    setLlmStatus('checking')
+    void checkLlmAvailability(llmSettings).then((status) => {
+      if (!active) return
+      setLlmStatus(status)
+    }).catch(() => {
+      if (!active) return
+      setLlmStatus('unavailable')
+    })
+    return () => { active = false }
+  }, [llmSettings, settingsHydrated])
 
   const handleSourceFilterChange = useCallback((value: SourceFilter) => {
     setSourceFilterState(value)
@@ -132,7 +150,35 @@ export function App() {
     setLlmStatus,
     setProjectedPoints,
     reload,
+    onTaskProgress: (update) => {
+      setActiveTasks((prev) => {
+        if (update.status === 'running') {
+          return { ...prev, [update.id]: update }
+        }
+        if (!(update.id in prev)) return prev
+        const next = { ...prev }
+        delete next[update.id]
+        return next
+      })
+    },
   })
+
+  const footerTaskStatus = useMemo(() => {
+    const running = Object.values(activeTasks)
+      .filter((task) => task.status === 'running')
+      .sort((a, b) => a.label.localeCompare(b.label))
+
+    if (running.length === 0) return 'Standby'
+    return running
+      .map((task) => `${task.label}: ${task.done}/${task.total} ${formatProgressPercent(task.percent)}%`)
+      .join(' · ')
+  }, [activeTasks])
+
+  useEffect(() => {
+    if (llmStatus === 'ready' || llmStatus === 'unavailable') {
+      setActiveTasks({})
+    }
+  }, [llmStatus])
 
   async function doLoad() {
     const [hydrated, folderOptions] = await Promise.all([
@@ -158,9 +204,10 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!settingsHydrated) return
     setLoading(true)
     void doLoad()
-  }, [])
+  }, [settingsHydrated])
 
   useEffect(() => {
     if (bookmarkScopeFilter.mode === 'root') {
@@ -396,21 +443,30 @@ export function App() {
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-border/40 px-6 py-2 text-[11px] text-muted-foreground/50 flex items-center gap-2">
-        <img src="/icons/aicrafted.png" alt="" className="h-3 w-3 rounded-sm opacity-60" />
-        <span>© {new Date().getFullYear()} AICrafted</span>
-        <span>·</span>
-        <a
-          href="https://github.com/aicrafted/tab-lab"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-muted-foreground transition-colors"
-        >
-          github.com/aicrafted/tab-lab
-        </a>
-        <span>·</span>
-        <span>Open source</span>
+      <footer className="shrink-0 border-t border-border/40 px-6 py-2 text-[11px] text-muted-foreground/50 flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <img src="/icons/aicrafted.png" alt="" className="h-3 w-3 rounded-sm opacity-60" />
+          <span>© {new Date().getFullYear()} AICrafted</span>
+          <span>·</span>
+          <a
+            href="https://github.com/aicrafted/tab-lab"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-muted-foreground transition-colors"
+          >
+            github.com/aicrafted/tab-lab
+          </a>
+        </div>
+        <div className="min-w-0 max-w-[50%] truncate text-left text-muted-foreground/70" title={footerTaskStatus}>
+          {footerTaskStatus}
+        </div>
       </footer>
     </div>
   )
+}
+
+function formatProgressPercent(percent: number): string {
+  if (!Number.isFinite(percent)) return '0'
+  if (Math.abs(percent - Math.round(percent)) < 0.05) return String(Math.round(percent))
+  return percent.toFixed(1)
 }
