@@ -140,13 +140,43 @@ export function KanbanView({ bookmarks, tabs, loading }: ViewProps) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
-        <Button type="button" size="sm" variant={groupMode === 'category' ? 'default' : 'outline'} onClick={() => setGroupMode('category')}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setGroupMode('category')}
+          className={
+            groupMode === 'category'
+              ? 'border border-primary/45 bg-primary/12 text-primary hover:bg-primary/18'
+              : 'border border-border text-foreground hover:bg-accent'
+          }
+        >
           Category
         </Button>
-        <Button type="button" size="sm" variant={groupMode === 'domain' ? 'default' : 'outline'} onClick={() => setGroupMode('domain')}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setGroupMode('domain')}
+          className={
+            groupMode === 'domain'
+              ? 'border border-primary/45 bg-primary/12 text-primary hover:bg-primary/18'
+              : 'border border-border text-foreground hover:bg-accent'
+          }
+        >
           Domain
         </Button>
-        <Button type="button" size="sm" variant={groupMode === 'tag' ? 'default' : 'outline'} onClick={() => setGroupMode('tag')}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setGroupMode('tag')}
+          className={
+            groupMode === 'tag'
+              ? 'border border-primary/45 bg-primary/12 text-primary hover:bg-primary/18'
+              : 'border border-border text-foreground hover:bg-accent'
+          }
+        >
           Tag
         </Button>
       </div>

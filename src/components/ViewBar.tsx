@@ -81,7 +81,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max flex-col gap-0 pb-2">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 pt-1 px-1">
           {VIEW_GROUPS.map((group) => {
             const isActive = group.id === activeGroup.id
             return (
@@ -91,9 +91,9 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 title={group.hint}
                 onClick={() => onChange(group.views[0])}
                 className={cn(
-                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-sm font-semibold transition-colors',
+                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-base font-semibold transition-colors',
                   isActive
-                    ? 'border-primary/45 bg-primary/20 text-primary'
+                    ? 'border-primary/50 bg-primary/20 text-primary ring-1 ring-primary/35'
                     : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',
                 )}
               >
@@ -103,7 +103,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
           })}
         </div>
 
-        <div className="bg-primary/5 px-2 py-1.5">
+        <div className="bg-primary/15 px-2 py-1.5">
           <div className="flex items-center gap-1">
           {activeGroup.views.map((viewId) => {
             const view = VIEW_BY_ID[viewId]
@@ -114,9 +114,9 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 title={view.hint}
                 onClick={() => onChange(view.id)}
                 className={cn(
-                  'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
+                  'whitespace-nowrap rounded px-2.5 py-1 text-sm transition-colors',
                   activeView === view.id
-                    ? 'bg-primary/30 text-primary ring-1 ring-primary/70'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                     : 'text-muted-foreground hover:bg-background hover:text-foreground',
                 )}
               >
