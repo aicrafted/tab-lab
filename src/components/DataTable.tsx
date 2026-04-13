@@ -128,7 +128,7 @@ export function DataTable<TData, TValue>({
       {menuHost ? createPortal(controls, menuHost) : controls}
 
       <div className="rounded-md border border-border">
-        <Table>
+        <Table className="w-max">
           <TableHeader>
             {table.getHeaderGroups().map(hg => (
               <TableRow key={hg.id} className="hover:bg-transparent">

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { ExternalLink, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
 import { DataTable } from './DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
-import { cn } from '@/lib/utils'
+import { cn, formatAge } from '@/lib/utils'
 import type { TabItem, PageIntent, LlmSettings } from '@/lib/types'
-import { formatAge } from '@/lib/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 const INTENT_EMOJI: Record<PageIntent, string> = {
@@ -14,10 +13,8 @@ const INTENT_EMOJI: Record<PageIntent, string> = {
   transactional: '🎫', video: '🎬', social: '💬', repository: '📦', other: '•',
 }
 
-// Zombie threshold — tabs not accessed in N days
 const ZOMBIE_DAYS = 7
 
-// Chrome tab group color → Tailwind class mapping
 const GROUP_COLORS: Record<string, string> = {
   blue:   'bg-blue-900/40 text-blue-300',
   red:    'bg-rose-900/40 text-rose-300',
@@ -30,11 +27,41 @@ const GROUP_COLORS: Record<string, string> = {
   grey:   'bg-zinc-800 text-zinc-400',
 }
 
+interface TabGroupRow {
+  key: string
+  url: string
+  representative: TabItem
+  tabs: TabItem[]
+  duplicateCount: number
+}
+
+function groupByUrl(tabs: TabItem[]): TabGroupRow[] {
+  const byUrl = new Map<string, TabItem[]>()
+  for (const tab of tabs) {
+    const existing = byUrl.get(tab.url)
+    if (existing) existing.push(tab)
+    else byUrl.set(tab.url, [tab])
+  }
+
+  return Array.from(byUrl.entries()).map(([url, group]) => {
+    const sorted = [...group].sort((a, b) => b.lastAccessed - a.lastAccessed)
+    return {
+      key: url,
+      url,
+      representative: sorted[0],
+      tabs: sorted,
+      duplicateCount: sorted.length - 1,
+    }
+  })
+}
+
 function makeColumns(
   onClose: (id: number) => void,
   onActivate: (id: number) => void,
   semanticScores: Map<string, number>,
-): ColumnDef<TabItem>[] {
+  expanded: Set<string>,
+  onToggleExpanded: (url: string) => void,
+): ColumnDef<TabGroupRow>[] {
   return [
     {
       id: 'favicon',
@@ -42,59 +69,113 @@ function makeColumns(
       enableSorting: false,
       size: 24,
       cell: ({ row }) => (
-        <Favicon domain={row.original.domain} src={row.original.favIconUrl} />
+        <Favicon domain={row.original.representative.domain} src={row.original.representative.favIconUrl} />
       ),
     },
     {
-      accessorKey: 'title',
+      id: 'title',
       header: 'Title',
-      cell: ({ row }) => (
-        <button
-          type="button"
-          onClick={() => onActivate(row.original.id)}
-          className="flex max-w-xs items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
-          title={row.original.url}
-        >
-          <span className="truncate">{row.original.title}</span>
-          {semanticScores.has(row.original.url) && (
-            <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
-              {Math.round((semanticScores.get(row.original.url) ?? 0) * 100)}%
-            </span>
-          )}
-          <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
-        </button>
-      ),
+      accessorFn: (row) => row.representative.title,
+      cell: ({ row }) => {
+        const group = row.original
+        const top = group.representative
+        const isExpanded = expanded.has(group.url)
+        const hasDuplicates = group.tabs.length > 1
+
+        return (
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              {hasDuplicates ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleExpanded(group.url)}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-foreground"
+                  title={isExpanded ? 'Collapse duplicates' : 'Expand duplicates'}
+                >
+                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onActivate(top.id)}
+                className="flex max-w-xs min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
+                title={top.url}
+              >
+                <span className="truncate">{top.title}</span>
+                {semanticScores.has(top.url) && (
+                  <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
+                    {Math.round((semanticScores.get(top.url) ?? 0) * 100)}%
+                  </span>
+                )}
+                <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
+              </button>
+            </div>
+            {hasDuplicates && isExpanded && (
+              <div className="ml-7 space-y-1 rounded border border-border/60 bg-card/30 p-2">
+                {group.tabs.slice(1).map((tab) => (
+                  <div key={tab.id} className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => onActivate(tab.id)}
+                      className="min-w-0 flex-1 truncate text-left text-muted-foreground hover:text-foreground hover:underline"
+                      title={tab.url}
+                    >
+                      {tab.title}
+                    </button>
+                    <span className="shrink-0 text-muted-foreground/70">#{tab.windowId}</span>
+                    <button
+                      type="button"
+                      onClick={() => onClose(tab.id)}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-destructive"
+                      title="Close duplicate tab"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      },
     },
     {
-      accessorKey: 'domain',
+      id: 'domain',
+      accessorFn: (row) => row.representative.domain,
       header: 'Domain',
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">{row.original.domain}</span>
+        <span className="text-xs text-muted-foreground">{row.original.representative.domain}</span>
       ),
     },
     {
-      accessorKey: 'windowId',
+      id: 'windowId',
+      accessorFn: (row) => row.representative.windowId,
       header: 'Window',
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">#{row.original.windowId}</span>
+        <span className="text-xs text-muted-foreground">
+          #{row.original.representative.windowId}
+          {row.original.tabs.length > 1 ? ` (+${row.original.tabs.length - 1})` : ''}
+        </span>
       ),
     },
     {
-      accessorKey: 'category',
+      id: 'category',
+      accessorFn: (row) => row.representative.category ?? '',
       header: 'Category',
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
-          {row.original.category ?? <span className="opacity-30">—</span>}
+          {row.original.representative.category ?? <span className="opacity-30">—</span>}
         </span>
       ),
     },
     {
       id: 'intent',
       header: 'Intent',
+      accessorFn: (row) => row.representative.intent ?? '',
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="text-sm" title={row.original.intent ?? ''}>
-          {row.original.intent ? INTENT_EMOJI[row.original.intent] : <span className="opacity-30">—</span>}
+        <span className="text-sm" title={row.original.representative.intent ?? ''}>
+          {row.original.representative.intent ? INTENT_EMOJI[row.original.representative.intent] : <span className="opacity-30">—</span>}
         </span>
       ),
     },
@@ -103,29 +184,24 @@ function makeColumns(
       header: 'Status',
       enableSorting: false,
       cell: ({ row }) => {
-        const isZombie =
-          Date.now() - row.original.lastAccessed > ZOMBIE_DAYS * 86_400_000
+        const tab = row.original.representative
+        const isZombie = Date.now() - tab.lastAccessed > ZOMBIE_DAYS * 86_400_000
         return (
           <div className="flex flex-wrap gap-1">
-            {row.original.groupName && (
-              <Badge
-                className={cn('text-[10px]', GROUP_COLORS[row.original.groupColor ?? 'grey'])}
-              >
-                {row.original.groupName}
+            {tab.groupName && (
+              <Badge className={cn('text-[10px]', GROUP_COLORS[tab.groupColor ?? 'grey'])}>
+                {tab.groupName}
               </Badge>
             )}
-            {row.original.isBookmarked && (
-              <Badge variant="primary" className="text-[10px]" title={row.original.bookmarkFolder}>
+            {tab.isBookmarked && (
+              <Badge variant="primary" className="text-[10px]" title={tab.bookmarkFolder}>
                 saved
               </Badge>
             )}
-            {row.original.duplicateCount && (
+            {row.original.duplicateCount > 0 && (
               <Badge variant="muted" className="text-[10px]">
-                ×{row.original.duplicateCount}
+                ×{row.original.tabs.length}
               </Badge>
-            )}
-            {row.original.isDuplicate && (
-              <Badge variant="muted" className="text-[10px] opacity-50">dup</Badge>
             )}
             {isZombie && (
               <Badge variant="outline" className="text-[10px] opacity-60">zombie</Badge>
@@ -135,11 +211,12 @@ function makeColumns(
       },
     },
     {
-      accessorKey: 'lastAccessed',
+      id: 'lastAccessed',
+      accessorFn: (row) => row.representative.lastAccessed,
       header: 'Last accessed',
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
-          {formatAge(row.original.lastAccessed)}
+          {formatAge(row.original.representative.lastAccessed)}
         </span>
       ),
     },
@@ -149,8 +226,8 @@ function makeColumns(
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
-          {row.original.tags?.length
-            ? row.original.tags.map(tag => (
+          {row.original.representative.tags?.length
+            ? row.original.representative.tags.map((tag) => (
                 <span
                   key={tag}
                   className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
@@ -170,7 +247,7 @@ function makeColumns(
         <div className="flex items-center gap-0.5 whitespace-nowrap">
           <button
             type="button"
-            onClick={() => onActivate(row.original.id)}
+            onClick={() => onActivate(row.original.representative.id)}
             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-primary"
             title="Switch to tab"
           >
@@ -180,7 +257,7 @@ function makeColumns(
             type="button"
             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-destructive"
             title="Close tab"
-            onClick={() => onClose(row.original.id)}
+            onClick={() => onClose(row.original.representative.id)}
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -202,6 +279,7 @@ interface TabsTableProps {
 export function TabsTable({ data, settings, loading, onClose, onActivate, menuHost }: TabsTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
+  const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
   const { results, state, error, search, clear } = useSemanticSearch(settings)
 
   useEffect(() => {
@@ -221,8 +299,8 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
     return map
   }, [results])
 
-  const filteredData = useMemo(() => {
-    if (!semanticEnabled || !query.trim()) return data
+  const filteredTabs = useMemo(() => {
+    if (!query.trim()) return data
     const needle = query.trim().toLowerCase()
     const lexicalMatch = (item: TabItem) =>
       item.title.toLowerCase().includes(needle) ||
@@ -230,7 +308,9 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
       item.domain.toLowerCase().includes(needle) ||
       (item.category ?? '').toLowerCase().includes(needle)
 
-    const merged = data.filter(item => lexicalMatch(item) || semanticScores.has(item.url))
+    if (!semanticEnabled) return data.filter(lexicalMatch)
+
+    const merged = data.filter((item) => lexicalMatch(item) || semanticScores.has(item.url))
     return merged.sort((a, b) => {
       const sb = semanticScores.get(b.url) ?? -1
       const sa = semanticScores.get(a.url) ?? -1
@@ -239,9 +319,20 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
     })
   }, [data, query, semanticEnabled, semanticScores])
 
+  const groupedData = useMemo(() => groupByUrl(filteredTabs), [filteredTabs])
+
+  const onToggleExpanded = (url: string) => {
+    setExpandedUrls((prev) => {
+      const next = new Set(prev)
+      if (next.has(url)) next.delete(url)
+      else next.add(url)
+      return next
+    })
+  }
+
   const columns = useMemo(
-    () => makeColumns(onClose, onActivate, semanticScores),
-    [onClose, onActivate, semanticScores],
+    () => makeColumns(onClose, onActivate, semanticScores, expandedUrls, onToggleExpanded),
+    [onClose, onActivate, semanticScores, expandedUrls],
   )
 
   const toolbar = (
@@ -252,7 +343,7 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
           'rounded border px-2 py-1 text-xs',
           semanticEnabled ? 'border-emerald-600/60 bg-emerald-600/20 text-emerald-300' : 'border-border text-muted-foreground',
         )}
-        onClick={() => setSemanticEnabled(v => !v)}
+        onClick={() => setSemanticEnabled((v) => !v)}
         disabled={!embeddingsAvailable(settings)}
         title={!embeddingsAvailable(settings) ? 'Embeddings unavailable for current provider/config' : 'Merge lexical + semantic search results'}
       >
@@ -269,8 +360,7 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
   return (
     <DataTable
       columns={columns}
-      data={filteredData}
-      searchKey={semanticEnabled ? undefined : 'title'}
+      data={groupedData}
       searchPlaceholder={semanticEnabled ? 'Search tabs (lexical + semantic)…' : 'Search tabs…'}
       searchValue={query}
       onSearchChange={setQuery}
