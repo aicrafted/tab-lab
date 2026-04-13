@@ -91,9 +91,9 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 title={group.hint}
                 onClick={() => onChange(group.views[0])}
                 className={cn(
-                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-sm transition-colors',
+                  'whitespace-nowrap rounded-t-md border-b-2 px-2.5 py-1 text-sm font-semibold transition-colors',
                   isActive
-                    ? 'border-primary/70 bg-primary/10 text-primary'
+                    ? 'border-primary/45 bg-primary/20 text-primary'
                     : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',
                 )}
               >
@@ -116,7 +116,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                 className={cn(
                   'whitespace-nowrap rounded px-2.5 py-1 text-xs transition-colors',
                   activeView === view.id
-                    ? 'bg-primary/20 text-primary ring-1 ring-primary/45'
+                    ? 'bg-primary/30 text-primary ring-1 ring-primary/70'
                     : 'text-muted-foreground hover:bg-background hover:text-foreground',
                 )}
               >
