@@ -28,6 +28,7 @@ import type { PipelineTaskProgress } from '@/hooks/useAiPipelines'
 import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
+import { DomainIconContext } from '@/components/Favicon'
 import { formatAge } from '@/lib/utils'
 import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
@@ -72,6 +73,48 @@ const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX
   'session-story': SessionStoryView,
 }
 
+const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
+  // List is cleaner with separate entity modes; merged "both" is intentionally disabled.
+  list: ['bookmarks', 'tabs'],
+}
+
+function scoreFaviconCandidate(iconUrl: string, domain: string): number {
+  try {
+    const parsed = new URL(iconUrl)
+    const host = parsed.hostname.toLowerCase()
+    const target = domain.toLowerCase()
+    const path = parsed.pathname.toLowerCase()
+    const query = parsed.search.toLowerCase()
+
+    let score = 0
+
+    if (host === target) score += 40
+    else if (host.endsWith(`.${target}`)) score += 25
+
+    if (path === '/favicon.ico') score += 140
+    else if (path === '/favicon.png') score += 120
+    else if (path === '/favicon.svg') score += 110
+    else if (path.includes('favicon')) score += 90
+    else if (path.includes('apple-touch-icon')) score += 80
+
+    if (path.endsWith('.ico')) score += 45
+    else if (path.endsWith('.png')) score += 30
+    else if (path.endsWith('.webp')) score += 20
+    else if (path.endsWith('.svg')) score += 10
+
+    const noisyKeywords = ['copilot', 'avatar', 'profile', 'badge', 'emoji', 'user', 'team', 'topic']
+    if (noisyKeywords.some((kw) => path.includes(kw) || query.includes(kw))) {
+      score -= 120
+    }
+
+    score -= Math.min(path.length, 140) / 4
+    score -= Math.min(parsed.search.length, 80) / 6
+    return score
+  } catch {
+    return Number.NEGATIVE_INFINITY
+  }
+}
+
 export function App() {
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([])
   const [tabs, setTabs] = useState<TabItem[]>([])
@@ -93,6 +136,18 @@ export function App() {
   const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
+
+  // Build domain → favicon map from open tabs (for bookmark favicon fallback)
+  const domainIconMap = useMemo(() => {
+    const map = new Map<string, { url: string; score: number }>()
+    for (const tab of tabs) {
+      if (!tab.favIconUrl || !tab.domain) continue
+      const score = scoreFaviconCandidate(tab.favIconUrl, tab.domain)
+      const prev = map.get(tab.domain)
+      if (!prev || score > prev.score) map.set(tab.domain, { url: tab.favIconUrl, score })
+    }
+    return new Map(Array.from(map.entries()).map(([domain, item]) => [domain, item.url]))
+  }, [tabs])
 
   // Load settings on mount
   useEffect(() => {
@@ -314,6 +369,18 @@ export function App() {
     [bookmarkScopeBookmarks.length, tabs.length],
   )
 
+  const allowedSourceFilters = useMemo<SourceFilter[]>(
+    () => VIEW_SOURCE_FILTER_POLICY[activeView] ?? ['bookmarks', 'tabs', 'both'],
+    [activeView],
+  )
+
+  useEffect(() => {
+    if (allowedSourceFilters.includes(sourceFilter)) return
+    const fallback = allowedSourceFilters[0] ?? 'both'
+    setSourceFilterState(fallback)
+    void setSourceFilter(fallback)
+  }, [allowedSourceFilters, sourceFilter])
+
   // --- Facet computation ---
   const domainsFacet = useMemo(() => {
     const counts = new Map<string, number>()
@@ -399,6 +466,7 @@ export function App() {
   }
 
   return (
+    <DomainIconContext.Provider value={domainIconMap}>
     <div className="flex h-screen flex-col bg-background text-foreground">
       <div className="shrink-0 px-6 py-4">
         <header className="flex items-center justify-between gap-4 pb-3">
@@ -484,6 +552,7 @@ export function App() {
         <FacetSidebar
           sourceFilter={sourceFilter}
           onSourceFilterChange={handleSourceFilterChange}
+          allowedSourceFilters={allowedSourceFilters}
           sourceCounts={sourceCounts}
           bookmarkScopeFilter={bookmarkScopeFilter}
           bookmarkFolderOptions={bookmarkFolderOptions}
@@ -544,6 +613,7 @@ export function App() {
         </div>
       </footer>
     </div>
+    </DomainIconContext.Provider>
   )
 }
 

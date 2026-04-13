@@ -20,6 +20,7 @@ interface CombinedRow {
   url: string
   title: string
   domain: string
+  favIconUrl?: string
   source: SourceKind
   bookmarkIds: string[]
   tabIds: number[]
@@ -60,6 +61,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         url: b.url,
         title: b.title || b.url,
         domain: b.domain,
+        favIconUrl: undefined,
         source: 'bookmark',
         bookmarkIds: [b.id],
         tabIds: [],
@@ -100,6 +102,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         url: t.url,
         title: t.title || t.url,
         domain: t.domain,
+        favIconUrl: t.favIconUrl,
         source: 'tab',
         bookmarkIds: [],
         tabIds: [t.id],
@@ -120,6 +123,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
     current.windowIds.push(t.windowId)
     current.source = current.bookmarkIds.length > 0 ? 'both' : 'tab'
     if (!current.title && t.title) current.title = t.title
+    if (!current.favIconUrl && t.favIconUrl) current.favIconUrl = t.favIconUrl
     if (!current.category && t.category) current.category = t.category
     if (!current.intent && t.intent) current.intent = t.intent
     if (!current.lastAccessed || t.lastAccessed > current.lastAccessed) current.lastAccessed = t.lastAccessed
@@ -195,7 +199,7 @@ export function CombinedListTable({
       header: '',
       enableSorting: false,
       size: 24,
-      cell: ({ row }) => <Favicon domain={row.original.domain} />,
+      cell: ({ row }) => <Favicon domain={row.original.domain} src={row.original.favIconUrl} />,
     },
     {
       accessorKey: 'title',
@@ -416,4 +420,3 @@ function embeddingsAvailable(settings: LlmSettings): boolean {
   }
   return Boolean(settings.providers.openrouter.apiKey && settings.tasks.embedding.model)
 }
-

@@ -18,6 +18,7 @@ interface FacetItem {
 interface FacetSidebarProps {
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
+  allowedSourceFilters?: SourceFilter[]
   sourceCounts: {
     bookmarks: number
     tabs: number
@@ -38,6 +39,7 @@ interface FacetSidebarProps {
 export function FacetSidebar({
   sourceFilter,
   onSourceFilterChange,
+  allowedSourceFilters,
   sourceCounts,
   bookmarkScopeFilter,
   bookmarkFolderOptions,
@@ -114,6 +116,7 @@ export function FacetSidebar({
           <SourceFilterToggle
             value={sourceFilter}
             onChange={onSourceFilterChange}
+            allowedOptions={allowedSourceFilters}
             counts={sourceCounts}
           />
         </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 // Palette-safe colors for letter avatars (avoids external requests entirely)
@@ -25,18 +25,30 @@ interface FaviconProps {
 }
 
 /**
- * Renders a favicon image when a safe src is available,
- * or a deterministic letter avatar as fallback.
+ * Maps domain → favicon URL from open tabs.
+ * Built in App.tsx from TabItem.favIconUrl.
+ */
+export const DomainIconContext = createContext<ReadonlyMap<string, string>>(new Map())
+
+/**
+ * Renders a favicon image with a three-tier fallback:
+ * 1. `src` prop (if provided and not failed)
+ * 2. Domain icon from `DomainIconContext` (if src is missing/failed, and domain has an icon from an open tab)
+ * 3. Deterministic letter avatar
  *
  * Does NOT use chrome://favicon* URLs — those are blocked as img src in MV3.
  * For tabs, pass tab.favIconUrl (Chrome resolves it for you).
- * For bookmarks, leave src undefined → letter avatar.
+ * For bookmarks, leave src undefined → falls through to domain context → letter avatar.
  */
 export function Favicon({ domain, src }: FaviconProps) {
-  const [failed, setFailed] = useState(false)
+  const [srcFailed, setSrcFailed] = useState(false)
+  const [domainFailed, setDomainFailed] = useState(false)
+  const domainIcons = useContext(DomainIconContext)
+  const domainIcon = domainIcons.get(domain)
   const letter = (domain[0] ?? '?').toUpperCase()
 
-  if (src && !failed) {
+  // Tier 1: explicit src
+  if (src && !srcFailed) {
     return (
       <img
         src={src}
@@ -44,11 +56,26 @@ export function Favicon({ domain, src }: FaviconProps) {
         width={16}
         height={16}
         className="h-4 w-4 shrink-0 rounded-sm object-contain"
-        onError={() => setFailed(true)}
+        onError={() => setSrcFailed(true)}
       />
     )
   }
 
+  // Tier 2: domain icon from open tabs
+  if (domainIcon && domainIcon !== src && !domainFailed) {
+    return (
+      <img
+        src={domainIcon}
+        alt=""
+        width={16}
+        height={16}
+        className="h-4 w-4 shrink-0 rounded-sm object-contain"
+        onError={() => setDomainFailed(true)}
+      />
+    )
+  }
+
+  // Tier 3: letter avatar
   return (
     <div
       className={cn(

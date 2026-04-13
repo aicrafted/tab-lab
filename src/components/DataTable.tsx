@@ -136,7 +136,10 @@ export function DataTable<TData, TValue>({
                   <TableHead
                     key={header.id}
                     onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
-                    className={cn(header.column.getCanSort() && 'cursor-pointer select-none')}
+                    className={cn(
+                      header.column.getCanSort() && 'cursor-pointer select-none',
+                      header.column.id === 'favicon' && 'w-8 min-w-8 px-2',
+                    )}
                   >
                     {header.isPlaceholder ? null : (
                       <span className="inline-flex items-center gap-1">
@@ -165,7 +168,10 @@ export function DataTable<TData, TValue>({
               table.getRowModel().rows.map(row => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map(cell => (
-                    <TableCell key={cell.id}>
+                    <TableCell
+                      key={cell.id}
+                      className={cn(cell.column.id === 'favicon' && 'w-8 min-w-8 px-2')}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}

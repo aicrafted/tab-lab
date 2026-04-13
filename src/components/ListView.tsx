@@ -1,4 +1,6 @@
+import { BookmarksTable } from '@/components/BookmarksTable'
 import { CombinedListTable } from '@/components/CombinedListTable'
+import { TabsTable } from '@/components/TabsTable'
 import type { SourceFilter } from '@/components/views/types'
 import type { BookmarkItem, LlmSettings, TabItem } from '@/lib/types'
 
@@ -27,6 +29,32 @@ export function ListView({
   onActivateTab,
   viewMenuHost,
 }: ListViewProps) {
+  if (sourceFilter === 'bookmarks') {
+    return (
+      <BookmarksTable
+        data={bookmarks}
+        settings={settings}
+        loading={loading}
+        onDelete={(id) => void onDeleteBookmark(id)}
+        onExport={onExport}
+        menuHost={viewMenuHost}
+      />
+    )
+  }
+
+  if (sourceFilter === 'tabs') {
+    return (
+      <TabsTable
+        data={tabs}
+        settings={settings}
+        loading={loading}
+        onClose={(id) => void onCloseTab(id)}
+        onActivate={(id) => void onActivateTab(id)}
+        menuHost={viewMenuHost}
+      />
+    )
+  }
+
   return (
     <CombinedListTable
       bookmarks={bookmarks}
