@@ -28,9 +28,10 @@ interface FacetSidebarProps {
   onBookmarkScopeChange: (value: BookmarkScopeFilter) => void
   domains: FacetItem[]
   categories: FacetItem[]
-  activeMode: 'domains' | 'categories'
+  intents: FacetItem[]
+  activeMode: 'domains' | 'categories' | 'intent'
   activeValues: string[]
-  onModeChange: (mode: 'domains' | 'categories') => void
+  onModeChange: (mode: 'domains' | 'categories' | 'intent') => void
   onToggle: (value: string) => void
   onClear: () => void
   width: number
@@ -46,6 +47,7 @@ export function FacetSidebar({
   onBookmarkScopeChange,
   domains,
   categories,
+  intents,
   activeMode,
   activeValues,
   onModeChange,
@@ -53,8 +55,16 @@ export function FacetSidebar({
   onClear,
   width,
 }: FacetSidebarProps) {
-  const items = activeMode === 'domains' ? domains : categories
-  const showEmpty = activeMode === 'categories' && categories.length === 0
+  const items = activeMode === 'domains'
+    ? domains
+    : activeMode === 'categories'
+      ? categories
+      : intents
+  const showEmpty = activeMode === 'categories'
+    ? categories.length === 0
+    : activeMode === 'intent'
+      ? intents.length === 0
+      : false
   const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
   const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
@@ -123,7 +133,7 @@ export function FacetSidebar({
       </div>
 
       <div className="flex shrink-0 border-b border-border">
-        {(['domains', 'categories'] as const).map(mode => (
+        {(['domains', 'categories', 'intent'] as const).map(mode => (
           <button
             key={mode}
             type="button"
@@ -135,14 +145,16 @@ export function FacetSidebar({
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            {mode === 'domains' ? 'Domains' : 'Categories'}
+            {mode === 'domains' ? 'Domains' : mode === 'categories' ? 'Categories' : 'Intent'}
           </button>
         ))}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showEmpty ? (
-          <p className="p-4 text-xs text-muted-foreground">No categories yet</p>
+          <p className="p-4 text-xs text-muted-foreground">
+            {activeMode === 'intent' ? 'No intents yet' : 'No categories yet'}
+          </p>
         ) : (
           items.map(item => (
             <FacetRow

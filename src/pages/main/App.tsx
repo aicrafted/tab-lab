@@ -29,6 +29,7 @@ import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
+import { effectiveIntent } from '@/lib/static-intent'
 import { formatAge } from '@/lib/utils'
 import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
@@ -129,7 +130,7 @@ export function App() {
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
-  const [facetMode, setFacetMode] = useState<'domains' | 'categories'>('domains')
+  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
@@ -407,10 +408,26 @@ export function App() {
     return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
+  const intentFacet = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of sourceScopedTabs) {
+      const key = effectiveIntent(t) ?? 'other'
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    for (const b of sourceScopedBookmarks) {
+      const key = effectiveIntent(b) ?? 'other'
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
+  }, [sourceScopedTabs, sourceScopedBookmarks])
+
   const filteredBookmarks = useMemo(() => {
     if (activeFacets.length === 0) return sourceScopedBookmarks
     if (facetMode === 'domains') {
       return sourceScopedBookmarks.filter((item) => activeFacets.includes(item.domain))
+    }
+    if (facetMode === 'intent') {
+      return sourceScopedBookmarks.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
     }
     return sourceScopedBookmarks.filter((item) => item.category != null && activeFacets.includes(item.category))
   }, [sourceScopedBookmarks, activeFacets, facetMode])
@@ -419,6 +436,9 @@ export function App() {
     if (activeFacets.length === 0) return sourceScopedTabs
     if (facetMode === 'domains') {
       return sourceScopedTabs.filter((item) => activeFacets.includes(item.domain))
+    }
+    if (facetMode === 'intent') {
+      return sourceScopedTabs.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
     }
     return sourceScopedTabs.filter((item) => item.category != null && activeFacets.includes(item.category))
   }, [sourceScopedTabs, activeFacets, facetMode])
@@ -559,6 +579,7 @@ export function App() {
           onBookmarkScopeChange={handleBookmarkScopeChange}
           domains={domainsFacet}
           categories={categoriesFacet}
+          intents={intentFacet}
           activeMode={facetMode}
           activeValues={activeFacets}
           onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}

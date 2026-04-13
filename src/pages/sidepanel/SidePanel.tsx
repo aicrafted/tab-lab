@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PanelLeft, X } from 'lucide-react'
-import { CurrentTab } from './sections/CurrentTab'
+import { Favicon } from '@/components/Favicon'
 import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
 import { RelatedBookmarks } from './sections/RelatedBookmarks'
@@ -76,31 +76,26 @@ export function SidePanel() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-[#111] text-[#f0e6d0]">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#2a2a2a] bg-[#111]/95 px-3 py-2 backdrop-blur">
-        <h1 className="text-sm font-semibold text-[#f0e6d0]">TabLab Panel</h1>
-        <button
-          type="button"
-          onClick={() => window.close()}
-          className="rounded p-1 text-[#888] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
-          title="Close panel"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Move side panel hint */}
-      <div className="flex items-center gap-1.5 border-b border-[#2a2a2a] bg-[#1a1a1a] px-3 py-1.5 text-[10px] text-[#666] leading-snug">
-        <PanelLeft className="h-3 w-3 shrink-0 text-[#555]" />
-        <span>
-          To move to other side: <span className="text-[#888]">⋮ → Settings → Appearance → Side panel</span>
-        </span>
-      </div>
+      {/* Domain bar — replaces Chrome's native header */}
+      {currentTabData && (
+        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#2a2a2a] bg-[#111]/95 px-3 py-2 backdrop-blur">
+          <Favicon domain={currentTabData.domain} src={currentTabData.favIconUrl} />
+          <span className="flex-1 truncate text-sm text-[#f0e6d0]">{currentTabData.domain}</span>
+          <button
+            type="button"
+            onClick={() => window.close()}
+            className="shrink-0 rounded p-1 text-[#666] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
+            title="Close panel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 space-y-1 p-2">
         {currentTabData && data && (
           <Search data={data} currentTabId={currentTabData.id} currentWindowId={currentWindowId} />
         )}
-        {currentTabData && <CurrentTab tab={currentTabData} />}
         {data && (
           <RecentTabs
             history={data.tabHistory ?? []}
@@ -131,6 +126,14 @@ export function SidePanel() {
             No active tab. Open a web page to see context.
           </p>
         )}
+      </div>
+
+      {/* Move side panel hint — at the very bottom */}
+      <div className="flex items-center gap-1.5 border-t border-[#2a2a2a] bg-[#1a1a1a] px-3 py-1.5 text-[10px] text-[#555] leading-snug">
+        <PanelLeft className="h-3 w-3 shrink-0 text-[#444]" />
+        <span>
+          To move to other side: <span className="text-[#666]">⋮ → Settings → Appearance → Side panel</span>
+        </span>
       </div>
     </div>
   )
