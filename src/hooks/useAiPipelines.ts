@@ -6,9 +6,10 @@ import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTa
 import { clearDomainKnowledgeCache, enrichDomains } from '@/lib/domain-enricher'
 import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
+import { detectPlatform } from '@/lib/platform-detection'
 import { clearAllAICache, getCached, setCached } from '@/lib/storage'
 import { tagWithGeminiNano, tagWithLmStudio } from '@/lib/tagger'
-import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
+import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/types'
 
 export interface PipelineTaskProgress {
   id: string
@@ -193,6 +194,48 @@ export function useAiPipelines({
     setBookmarks((prev) => applyClusterIdUpdates(prev, updates))
   }, [setBookmarks])
 
+  const applyPlatformsFromDomainMap = useCallback((
+    tb: { url: string; domain: string }[],
+    bm: { url: string; domain: string }[],
+    domainMap: Map<string, import('@/lib/domain-enricher').DomainInfo>,
+  ) => {
+    const tabPlatforms = new Map<string, KnownPlatform>()
+    for (const item of tb) {
+      const platform = detectPlatform(item.domain, domainMap)
+      if (platform) tabPlatforms.set(item.url, platform)
+    }
+    if (tabPlatforms.size > 0) {
+      setTabs((prev) => {
+        let changed = false
+        const next = prev.map((item) => {
+          const platform = tabPlatforms.get(item.url)
+          if (!platform || item.platform === platform) return item
+          changed = true
+          return { ...item, platform }
+        })
+        return changed ? next : prev
+      })
+    }
+
+    const bookmarkPlatforms = new Map<string, KnownPlatform>()
+    for (const item of bm) {
+      const platform = detectPlatform(item.domain, domainMap)
+      if (platform) bookmarkPlatforms.set(item.url, platform)
+    }
+    if (bookmarkPlatforms.size > 0) {
+      setBookmarks((prev) => {
+        let changed = false
+        const next = prev.map((item) => {
+          const platform = bookmarkPlatforms.get(item.url)
+          if (!platform || item.platform === platform) return item
+          changed = true
+          return { ...item, platform }
+        })
+        return changed ? next : prev
+      })
+    }
+  }, [setBookmarks, setTabs])
+
   const runEmbeddingPass = useCallback(async (
     tb: TabItem[],
     bm: BookmarkItem[],
@@ -289,6 +332,7 @@ export function useAiPipelines({
       setLlmStatus('classifying')
       try {
         const domainMap = await enrichDomains(allDomains, llmSettings)
+        applyPlatformsFromDomainMap(tb, bm, domainMap)
         const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
           embedLog.progress(updates.length)
         }, domainMap)
@@ -401,6 +445,7 @@ export function useAiPipelines({
       setLlmStatus('classifying')
       try {
         const domainMap = await enrichDomains(allDomains, llmSettings)
+        applyPlatformsFromDomainMap(tb, bm, domainMap)
         const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
           embedLog.progress(updates.length)
         }, domainMap)
@@ -485,6 +530,7 @@ export function useAiPipelines({
 
     setLlmStatus('unavailable')
   }, [
+    applyPlatformsFromDomainMap,
     applyBookmarkCategoryBatch,
     applyBookmarkClusterBatch,
     applyBookmarkIntentBatch,
@@ -523,9 +569,10 @@ export function useAiPipelines({
     setLlmStatus('classifying')
     try {
       if (forceRefresh) await clearDomainKnowledgeCache()
-      await enrichDomains(allDomains, llmSettings, (delta) => {
+      const domainMap = await enrichDomains(allDomains, llmSettings, (delta) => {
         domainsLog.progress(delta)
       })
+      applyPlatformsFromDomainMap(tabs, bookmarks, domainMap)
       domainsLog.done()
       setLlmStatus('ready')
     } catch (err) {
@@ -533,7 +580,7 @@ export function useAiPipelines({
       setLlmError(String(err))
       setLlmStatus('error')
     }
-  }, [bookmarks, llmSettings, onTaskProgress, setLlmError, setLlmStatus, tabs])
+  }, [applyPlatformsFromDomainMap, bookmarks, llmSettings, onTaskProgress, setLlmError, setLlmStatus, tabs])
 
   const handleRunDomainKnowledge = useCallback(async () => {
     await runDomainKnowledgePass(false)

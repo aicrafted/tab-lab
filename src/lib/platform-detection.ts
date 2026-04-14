@@ -1,4 +1,5 @@
 import type { KnownPlatform, PageIntent } from './types'
+import type { DomainInfo } from './domain-enricher'
 
 const DOMAIN_MAP: Record<string, KnownPlatform> = {
   'reddit.com': 'social',
@@ -47,12 +48,87 @@ const DOMAIN_MAP: Record<string, KnownPlatform> = {
   'huggingface.co': 'ai',
   'replicate.com': 'ai',
   'perplexity.ai': 'ai',
+  'figma.com': 'tool',
+  'notion.so': 'tool',
+  'linear.app': 'tool',
+  'miro.com': 'tool',
+  'canva.com': 'tool',
+  'airtable.com': 'tool',
+  'jira.com': 'tool',
+  'confluence.com': 'tool',
+  'codepen.io': 'sandbox',
+  'codesandbox.io': 'sandbox',
+  'replit.com': 'sandbox',
+  'stackblitz.com': 'sandbox',
+  'jsfiddle.net': 'sandbox',
+  'glitch.me': 'sandbox',
+  'glitch.com': 'sandbox',
+  'gitpod.io': 'sandbox',
+  'console.aws.amazon.com': 'cloud',
+  'console.cloud.google.com': 'cloud',
+  'portal.azure.com': 'cloud',
+  'vercel.com': 'cloud',
+  'netlify.com': 'cloud',
+  'cloudflare.com': 'cloud',
+  'digitalocean.com': 'cloud',
+  'fly.io': 'cloud',
+  'render.com': 'cloud',
+  'railway.app': 'cloud',
+  'sentry.io': 'ci',
+  'datadog.com': 'ci',
+  'grafana.com': 'ci',
+  'app.circleci.com': 'ci',
+  'travis-ci.com': 'ci',
+  'newrelic.com': 'ci',
+  'pagerduty.com': 'ci',
+  'spotify.com': 'music',
+  'soundcloud.com': 'music',
+  'bandcamp.com': 'music',
+  'music.apple.com': 'music',
+  'deezer.com': 'music',
+  'tidal.com': 'music',
+  'binance.com': 'finance',
+  'coinbase.com': 'finance',
+  'finance.yahoo.com': 'finance',
+  'bloomberg.com': 'finance',
+  'tradingview.com': 'finance',
+  'robinhood.com': 'finance',
+  'store.steampowered.com': 'games',
+  'epicgames.com': 'games',
+  'itch.io': 'games',
+  'gog.com': 'games',
+  'coursera.org': 'education',
+  'udemy.com': 'education',
+  'khanacademy.org': 'education',
+  'edx.org': 'education',
+  'pluralsight.com': 'education',
+  'udacity.com': 'education',
+  'mail.google.com': 'email',
+  'outlook.live.com': 'email',
+  'proton.me': 'email',
+  'protonmail.com': 'email',
+  'fastmail.com': 'email',
+  'wikipedia.org': 'reference',
+  'wikimedia.org': 'reference',
+  'arxiv.org': 'reference',
+  'scholar.google.com': 'reference',
+  'semanticscholar.org': 'reference',
+  'wolframalpha.com': 'reference',
+  'developer.mozilla.org': 'reference',
 }
 
 export const PLATFORM_TO_INTENT: Partial<Record<KnownPlatform, PageIntent>> = {
   social: 'social',
   video: 'video',
+  music: 'video',
   code: 'repository',
+  sandbox: 'tool',
+  tool: 'tool',
+  cloud: 'tool',
+  ci: 'tool',
+  email: 'tool',
+  education: 'article',
+  reference: 'reference',
 }
 
 function normalizeDomain(domain: string): string {
@@ -66,7 +142,10 @@ function matchesDomain(domain: string, candidate: string): boolean {
   return domain === candidate || domain.endsWith(`.${candidate}`)
 }
 
-export function detectPlatform(domain: string): KnownPlatform | undefined {
+export function detectPlatform(
+  domain: string,
+  enrichmentCache?: Map<string, DomainInfo>,
+): KnownPlatform | undefined {
   const normalized = normalizeDomain(domain)
   if (!normalized) return undefined
 
@@ -75,13 +154,18 @@ export function detectPlatform(domain: string): KnownPlatform | undefined {
   }
 
   if (normalized.startsWith('docs.')) return 'docs'
+  const enriched = enrichmentCache?.get(normalized)
+  if (enriched?.known && enriched.platform) return enriched.platform
   return undefined
 }
 
-export function detectPlatformFromUrl(url: string): KnownPlatform | undefined {
+export function detectPlatformFromUrl(
+  url: string,
+  enrichmentCache?: Map<string, DomainInfo>,
+): KnownPlatform | undefined {
   try {
     const parsed = new URL(url)
-    return detectPlatform(parsed.hostname)
+    return detectPlatform(parsed.hostname, enrichmentCache)
   } catch {
     return undefined
   }

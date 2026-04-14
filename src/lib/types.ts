@@ -78,6 +78,16 @@ export type KnownPlatform =
   | 'shopping'
   | 'news'
   | 'ai'
+  | 'tool'
+  | 'sandbox'
+  | 'cloud'
+  | 'music'
+  | 'finance'
+  | 'ci'
+  | 'games'
+  | 'education'
+  | 'email'
+  | 'reference'
 
 export interface CacheEntry {
   category: string

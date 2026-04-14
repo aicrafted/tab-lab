@@ -1,5 +1,5 @@
 import { chatComplete, extractJson } from './llm'
-import type { LlmSettings } from './types'
+import type { KnownPlatform, LlmSettings } from './types'
 
 const DB_NAME = 'tabmind-domains'
 const DB_VERSION = 1
@@ -7,6 +7,10 @@ const STORE_NAME = 'domain-knowledge'
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4
 const UNKNOWN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const VALID_PLATFORMS = new Set<KnownPlatform>([
+  'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
+  'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
+])
 
 const DOMAIN_SYSTEM_PROMPT = `You are a web domain classifier. You have knowledge of major websites and online services.
 For each domain you recognize, return structured data. Skip domains you don't know (personal servers, internal tools, IP addresses, localhost, random subdomains).
@@ -17,6 +21,7 @@ export interface DomainInfo {
   known: boolean
   category?: string
   description?: string
+  platform?: KnownPlatform
   fetchedAt: number
 }
 
@@ -96,11 +101,13 @@ function buildDomainPrompt(domains: string[]): string {
 - "domain": exact domain string from the input
 - "category": a short category label (1-4 words, Title Case) that best describes the site
 - "description": 3-7 words describing what the site is
+- "platform": optional, one of [social, video, code, registry, qa, blog, docs, shopping, news, ai, tool, sandbox, cloud, music, finance, ci, games, education, email, reference] — only if clearly applicable; omit if unsure
 
 Return a JSON array. Include ONLY domains you recognize. Skip unknown ones entirely.
 
 Example:
-[{"domain":"github.com","category":"Development","description":"code hosting and version control"}]
+[{"domain":"github.com","category":"Development","description":"code hosting and version control","platform":"code"},
+{"domain":"figma.com","category":"Design","description":"collaborative interface design tool","platform":"tool"}]
 
 Domains:
 ${domains.join('\n')}`
@@ -111,6 +118,12 @@ function normalizeDescription(value: string): string {
   if (!compact) return ''
   const words = compact.split(' ')
   return words.slice(0, 7).join(' ').slice(0, 120)
+}
+
+function normalizePlatform(value: unknown): KnownPlatform | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  return VALID_PLATFORMS.has(normalized as KnownPlatform) ? normalized as KnownPlatform : undefined
 }
 
 function chunkDomains(domains: string[], size: number): string[][] {
@@ -146,6 +159,7 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
       const domainValue = (row as { domain?: unknown }).domain
       const categoryValue = (row as { category?: unknown }).category
       const descriptionValue = (row as { description?: unknown }).description
+      const platformValue = (row as { platform?: unknown }).platform
       if (typeof domainValue !== 'string') continue
       if (typeof descriptionValue !== 'string') continue
 
@@ -155,6 +169,7 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
       const category = typeof categoryValue === 'string'
         ? categoryValue.trim().slice(0, 40) || undefined
         : undefined
+      const platform = normalizePlatform(platformValue)
       const description = normalizeDescription(descriptionValue)
       if (!description) continue
 
@@ -163,6 +178,7 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
         known: true,
         category,
         description,
+        platform,
         fetchedAt,
       })
       seen.add(domain)
@@ -218,6 +234,7 @@ function parseDomainResponseHeuristic(raw: string, sentDomains: Set<string>, fet
 
     const categoryMatch = chunk.match(/["']?category["']?\s*:\s*["']([^"'}]+)["']/i)
     const descriptionMatch = chunk.match(/["']?description["']?\s*:\s*["']([^"'}]+)["']/i)
+    const platformMatch = chunk.match(/["']?platform["']?\s*:\s*["']([^"'}]+)["']/i)
     if (!descriptionMatch) continue
 
     const description = normalizeDescription(descriptionMatch[1] ?? '')
@@ -225,12 +242,14 @@ function parseDomainResponseHeuristic(raw: string, sentDomains: Set<string>, fet
     const category = typeof categoryMatch?.[1] === 'string'
       ? categoryMatch[1].trim().slice(0, 40) || undefined
       : undefined
+    const platform = normalizePlatform(platformMatch?.[1])
 
     results.push({
       domain,
       known: true,
       category,
       description,
+      platform,
       fetchedAt,
     })
     seen.add(domain)
@@ -304,6 +323,7 @@ export async function loadCachedDomains(): Promise<Map<string, DomainInfo>> {
         known: Boolean(row.known),
         category: row.known && row.category ? row.category : undefined,
         description: row.known && row.description ? row.description : undefined,
+        platform: row.known ? normalizePlatform(row.platform) : undefined,
         fetchedAt: Number.isFinite(row.fetchedAt) ? row.fetchedAt : 0,
       })
     }
