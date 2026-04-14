@@ -15,6 +15,7 @@ interface SemanticPoint {
   url: string
   domain: string
   category: string
+  clusterId?: number
   intent?: PageIntent
   visitCount: number
   x: number
@@ -34,7 +35,7 @@ const WIDTH = 1000
 const HEIGHT = 620
 const PADDING = 40
 
-export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onRunEmbeddings }: ViewProps) {
+export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clusterNames, onRunEmbeddings }: ViewProps) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
@@ -60,6 +61,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
         url: bookmark.url,
         domain: bookmark.domain,
         category,
+        clusterId: bookmark.clusterId,
         intent: effectiveIntent(bookmark),
         visitCount: bookmark.visitCount ?? 1,
         x,
@@ -78,6 +80,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
         url: tab.url,
         domain: tab.domain,
         category,
+        clusterId: tab.clusterId,
         intent: effectiveIntent(tab),
         visitCount: tab.visitCount ?? 1,
         x,
@@ -110,23 +113,31 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
   }
 
   const centroids = useMemo(() => {
-    const groups = new Map<string, { sumX: number; sumY: number; count: number }>()
+    const groups = new Map<string, { sumX: number; sumY: number; count: number; category: string; clusterId?: number }>()
     for (const point of points) {
-      const g = groups.get(point.category) ?? { sumX: 0, sumY: 0, count: 0 }
+      const key = point.clusterId != null ? `cluster:${point.clusterId}` : `category:${point.category}`
+      const g = groups.get(key) ?? {
+        sumX: 0,
+        sumY: 0,
+        count: 0,
+        category: point.category,
+        clusterId: point.clusterId,
+      }
       g.sumX += point.x
       g.sumY += point.y
       g.count += 1
-      groups.set(point.category, g)
+      groups.set(key, g)
     }
-    return Array.from(groups.entries())
-      .filter(([, g]) => g.count >= 3)
-      .map(([category, g]) => ({
-        category,
+    return Array.from(groups.values())
+      .filter((g) => g.count >= 3)
+      .map((g) => ({
+        label: g.clusterId != null ? (clusterNames?.get(g.clusterId) ?? g.category) : g.category,
+        key: g.clusterId != null ? `cluster:${g.clusterId}` : `category:${g.category}`,
         x: toCanvas(g.sumX / g.count, 'x'),
         y: toCanvas(g.sumY / g.count, 'y'),
         count: g.count,
       }))
-  }, [points])
+  }, [clusterNames, points])
 
   const outlierSet = useMemo(() => {
     const byCategory = new Map<string, SemanticPoint[]>()
@@ -300,7 +311,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
 
               {centroids.map((centroid) => (
                 <text
-                  key={centroid.category}
+                  key={centroid.key}
                   x={centroid.x}
                   y={centroid.y}
                   textAnchor="middle"
@@ -310,7 +321,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, onR
                   opacity={0.7}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
-                  {centroid.category}
+                  {centroid.label}
                 </text>
               ))}
             </g>

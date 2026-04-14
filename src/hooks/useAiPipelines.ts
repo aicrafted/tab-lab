@@ -1,7 +1,9 @@
 import { useCallback } from 'react'
-import { applyCategoryUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/apply-updates'
-import { checkLlmAvailability, classifyBookmarks, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
-import { clearEmbeddingCache, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
+import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/apply-updates'
+import { kMeans, type ClusterResult } from '@/lib/cluster'
+import { saveClusterNames } from '@/lib/cluster-names'
+import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
+import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
 import { clearAllAICache, setCached } from '@/lib/storage'
 import { tagWithGeminiNano, tagWithLmStudio } from '@/lib/tagger'
@@ -15,6 +17,8 @@ export interface PipelineTaskProgress {
   percent: number
   status: 'running' | 'done' | 'failed'
 }
+
+const BOOKMARK_CLUSTER_OFFSET = 10_000
 
 function createTaskLogger(
   task: string,
@@ -124,6 +128,7 @@ interface UseAiPipelinesArgs {
   setTabs: React.Dispatch<React.SetStateAction<TabItem[]>>
   setLlmStatus: React.Dispatch<React.SetStateAction<LlmStatus>>
   setLlmError: (msg: string | undefined) => void
+  setClusterNames: React.Dispatch<React.SetStateAction<Map<number, string>>>
   setProjectedPoints: React.Dispatch<React.SetStateAction<Map<string, [number, number]>>>
   reload: () => void
   onTaskProgress?: (update: PipelineTaskProgress) => void
@@ -137,6 +142,7 @@ export function useAiPipelines({
   setTabs,
   setLlmStatus,
   setLlmError,
+  setClusterNames,
   setProjectedPoints,
   reload,
   onTaskProgress,
@@ -163,6 +169,14 @@ export function useAiPipelines({
 
   const applyBookmarkIntentBatch = useCallback((updates: { url: string; intent: PageIntent }[]) => {
     setBookmarks((prev) => applyIntentUpdates(prev, updates))
+  }, [setBookmarks])
+
+  const applyTabClusterBatch = useCallback((updates: { url: string; clusterId: number }[]) => {
+    setTabs((prev) => applyClusterIdUpdates(prev, updates))
+  }, [setTabs])
+
+  const applyBookmarkClusterBatch = useCallback((updates: { url: string; clusterId: number }[]) => {
+    setBookmarks((prev) => applyClusterIdUpdates(prev, updates))
   }, [setBookmarks])
 
   const runEmbeddingPass = useCallback(async (
@@ -192,7 +206,7 @@ export function useAiPipelines({
   const runAutoAiPipeline = useCallback(async (
     tb: TabItem[],
     bm: BookmarkItem[],
-    tabsWithCache: TabItem[],
+    _tabsWithCache: TabItem[],
   ) => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
     console.info('[llm:auto] evaluate provider', {
@@ -203,28 +217,62 @@ export function useAiPipelines({
     })
 
     if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
-      const tabsLog = createTaskLogger('auto-classify-tabs', 'Auto NLI tabs', tb.length, onTaskProgress)
-      const bookmarksLog = createTaskLogger('auto-classify-bookmarks', 'Auto NLI bookmarks', bm.length, onTaskProgress)
+      const allItems = [
+        ...tb.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+        ...bm.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+      ]
+      const embedLog = createTaskLogger('auto-embed', 'Auto embeddings', allItems.length, onTaskProgress)
+      const tabsLog = createTaskLogger('auto-cluster-tabs', 'Auto cluster tabs', tb.length, onTaskProgress)
+      const bookmarksLog = createTaskLogger('auto-cluster-bookmarks', 'Auto cluster bookmarks', bm.length, onTaskProgress)
       setLlmStatus('classifying')
       try {
-        await classifyWithLmStudio(
-          tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          llmSettings,
-          (updates) => {
+        const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
+          embedLog.progress(updates.length)
+        })
+        embedLog.done()
+
+        const tabItems = tb
+          .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
+          .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+        if (tabItems.length > 0) {
+          const k = Math.max(3, Math.min(150, Math.ceil(tabItems.length / 8)))
+          const clusters = kMeans(tabItems.map(({ url, embedding }) => ({ url, embedding })), k)
+          const names = await classifyByClusters(tabItems, clusters, 'tab', llmSettings, (updates) => {
             tabsLog.progress(updates.length)
             applyTabCategoryBatch(updates)
-          },
-        )
-        await classifyWithLmStudio(
-          bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          llmSettings,
-          (updates) => {
+            applyTabClusterBatch(updates)
+          })
+          setClusterNames((prev) => {
+            const next = new Map(prev)
+            for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
+            void saveClusterNames(next)
+            return next
+          })
+        }
+
+        const bookmarkItems = bm
+          .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
+          .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+        if (bookmarkItems.length > 0) {
+          const k = Math.max(3, Math.min(150, Math.ceil(bookmarkItems.length / 8)))
+          const clusters = kMeans(bookmarkItems.map(({ url, embedding }) => ({ url, embedding })), k)
+          const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({
+            ...cluster,
+            clusterId: cluster.clusterId + BOOKMARK_CLUSTER_OFFSET,
+          }))
+          const names = await classifyByClusters(bookmarkItems, bookmarkClusters, 'bm', llmSettings, (updates) => {
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
-          },
-        )
+            applyBookmarkClusterBatch(updates)
+          })
+          setClusterNames((prev) => {
+            const next = new Map(prev)
+            for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
+            void saveClusterNames(next)
+            return next
+          })
+        }
+
         tabsLog.done()
         bookmarksLog.done()
         setLlmStatus('ready')
@@ -241,6 +289,7 @@ export function useAiPipelines({
           applyBookmarkIntentBatch,
         )
       } catch (err) {
+        embedLog.failed(err)
         tabsLog.failed(err)
         bookmarksLog.failed(err)
         setLlmError(String(err))
@@ -276,94 +325,89 @@ export function useAiPipelines({
     }
 
     if (hasChatProviderConfig(llmSettings)) {
+      const allItems = [
+        ...tb.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+        ...bm.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+      ]
+      const embedLog = createTaskLogger('auto-embed', 'Auto embeddings', allItems.length, onTaskProgress)
+      const tabsLog = createTaskLogger('auto-cluster-tabs', 'Auto cluster tabs', tb.length, onTaskProgress)
+      const bookmarksLog = createTaskLogger('auto-cluster-bookmarks', 'Auto cluster bookmarks', bm.length, onTaskProgress)
       setLlmStatus('classifying')
       try {
-        await classifyWithLmStudio(
+        const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
+          embedLog.progress(updates.length)
+        })
+        embedLog.done()
+
+        const tabItems = tb
+          .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
+          .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+        if (tabItems.length > 0) {
+          const k = Math.max(3, Math.min(150, Math.ceil(tabItems.length / 8)))
+          const clusters = kMeans(tabItems.map(({ url, embedding }) => ({ url, embedding })), k)
+          const names = await classifyByClusters(tabItems, clusters, 'tab', llmSettings, (updates) => {
+            tabsLog.progress(updates.length)
+            applyTabCategoryBatch(updates)
+            applyTabClusterBatch(updates)
+          })
+          setClusterNames((prev) => {
+            const next = new Map(prev)
+            for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
+            void saveClusterNames(next)
+            return next
+          })
+        }
+
+        const bookmarkItems = bm
+          .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
+          .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+        if (bookmarkItems.length > 0) {
+          const k = Math.max(3, Math.min(150, Math.ceil(bookmarkItems.length / 8)))
+          const clusters = kMeans(bookmarkItems.map(({ url, embedding }) => ({ url, embedding })), k)
+          const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({
+            ...cluster,
+            clusterId: cluster.clusterId + BOOKMARK_CLUSTER_OFFSET,
+          }))
+          const names = await classifyByClusters(bookmarkItems, bookmarkClusters, 'bm', llmSettings, (updates) => {
+            bookmarksLog.progress(updates.length)
+            applyBookmarkCategoryBatch(updates)
+            applyBookmarkClusterBatch(updates)
+          })
+          setClusterNames((prev) => {
+            const next = new Map(prev)
+            for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
+            void saveClusterNames(next)
+            return next
+          })
+        }
+
+        tabsLog.done()
+        bookmarksLog.done()
+        setLlmStatus('ready')
+        void tagWithLmStudio(
           tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',
           llmSettings,
-          applyTabCategoryBatch,
+          applyTabTagsBatch,
         )
-        await classifyWithLmStudio(
+        void tagWithLmStudio(
           bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
-          applyBookmarkCategoryBatch,
+          applyBookmarkTagsBatch,
         )
-
-        setLlmStatus('normalizing')
-        const allLabels = [...new Set(tabsWithCache.map(t => t.category).filter(Boolean) as string[])]
-        if (allLabels.length > 1) {
-          console.group('[Auto Pass 2] Merge categories')
-          console.log('Input labels:', allLabels)
-          const mergeMap = await normalizeCategoryLabels(allLabels, llmSettings)
-          console.log('Merge map:', mergeMap)
-          const changes = Object.entries(mergeMap).filter(([from, to]) => from !== to)
-          console.log('Changes:', changes)
-          setTabs(prev =>
-            prev.map(t => ({
-              ...t,
-              category: t.category ? mergeMap[t.category] ?? t.category : t.category,
-            })),
-          )
-          for (const t of tabsWithCache) {
-            if (t.category && mergeMap[t.category]) {
-              t.category = mergeMap[t.category]
-            }
-          }
-          await Promise.all(
-            tabsWithCache
-              .filter(t => t.category && mergeMap[t.category])
-              .map(t =>
-                setCached('tab', t.url, {
-                  category: t.category!,
-                  processedAt: Date.now(),
-                }),
-              ),
-          )
-          console.groupEnd()
-        }
-
-        setLlmStatus('normalizing')
-        console.group('[Auto Pass 3] Split large categories')
-        void splitLargeClusters(
-          tabsWithCache.map(t => ({
-            url: t.url,
-            title: t.title,
-            domain: t.domain,
-            category: t.category ?? '',
-          })),
+        void classifyIntentLmStudio(
+          tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',
           llmSettings,
-          applyTabCategoryBatch,
-        ).then(() => {
-          setLlmStatus('ready')
-          console.groupEnd()
-          void tagWithLmStudio(
-            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            llmSettings,
-            applyTabTagsBatch,
-          )
-          void tagWithLmStudio(
-            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            llmSettings,
-            applyBookmarkTagsBatch,
-          )
-          void classifyIntentLmStudio(
-            tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            llmSettings,
-            applyTabIntentBatch,
-          )
-          void classifyIntentLmStudio(
-            bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            llmSettings,
-            applyBookmarkIntentBatch,
-          )
-        })
+          applyTabIntentBatch,
+        )
+        void classifyIntentLmStudio(
+          bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          llmSettings,
+          applyBookmarkIntentBatch,
+        )
 
       } catch {
         setLlmStatus('unavailable')
@@ -374,23 +418,28 @@ export function useAiPipelines({
     setLlmStatus('unavailable')
   }, [
     applyBookmarkCategoryBatch,
+    applyBookmarkClusterBatch,
     applyBookmarkIntentBatch,
     applyBookmarkTagsBatch,
     applyTabCategoryBatch,
+    applyTabClusterBatch,
     applyTabIntentBatch,
     applyTabTagsBatch,
     llmSettings,
     runEmbeddingPass,
+    setClusterNames,
+    setLlmError,
     setLlmStatus,
-    setTabs,
   ])
 
   const handleClearCache = useCallback(async () => {
     if (!confirm('Clear all cached AI data (categories, tags, intents, embeddings)?')) return
     await clearAllAICache()
+    await saveClusterNames(new Map())
+    setClusterNames(new Map())
     setProjectedPoints(new Map())
     reload()
-  }, [reload, setProjectedPoints])
+  }, [reload, setClusterNames, setProjectedPoints])
 
   const handleClassify = useCallback(async () => {
     const nanoStatus = await checkLlmAvailability(llmSettings)

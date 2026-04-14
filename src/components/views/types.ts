@@ -29,7 +29,7 @@ export interface ViewProps {
   tabs: TabItem[]
   loading: boolean
   projectedPoints?: Map<string, [number, number]>
+  clusterNames?: Map<number, string>
   onRunTags?: () => Promise<void>
   onRunEmbeddings?: () => Promise<void>
 }
-

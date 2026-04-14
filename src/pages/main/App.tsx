@@ -14,6 +14,7 @@ import {
 import { checkLlmAvailability, type LlmStatus } from '@/lib/classifier'
 import { loadCached2D } from '@/lib/embedder'
 import { loadHydratedData } from '@/lib/initial-load'
+import { loadClusterNames } from '@/lib/cluster-names'
 import {
   getBookmarkScopeFilter,
   getLlmSettings,
@@ -138,6 +139,7 @@ export function App() {
   const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
+  const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
 
   // Build domain → favicon map from open tabs (for bookmark favicon fallback)
   const domainIconMap = useMemo(() => {
@@ -197,7 +199,6 @@ export function App() {
 
   const {
     runEmbeddingPass,
-    runAutoAiPipeline,
     handleClearCache,
     handleClassify,
     handleRunIntent,
@@ -213,6 +214,7 @@ export function App() {
     setTabs,
     setLlmStatus,
     setLlmError,
+    setClusterNames,
     setProjectedPoints,
     reload,
     onTaskProgress: (update) => {
@@ -258,13 +260,15 @@ export function App() {
   }, [llmStatus])
 
   async function doLoad() {
-    const [hydrated, folderOptions] = await Promise.all([
+    const [hydrated, folderOptions, storedClusterNames] = await Promise.all([
       loadHydratedData(),
       getBookmarkFolderOptions(),
+      loadClusterNames(),
     ])
     setBookmarks(hydrated.bookmarks)
     setTabs(hydrated.tabs)
     setBookmarkFolderOptions(folderOptions)
+    setClusterNames(storedClusterNames)
 
     // Restore cached 2D projection (Semantic Map coords)
     const cached2D = await loadCached2D()
@@ -273,11 +277,11 @@ export function App() {
     setLastUpdated(Date.now())
     setLoading(false)
 
-    void runAutoAiPipeline(
-      hydrated.rawLinked.tabs,
-      hydrated.rawLinked.bookmarks,
-      hydrated.tabsWithCategoryCache,
-    )
+    // void runAutoAiPipeline(
+    //   hydrated.rawLinked.tabs,
+    //   hydrated.rawLinked.bookmarks,
+    //   hydrated.tabsWithCategoryCache,
+    // )
   }
 
   useEffect(() => {
@@ -474,6 +478,7 @@ export function App() {
       tabs: filteredTabs,
       loading,
       projectedPoints,
+      clusterNames,
       onRunTags: handleRunTags,
       onRunEmbeddings: () => runEmbeddingPass(filteredTabs, filteredBookmarks, llmSettings),
     }

@@ -18,6 +18,10 @@ export interface IntentUpdate extends UrlUpdate {
   intent: PageIntent
 }
 
+export interface ClusterIdUpdate extends UrlUpdate {
+  clusterId: number
+}
+
 function buildUpdateMap<U extends UrlUpdate>(updates: U[]): Map<string, U> {
   return new Map(updates.map((update) => [update.url, update]))
 }
@@ -71,4 +75,11 @@ export function applyIntentUpdates<T extends { url: string; intent?: PageIntent;
   updates: IntentUpdate[],
 ): T[] {
   return applyUpdatesByUrl(items, updates, (item, update) => ({ ...item, intent: update.intent }))
+}
+
+export function applyClusterIdUpdates<T extends { url: string; clusterId?: number; staticIntent?: PageIntent; platform?: KnownPlatform }>(
+  items: T[],
+  updates: ClusterIdUpdate[],
+): T[] {
+  return applyUpdatesByUrl(items, updates, (item, update) => ({ ...item, clusterId: update.clusterId }))
 }

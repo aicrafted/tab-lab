@@ -193,17 +193,41 @@ export async function fetchEmbeddingsBatch(
   settings: LlmSettings,
   onProgress: (updates: { url: string; embedding: number[] }[]) => void,
 ): Promise<void> {
+  await fetchAndCacheEmbeddings(items, settings, onProgress)
+}
+
+function urlPathSnippet(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/$/, '')
+    return path.slice(0, 80)
+  } catch {
+    return ''
+  }
+}
+
+export async function fetchAndCacheEmbeddings(
+  items: { url: string; title: string; domain: string; category?: string }[],
+  settings: LlmSettings,
+  onProgress?: (updates: { url: string; embedding: number[] }[]) => void,
+): Promise<Map<string, number[]>> {
   const provider = settings.tasks.embedding.provider
   if (provider === 'lmstudio') {
-    if (!settings.providers.lmstudio.baseUrl) return
-    if (!settings.tasks.embedding.model) return
+    if (!settings.providers.lmstudio.baseUrl) return new Map()
+    if (!settings.tasks.embedding.model) return new Map()
   }
   if (provider === 'openrouter') {
-    if (!settings.providers.openrouter.apiKey) return
-    if (!settings.tasks.embedding.model) return
+    if (!settings.providers.openrouter.apiKey) return new Map()
+    if (!settings.tasks.embedding.model) return new Map()
   }
 
-  const cachedUrls = new Set<string>()
+  const cachedEmbeddings = await loadCachedEmbeddings()
+  const result = new Map<string, number[]>()
+  for (const item of items) {
+    const cached = cachedEmbeddings.get(item.url)
+    if (cached) result.set(item.url, cached)
+  }
+
+  const cachedUrls = new Set(result.keys())
   try {
     const db = await openDB()
     const rows = await getAllFromStore<EmbeddingRow>(db, EMBEDDINGS_STORE)
@@ -217,18 +241,23 @@ export async function fetchEmbeddingsBatch(
   }
 
   const uncached = items.filter(item => !cachedUrls.has(item.url))
-  if (uncached.length === 0) return
+  if (uncached.length === 0) return result
 
   for (const item of uncached) {
     try {
-      const text = item.category ? `${item.category}: ${item.title}` : item.title
+      const path = urlPathSnippet(item.url)
+      const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
+      const text = item.category ? `${item.category}\n${baseText}` : baseText
       const embedding = await fetchEmbedding(text, settings)
       await storeEmbedding(item.url, embedding)
-      onProgress([{ url: item.url, embedding }])
+      result.set(item.url, embedding)
+      onProgress?.([{ url: item.url, embedding }])
     } catch (err) {
       console.warn('Embedding failed for', item.url, err)
     }
   }
+
+  return result
 }
 
 /**

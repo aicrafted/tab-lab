@@ -1,5 +1,6 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
+import type { ClusterResult } from './cluster'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
@@ -9,17 +10,60 @@ const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title, do
 const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case). Choose from: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. Use "Other" if unsure.
 
 Example output: {"category": "Development"}`
+const CLUSTER_SYSTEM_PROMPT = `You classify clusters of browser pages.
+Given 2-3 representative pages from one cluster, return strict JSON:
+{"category":"<broad category>","name":"<specific short cluster name>"}
+
+Rules:
+- category must be one of: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health, Other
+- name must be short (2-5 words), specific, and not generic
+- prefer concrete names like "Rust async runtime" over generic "Development"
+- output JSON only`
+
+function extractJsonObject(text: string): string {
+  // Always look for { ... }, never [ ... ] — our responses are always objects
+  const start = text.indexOf('{')
+  if (start === -1) return ''
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return ''
+}
 
 function parseCategoryJson(raw: string): string {
   try {
-    const parsed = JSON.parse(extractJson(raw)) as { category?: unknown }
-    if (typeof parsed.category === 'string') {
-      return parsed.category.slice(0, 40)
+    const jsonStr = extractJsonObject(raw) || extractJson(raw)
+    const parsed = JSON.parse(jsonStr) as { category?: unknown }
+    if (typeof parsed.category === 'string' && parsed.category.trim()) {
+      return parsed.category.trim().slice(0, 40)
     }
-  } catch (err) {
-    console.warn('[classifier] category JSON parse failed, falling back to plain text', err)
+  } catch {
+    // ignore
   }
-  return raw.trim().slice(0, 40) || 'Other'
+  return 'Other'
+}
+
+function parseClusterJson(raw: string): { category: string; name: string } {
+  try {
+    const jsonStr = extractJsonObject(raw) || extractJson(raw)
+    if (!jsonStr) throw new Error('no JSON object found')
+    const parsed = JSON.parse(jsonStr) as { category?: unknown; name?: unknown }
+    const category = typeof parsed.category === 'string' && parsed.category.trim()
+      ? parsed.category.trim().slice(0, 40)
+      : 'Other'
+    const name = typeof parsed.name === 'string' && parsed.name.trim()
+      ? parsed.name.trim().slice(0, 60)
+      : category
+    return { category, name }
+  } catch (err) {
+    console.warn('[classifier] cluster JSON parse failed:', err, '| raw:', raw.slice(0, 120))
+    return { category: 'Other', name: 'Other' }
+  }
 }
 
 export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing' | 'error'
@@ -149,6 +193,7 @@ export async function fetchLmStudioModels(settings: LlmSettings): Promise<string
 }
 
 type ClassifiedItem = { url: string; title: string; domain: string }
+type ClusterInputItem = ClassifiedItem & { embedding: number[] }
 
 export async function classifyItems(
   items: ClassifiedItem[],
@@ -400,4 +445,93 @@ export async function classifyWithLmStudio(
   onProgress: (updates: { url: string; category: string }[]) => void,
 ): Promise<void> {
   await classifyItems(items, prefix, settings, onProgress)
+}
+
+function inferClusterNameFromRepresentative(title: string, category: string): string {
+  const normalized = title.replace(/\s+/g, ' ').trim()
+  if (!normalized) return category
+  return normalized.split(' ').slice(0, 5).join(' ').slice(0, 60)
+}
+
+async function classifyClusterNli(
+  centroid: number[],
+  model: string,
+): Promise<string> {
+  const labelEmbeddings = await getCategoryLabelEmbeddings(model)
+  let bestLabel = 'Other'
+  let bestScore = -Infinity
+  for (const [label, embedding] of labelEmbeddings.entries()) {
+    const score = cosineSimilarity(centroid, embedding)
+    if (score > bestScore) {
+      bestScore = score
+      bestLabel = label
+    }
+  }
+  return bestLabel
+}
+
+export async function classifyByClusters(
+  items: ClusterInputItem[],
+  clusters: ClusterResult[],
+  prefix: 'tab' | 'bm',
+  settings: LlmSettings,
+  onProgress: (updates: { url: string; category: string; clusterId: number }[]) => void,
+): Promise<Map<number, string>> {
+  const byUrl = new Map(items.map((item) => [item.url, item]))
+  const names = new Map<number, string>()
+  const useNli = settings.tasks.classification.method === 'nli'
+    && settings.tasks.embedding.provider === 'transformers'
+  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+
+  for (const cluster of clusters) {
+    const representativeItems = cluster.representatives
+      .map((url) => byUrl.get(url))
+      .filter((item): item is ClusterInputItem => Boolean(item))
+
+    if (representativeItems.length === 0 || cluster.members.length === 0) continue
+
+    let category = 'Other'
+    let name = 'Other'
+
+    if (useNli) {
+      category = await classifyClusterNli(cluster.centroid, nliModel)
+      name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
+    } else {
+      const samples = representativeItems.map((item) => {
+        const path = urlPathSnippet(item.url)
+        return `Title: ${item.title}\nDomain: ${item.domain}${path ? `\nPath: ${path}` : ''}`
+      }).join('\n---\n')
+      const raw = await chatComplete(
+        CLUSTER_SYSTEM_PROMPT,
+        samples,
+        settings,
+        200,
+        settings.tasks.chat.provider === 'webllm'
+          ? { responseFormat: 'json', disableThinking: true }
+          : {},
+      )
+      const parsed = parseClusterJson(raw)
+      category = parsed.category || 'Other'
+      name = parsed.name || category
+    }
+
+    names.set(cluster.clusterId, name)
+
+    const updates: { url: string; category: string; clusterId: number }[] = []
+    for (const url of cluster.members) {
+      const existing = await getCached(prefix, url)
+      await setCached(prefix, url, {
+        category,
+        clusterId: cluster.clusterId,
+        processedAt: Date.now(),
+        tags: existing?.tags,
+        embedding: existing?.embedding,
+        intent: existing?.intent,
+      })
+      updates.push({ url, category, clusterId: cluster.clusterId })
+    }
+    if (updates.length > 0) onProgress(updates)
+  }
+
+  return names
 }
