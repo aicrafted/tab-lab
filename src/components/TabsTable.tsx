@@ -61,15 +61,6 @@ function makeColumns(
 ): ColumnDef<TabGroupRow>[] {
   return [
     {
-      id: 'favicon',
-      header: '',
-      enableSorting: false,
-      size: 24,
-      cell: ({ row }) => (
-        <Favicon domain={row.original.representative.domain} src={row.original.representative.favIconUrl} />
-      ),
-    },
-    {
       id: 'title',
       header: 'Title',
       accessorFn: (row) => row.representative.title,
@@ -93,6 +84,7 @@ function makeColumns(
                   {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 </button>
               ) : null}
+              <Favicon domain={top.domain} src={top.favIconUrl} />
               <button
                 type="button"
                 onClick={() => onActivate(top.id)}
@@ -165,11 +157,6 @@ function makeColumns(
         const isZombie = Date.now() - tab.lastAccessed > ZOMBIE_DAYS * 86_400_000
         return (
           <div className="flex flex-wrap gap-1">
-            {tab.groupName && (
-              <Badge className={cn('text-[10px]', GROUP_COLORS[tab.groupColor ?? 'grey'])}>
-                {tab.groupName}
-              </Badge>
-            )}
             {tab.isBookmarked && (
               <Badge variant="primary" className="text-[10px]" title={tab.bookmarkFolder}>
                 saved
@@ -201,20 +188,29 @@ function makeColumns(
       id: 'tags',
       header: 'Tags',
       enableSorting: false,
-      cell: ({ row }) => (
-        <div className="flex flex-wrap gap-1">
-          {row.original.representative.tags?.length
-            ? row.original.representative.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))
-            : <span className="text-xs text-muted-foreground opacity-30">—</span>}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const tab = row.original.representative
+        const hasTags = Boolean(tab.tags?.length)
+        const hasGroup = Boolean(tab.groupName)
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tab.groupName && (
+              <Badge className={cn('text-[10px]', GROUP_COLORS[tab.groupColor ?? 'grey'])}>
+                {tab.groupName}
+              </Badge>
+            )}
+            {tab.tags?.map((tag) => (
+              <span
+                key={tag}
+                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {!hasTags && !hasGroup && <span className="text-xs text-muted-foreground opacity-30">—</span>}
+          </div>
+        )
+      },
     },
     {
       id: 'actions',
