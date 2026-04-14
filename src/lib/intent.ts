@@ -1,5 +1,6 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
+import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { detectPlatform, intentFromPlatform } from './platform-detection'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
@@ -137,6 +138,7 @@ export async function classifyIntent(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<void> {
   const uncached: typeof items = []
   const cached: IntentUpdate[] = []
@@ -145,7 +147,7 @@ export async function classifyIntent(
     items.map(async (item) => {
       const staticIntent = item.staticIntent
         ?? detectStaticIntent(item.url)
-        ?? intentFromPlatform(detectPlatform(item.domain))
+        ?? intentFromPlatform(detectPlatform(item.domain, domainMap))
       if (staticIntent) return
       const entry = await getCached(prefix, item.url)
       if (entry?.intent) cached.push({ url: item.url, intent: entry.intent })
@@ -179,9 +181,9 @@ export async function classifyIntent(
           intent = await classifyIntentNLI(item, nliModel)
         } else {
           const path = urlPathSnippet(item.url)
-          const userMsg = path
-            ? `Title: ${item.title}\nDomain: ${item.domain}\nPath: ${path}`
-            : `Title: ${item.title}\nDomain: ${item.domain}`
+          const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
+          const siteLine = domainDesc ? `\nSite: ${domainDesc}` : ''
+          const userMsg = `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
           const raw = await chatComplete(prompt, userMsg, settings, 15, options)
           intent = isWebLLM ? parseIntentJson(raw) : parseIntent(raw)
         }
@@ -228,6 +230,7 @@ export async function classifyIntentLmStudio(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<void> {
-  await classifyIntent(items, prefix, settings, onProgress)
+  await classifyIntent(items, prefix, settings, onProgress, domainMap)
 }

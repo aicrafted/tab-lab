@@ -7,13 +7,19 @@ const STORE_NAME = 'domain-knowledge'
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4
 const UNKNOWN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const COMPOUND_TLDS = new Set([
+  'com.ua', 'co.uk', 'com.br', 'co.jp', 'com.au', 'co.nz',
+  'org.uk', 'me.uk', 'net.uk', 'com.ar', 'com.mx', 'com.tr',
+])
 const VALID_PLATFORMS = new Set<KnownPlatform>([
   'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
   'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
 ])
 
-const DOMAIN_SYSTEM_PROMPT = `You are a web domain classifier. You have knowledge of major websites and online services.
-For each domain you recognize, return structured data. Skip domains you don't know (personal servers, internal tools, IP addresses, localhost, random subdomains).
+const DOMAIN_SYSTEM_PROMPT = `You are a web domain classifier with broad knowledge of websites worldwide.
+Classify every domain you can identify — including well-known companies, brands, media, shops, tools, and services in any country.
+Only skip domains that are clearly private/internal: IP addresses, localhost, random subdomains of unknown services, corporate intranets.
+When in doubt whether you know a domain, include it rather than skipping it.
 Always respond with valid JSON only.`
 
 export interface DomainInfo {
@@ -27,6 +33,33 @@ export interface DomainInfo {
 
 function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase()
+}
+
+export function getParentDomain(domain: string): string | null {
+  const normalized = normalizeDomain(domain)
+  const parts = normalized.split('.')
+  if (parts.length <= 2) return null
+
+  const candidate = parts.slice(1).join('.')
+  const candidateParts = candidate.split('.')
+  if (candidateParts.length === 2 && COMPOUND_TLDS.has(candidate)) return null
+  return candidate
+}
+
+export function getDomainInfo(
+  domain: string,
+  cache: Map<string, DomainInfo>,
+): DomainInfo | undefined {
+  const normalized = normalizeDomain(domain)
+  const exact = cache.get(normalized)
+  if (exact?.known) return exact
+
+  const parent = getParentDomain(normalized)
+  if (parent) {
+    const parentInfo = cache.get(parent)
+    if (parentInfo?.known) return parentInfo
+  }
+  return exact
 }
 
 function canUseDomainEnrichmentLlm(settings: LlmSettings): boolean {
@@ -97,17 +130,25 @@ export async function clearDomainKnowledgeCache(): Promise<void> {
 }
 
 function buildDomainPrompt(domains: string[]): string {
-  return `Classify these domains. For each domain you recognize, provide:
-- "domain": exact domain string from the input
-- "category": a short category label (1-4 words, Title Case) that best describes the site
-- "description": 3-7 words describing what the site is
-- "platform": optional, one of [social, video, code, registry, qa, blog, docs, shopping, news, ai, tool, sandbox, cloud, music, finance, ci, games, education, email, reference] — only if clearly applicable; omit if unsure
+  return `Classify these domains. For each domain you can identify, output a JSON object with:
+- "domain": exact domain string from the input (required, copy exactly with full TLD/subdomain; do not shorten or rewrite)
+- "category": short label (1-4 words, Title Case) describing the site's main purpose (required)
+- "description": 3-7 words describing what the site is (required)
+- "platform": one of [social, video, code, registry, qa, blog, docs, shopping, news, ai, tool, sandbox, cloud, music, finance, ci, games, education, email, reference] — pick the best match; omit only if none fits
 
-Return a JSON array. Include ONLY domains you recognize. Skip unknown ones entirely.
+Skip only: IP addresses, localhost, clearly private/internal hostnames.
+Include everything else you know — companies, brands, shops, media, tools from any country.
+If you are not sure about exact domain spelling, skip that domain.
 
-Example:
-[{"domain":"github.com","category":"Development","description":"code hosting and version control","platform":"code"},
-{"domain":"figma.com","category":"Design","description":"collaborative interface design tool","platform":"tool"}]
+Examples:
+[
+  {"domain":"github.com","category":"Development","description":"code hosting and version control","platform":"code"},
+  {"domain":"figma.com","category":"Design","description":"collaborative interface design tool","platform":"tool"},
+  {"domain":"intel.com","category":"Hardware","description":"semiconductor and processor manufacturer"},
+  {"domain":"jsfiddle.net","category":"Development","description":"browser-based JavaScript playground","platform":"sandbox"},
+  {"domain":"rozetka.com.ua","category":"Marketplace","description":"largest online shop in Ukraine","platform":"shopping"},
+  {"domain":"arxiv.org","category":"Research","description":"preprint repository for science papers","platform":"reference"}
+]
 
 Domains:
 ${domains.join('\n')}`
@@ -276,6 +317,12 @@ function looksTruncatedResponse(raw: string): boolean {
   return false
 }
 
+function looksStructuredButUnmatched(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  return trimmed.includes('"domain"') || trimmed.includes("'domain'")
+}
+
 async function classifyDomainBatchWithRetry(
   domains: string[],
   settings: LlmSettings,
@@ -292,6 +339,7 @@ async function classifyDomainBatchWithRetry(
   )
   const parsed = parseDomainResponse(raw, new Set(domains), fetchedAt)
   const truncated = looksTruncatedResponse(raw)
+  const unmatchedStructured = parsed.length === 0 && looksStructuredButUnmatched(raw)
   if (parsed.length === 0 && raw.trim()) {
     console.warn('[domain-enricher] empty parse result for non-empty response', {
       rawPreview: raw.slice(0, 240),
@@ -300,7 +348,7 @@ async function classifyDomainBatchWithRetry(
   }
   // If response appears truncated, split and retry even when heuristic parser
   // extracted some items, otherwise we risk marking the remaining domains unknown.
-  if (truncated && domains.length > 1 && depth < 3) {
+  if ((truncated || unmatchedStructured) && domains.length > 1 && depth < 3) {
     const mid = Math.ceil(domains.length / 2)
     const [left, right] = await Promise.all([
       classifyDomainBatchWithRetry(domains.slice(0, mid), settings, depth + 1),
@@ -309,6 +357,53 @@ async function classifyDomainBatchWithRetry(
     return [...left, ...right]
   }
   return parsed
+}
+
+async function queryDomainsIntoResult(
+  domains: string[],
+  settings: LlmSettings,
+  result: Map<string, DomainInfo>,
+  onProgress?: (delta: number) => void,
+): Promise<void> {
+  if (domains.length === 0) return
+
+  const batches = chunkDomains(domains, BATCH_SIZE)
+  const concurrency = Math.min(BATCH_CONCURRENCY, batches.length)
+  let nextBatchIndex = 0
+
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (nextBatchIndex < batches.length) {
+        const batchIndex = nextBatchIndex
+        nextBatchIndex += 1
+        const batch = batches[batchIndex]
+        try {
+          const knownItems = await classifyDomainBatch(batch, settings)
+          const knownByDomain = new Map(knownItems.map((item) => [item.domain, item]))
+          const fetchedAt = Date.now()
+          const rowsToStore: DomainInfo[] = []
+
+          for (const domain of batch) {
+            const known = knownByDomain.get(domain)
+            if (known) {
+              rowsToStore.push(known)
+              result.set(domain, known)
+              continue
+            }
+            const unknownInfo: DomainInfo = { domain, known: false, fetchedAt }
+            rowsToStore.push(unknownInfo)
+            result.set(domain, unknownInfo)
+          }
+
+          await putDomainRows(rowsToStore)
+          onProgress?.(batch.length)
+        } catch (err) {
+          console.warn('[domain-enricher] domain enrichment batch failed', err)
+          onProgress?.(batch.length)
+        }
+      }
+    }),
+  )
 }
 
 export async function loadCachedDomains(): Promise<Map<string, DomainInfo>> {
@@ -332,6 +427,39 @@ export async function loadCachedDomains(): Promise<Map<string, DomainInfo>> {
     console.warn('[domain-enricher] failed to load domain cache', err)
     return new Map()
   }
+}
+
+export async function estimateDomainEnrichmentWork(domains: string[]): Promise<number> {
+  const uniqueDomains = [...new Set(domains.map(normalizeDomain).filter(Boolean))]
+  if (uniqueDomains.length === 0) return 0
+
+  const cache = await loadCachedDomains()
+  const now = Date.now()
+  const toQuery = new Set<string>()
+
+  for (const domain of uniqueDomains) {
+    const cached = cache.get(domain)
+    if (!cached || (!cached.known && !isUnknownStillFresh(cached, now))) {
+      toQuery.add(domain)
+    }
+  }
+
+  const toQueryParents = new Set<string>()
+  for (const domain of uniqueDomains) {
+    const cached = cache.get(domain)
+    if (cached?.known) continue
+
+    const parent = getParentDomain(domain)
+    if (!parent) continue
+    if (toQuery.has(parent)) continue
+
+    const parentCached = cache.get(parent)
+    if (!parentCached || (!parentCached.known && !isUnknownStillFresh(parentCached, now))) {
+      toQueryParents.add(parent)
+    }
+  }
+
+  return toQuery.size + toQueryParents.size
 }
 
 export async function enrichDomains(
@@ -362,48 +490,37 @@ export async function enrichDomains(
       }
     }
 
-    if (toQuery.length === 0 || !canUseDomainEnrichmentLlm(settings)) {
-      return result
+    if (toQuery.length > 0 && canUseDomainEnrichmentLlm(settings)) {
+      await queryDomainsIntoResult(toQuery, settings, result, onProgress)
     }
 
-    const batches = chunkDomains(toQuery, BATCH_SIZE)
-    const concurrency = Math.min(BATCH_CONCURRENCY, batches.length)
-    let nextBatchIndex = 0
+    const parentDomains: string[] = []
+    for (const domain of uniqueDomains) {
+      const info = result.get(domain)
+      if (info?.known) continue
+      const parent = getParentDomain(domain)
+      if (parent && !result.has(parent)) parentDomains.push(parent)
+    }
 
-    await Promise.all(
-      Array.from({ length: concurrency }, async () => {
-        while (nextBatchIndex < batches.length) {
-          const batchIndex = nextBatchIndex
-          nextBatchIndex += 1
-          const batch = batches[batchIndex]
-          try {
-            const knownItems = await classifyDomainBatch(batch, settings)
-            const knownByDomain = new Map(knownItems.map((item) => [item.domain, item]))
-            const fetchedAt = Date.now()
-            const rowsToStore: DomainInfo[] = []
+    if (parentDomains.length > 0 && canUseDomainEnrichmentLlm(settings)) {
+      const uniqueParents = [...new Set(parentDomains)]
+      const parentCache = await loadCachedDomains()
+      const parentNow = Date.now()
+      const toQueryParents: string[] = []
 
-            for (const domain of batch) {
-              const known = knownByDomain.get(domain)
-              if (known) {
-                rowsToStore.push(known)
-                result.set(domain, known)
-                continue
-              }
-              const unknownInfo: DomainInfo = { domain, known: false, fetchedAt }
-              rowsToStore.push(unknownInfo)
-              result.set(domain, unknownInfo)
-            }
-
-            await putDomainRows(rowsToStore)
-            onProgress?.(batch.length)
-          } catch (err) {
-            console.warn('[domain-enricher] domain enrichment batch failed', err)
-            // Even on batch failure we advance progress for this batch slot.
-            onProgress?.(batch.length)
-          }
+      for (const parent of uniqueParents) {
+        const cached = parentCache.get(parent)
+        if (cached && (cached.known || isUnknownStillFresh(cached, parentNow))) {
+          result.set(parent, cached)
+        } else {
+          toQueryParents.push(parent)
         }
-      }),
-    )
+      }
+
+      if (toQueryParents.length > 0) {
+        await queryDomainsIntoResult(toQueryParents, settings, result, onProgress)
+      }
+    }
 
     return result
   } catch (err) {

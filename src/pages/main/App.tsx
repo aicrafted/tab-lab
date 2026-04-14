@@ -31,6 +31,7 @@ import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
 import { effectiveIntent } from '@/lib/static-intent'
+import { isLocalUrl } from '@/lib/local-network'
 import { formatAge } from '@/lib/utils'
 import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
@@ -152,6 +153,18 @@ export function App() {
     }
     return new Map(Array.from(map.entries()).map(([domain, item]) => [domain, item.url]))
   }, [tabs])
+
+  const localUrlSet = useMemo(() => {
+    const patterns = llmSettings.localNetworks
+    const urls = new Set<string>()
+    for (const tab of tabs) {
+      if (isLocalUrl(tab.url, patterns)) urls.add(tab.url)
+    }
+    for (const bookmark of bookmarks) {
+      if (isLocalUrl(bookmark.url, patterns)) urls.add(bookmark.url)
+    }
+    return urls
+  }, [bookmarks, llmSettings.localNetworks, tabs])
 
   // Load settings on mount
   useEffect(() => {
@@ -494,6 +507,7 @@ export function App() {
         <ListView
           bookmarks={filteredBookmarks}
           tabs={filteredTabs}
+          localUrlSet={localUrlSet}
           sourceFilter={sourceFilter}
           settings={llmSettings}
           loading={loading}

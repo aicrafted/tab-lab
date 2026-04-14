@@ -3,7 +3,7 @@ import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyT
 import { kMeans, type ClusterResult } from '@/lib/cluster'
 import { saveClusterNames } from '@/lib/cluster-names'
 import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
-import { clearDomainKnowledgeCache, enrichDomains } from '@/lib/domain-enricher'
+import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork } from '@/lib/domain-enricher'
 import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
 import { detectPlatform } from '@/lib/platform-detection'
@@ -342,7 +342,15 @@ export function useAiPipelines({
           .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
           .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
         if (tabItems.length > 0) {
-          const k = Math.max(3, Math.min(150, Math.ceil(tabItems.length / 8)))
+          const uniquePlatformCount = new Set(
+            tabItems
+              .map((item) => detectPlatform(item.domain, domainMap))
+              .filter((platform): platform is KnownPlatform => platform !== undefined),
+          ).size
+          const k = Math.max(3, Math.min(150, Math.max(
+            Math.ceil(tabItems.length / 8),
+            uniquePlatformCount,
+          )))
           const clusters = kMeans(tabItems.map(({ url, embedding }) => ({ url, embedding })), k)
           const names = await classifyByClusters(tabItems, clusters, 'tab', llmSettings, (updates) => {
             tabsLog.progress(updates.length)
@@ -361,7 +369,15 @@ export function useAiPipelines({
           .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
           .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
         if (bookmarkItems.length > 0) {
-          const k = Math.max(3, Math.min(150, Math.ceil(bookmarkItems.length / 8)))
+          const uniquePlatformCount = new Set(
+            bookmarkItems
+              .map((item) => detectPlatform(item.domain, domainMap))
+              .filter((platform): platform is KnownPlatform => platform !== undefined),
+          ).size
+          const k = Math.max(3, Math.min(150, Math.max(
+            Math.ceil(bookmarkItems.length / 8),
+            uniquePlatformCount,
+          )))
           const clusters = kMeans(bookmarkItems.map(({ url, embedding }) => ({ url, embedding })), k)
           const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({
             ...cluster,
@@ -389,12 +405,14 @@ export function useAiPipelines({
           'tab',
           llmSettings,
           applyTabIntentBatch,
+          domainMap,
         )
         void classifyIntentLmStudio(
           bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           applyBookmarkIntentBatch,
+          domainMap,
         )
       } catch (err) {
         embedLog.failed(err)
@@ -455,7 +473,15 @@ export function useAiPipelines({
           .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
           .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
         if (tabItems.length > 0) {
-          const k = Math.max(3, Math.min(150, Math.ceil(tabItems.length / 8)))
+          const uniquePlatformCount = new Set(
+            tabItems
+              .map((item) => detectPlatform(item.domain, domainMap))
+              .filter((platform): platform is KnownPlatform => platform !== undefined),
+          ).size
+          const k = Math.max(3, Math.min(150, Math.max(
+            Math.ceil(tabItems.length / 8),
+            uniquePlatformCount,
+          )))
           const clusters = kMeans(tabItems.map(({ url, embedding }) => ({ url, embedding })), k)
           const names = await classifyByClusters(tabItems, clusters, 'tab', llmSettings, (updates) => {
             tabsLog.progress(updates.length)
@@ -474,7 +500,15 @@ export function useAiPipelines({
           .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
           .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
         if (bookmarkItems.length > 0) {
-          const k = Math.max(3, Math.min(150, Math.ceil(bookmarkItems.length / 8)))
+          const uniquePlatformCount = new Set(
+            bookmarkItems
+              .map((item) => detectPlatform(item.domain, domainMap))
+              .filter((platform): platform is KnownPlatform => platform !== undefined),
+          ).size
+          const k = Math.max(3, Math.min(150, Math.max(
+            Math.ceil(bookmarkItems.length / 8),
+            uniquePlatformCount,
+          )))
           const clusters = kMeans(bookmarkItems.map(({ url, embedding }) => ({ url, embedding })), k)
           const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({
             ...cluster,
@@ -514,12 +548,14 @@ export function useAiPipelines({
           'tab',
           llmSettings,
           applyTabIntentBatch,
+          domainMap,
         )
         void classifyIntentLmStudio(
           bm.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           applyBookmarkIntentBatch,
+          domainMap,
         )
 
       } catch {
@@ -565,7 +601,13 @@ export function useAiPipelines({
       ...tabs.map((item) => item.domain),
       ...bookmarks.map((item) => item.domain),
     ].filter(Boolean))]
-    const domainsLog = createTaskLogger('manual-domains', 'LLM domain knowledge', allDomains.length, onTaskProgress)
+    const estimatedWork = await estimateDomainEnrichmentWork(allDomains)
+    const domainsLog = createTaskLogger(
+      'manual-domains',
+      'LLM domain knowledge',
+      Math.max(estimatedWork, 1),
+      onTaskProgress,
+    )
     setLlmStatus('classifying')
     try {
       if (forceRefresh) await clearDomainKnowledgeCache()
@@ -899,6 +941,8 @@ export function useAiPipelines({
     if (!hasChatProviderConfig(llmSettings)) return
     setLlmStatus('normalizing')
     try {
+      const allDomains = [...new Set(tabs.map((item) => item.domain).filter(Boolean))]
+      const domainMap = await enrichDomains(allDomains, llmSettings)
       const categoryCounts = new Map<string, number>()
       for (const t of tabs) {
         if (t.category) categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1)
@@ -920,6 +964,7 @@ export function useAiPipelines({
           console.log('Split batch updates:', updates.map(u => u.category))
           applyTabCategoryBatch(updates)
         },
+        domainMap,
       )
       console.groupEnd()
     } catch (err) {

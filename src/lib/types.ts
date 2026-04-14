@@ -109,6 +109,7 @@ export interface BookmarkScopeFilter {
 }
 
 export interface LlmSettings {
+  localNetworks: string[]
   providers: {
     lmstudio: { baseUrl: string; apiKey: string }
     openrouter: { apiKey: string }
@@ -164,7 +165,28 @@ function toClassificationMethod(value: unknown, fallback: ClassificationMethod):
   return fallback
 }
 
+function toStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null
+  const out = value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean)
+  return out.length > 0 ? out : null
+}
+
+export const DEFAULT_LOCAL_NETWORKS = [
+  'localhost',
+  '127.0.0.0/8',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '::1',
+  'fc00::/7',
+  '*.local',
+  '*.lan',
+] as const
+
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
+  localNetworks: [...DEFAULT_LOCAL_NETWORKS],
   providers: {
     lmstudio: { baseUrl: 'http://localhost:1234/v1', apiKey: '' },
     openrouter: { apiKey: '' },
@@ -186,8 +208,10 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
     const chat = asObject(tasks.chat)
     const embedding = asObject(tasks.embedding)
     const classification = asObject(tasks.classification)
+    const localNetworks = toStringArray(obj.localNetworks) ?? [...DEFAULT_LOCAL_NETWORKS]
 
     return {
+      localNetworks,
       providers: {
         lmstudio: {
           baseUrl: asString(lmstudio.baseUrl, DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl),
@@ -215,6 +239,7 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
 
   const old = asObject(raw) as LegacyLlmSettings
   return {
+    localNetworks: [...DEFAULT_LOCAL_NETWORKS],
     providers: {
       lmstudio: {
         baseUrl: old.baseUrl ?? DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl,

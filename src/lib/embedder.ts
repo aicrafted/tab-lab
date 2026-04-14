@@ -1,5 +1,5 @@
 import { projectTo2D, type Point2D } from './project'
-import type { DomainInfo } from './domain-enricher'
+import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, type LlmSettings } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
@@ -248,10 +248,12 @@ export async function fetchAndCacheEmbeddings(
   for (const item of uncached) {
     try {
       const path = urlPathSnippet(item.url)
-      const domainDesc = domainMap?.get(item.domain)?.description
-        ?? domainMap?.get(item.domain.toLowerCase())?.description
+      const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap) : undefined
+      const domainLabel = domainInfo?.category && domainInfo?.description
+        ? `${domainInfo.category}: ${domainInfo.description}`
+        : (domainInfo?.description ?? domainInfo?.category)
       const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
-      const enrichedText = domainDesc ? `${domainDesc}\n${baseText}` : baseText
+      const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
       const text = item.category ? `${item.category}\n${enrichedText}` : enrichedText
       const embedding = await fetchEmbedding(text, settings)
       await storeEmbedding(item.url, embedding)

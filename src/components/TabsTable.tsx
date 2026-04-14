@@ -56,6 +56,7 @@ function makeColumns(
   onClose: (id: number) => void,
   onActivate: (id: number) => void,
   semanticScores: Map<string, number>,
+  localUrlSet: Set<string>,
   expanded: Set<string>,
   onToggleExpanded: (url: string) => void,
 ): ColumnDef<TabGroupRow>[] {
@@ -70,6 +71,7 @@ function makeColumns(
         const isExpanded = expanded.has(group.url)
         const hasDuplicates = group.tabs.length > 1
         const intent = effectiveIntent(top)
+        const isLocal = localUrlSet.has(top.url)
 
         return (
           <div className="min-w-0 space-y-1">
@@ -107,6 +109,9 @@ function makeColumns(
                 </span>
                 <span>#{top.windowId}</span>
                 <span>{top.domain}</span>
+                {isLocal && (
+                  <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+                )}
               </span>
             </div>
             {hasDuplicates && isExpanded && (
@@ -155,8 +160,12 @@ function makeColumns(
       cell: ({ row }) => {
         const tab = row.original.representative
         const isZombie = Date.now() - tab.lastAccessed > ZOMBIE_DAYS * 86_400_000
+        const isLocal = localUrlSet.has(tab.url)
         return (
           <div className="flex flex-wrap gap-1">
+            {isLocal && (
+              <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+            )}
             {tab.isBookmarked && (
               <Badge variant="primary" className="text-[10px]" title={tab.bookmarkFolder}>
                 saved
@@ -242,6 +251,7 @@ function makeColumns(
 
 interface TabsTableProps {
   data: TabItem[]
+  localUrlSet: Set<string>
   settings: LlmSettings
   loading?: boolean
   onClose: (id: number) => void
@@ -249,7 +259,7 @@ interface TabsTableProps {
   menuHost?: HTMLElement | null
 }
 
-export function TabsTable({ data, settings, loading, onClose, onActivate, menuHost }: TabsTableProps) {
+export function TabsTable({ data, localUrlSet, settings, loading, onClose, onActivate, menuHost }: TabsTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
@@ -304,8 +314,8 @@ export function TabsTable({ data, settings, loading, onClose, onActivate, menuHo
   }
 
   const columns = useMemo(
-    () => makeColumns(onClose, onActivate, semanticScores, expandedUrls, onToggleExpanded),
-    [onClose, onActivate, semanticScores, expandedUrls],
+    () => makeColumns(onClose, onActivate, semanticScores, localUrlSet, expandedUrls, onToggleExpanded),
+    [onClose, onActivate, semanticScores, localUrlSet, expandedUrls],
   )
 
   const toolbar = (

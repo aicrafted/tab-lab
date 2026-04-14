@@ -41,6 +41,7 @@ function groupByUrl(bookmarks: BookmarkItem[]): BookmarkGroupRow[] {
 function makeColumns(
   onDelete: (id: string) => void,
   semanticScores: Map<string, number>,
+  localUrlSet: Set<string>,
   expanded: Set<string>,
   onToggleExpanded: (url: string) => void,
 ): ColumnDef<BookmarkGroupRow>[] {
@@ -61,6 +62,7 @@ function makeColumns(
         const top = group.representative
         const isExpanded = expanded.has(group.url)
         const hasDuplicates = group.bookmarks.length > 1
+        const isLocal = localUrlSet.has(top.url)
 
         return (
           <div className="min-w-0 space-y-1">
@@ -90,6 +92,9 @@ function makeColumns(
                 )}
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
               </a>
+              {isLocal && (
+                <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+              )}
             </div>
             {hasDuplicates && isExpanded && (
               <div className="ml-7 space-y-1 rounded border border-border/60 bg-card/30 p-2">
@@ -126,7 +131,12 @@ function makeColumns(
       accessorFn: (row) => row.representative.domain,
       header: 'Domain',
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">{row.original.representative.domain}</span>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <span>{row.original.representative.domain}</span>
+          {localUrlSet.has(row.original.representative.url) && (
+            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+          )}
+        </span>
       ),
     },
     {
@@ -169,6 +179,9 @@ function makeColumns(
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex gap-1">
+          {localUrlSet.has(row.original.representative.url) && (
+            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+          )}
           {row.original.representative.isOpen && (
             <Badge variant="accent" className="text-[10px]">open</Badge>
           )}
@@ -260,6 +273,7 @@ function makeColumns(
 
 interface BookmarksTableProps {
   data: BookmarkItem[]
+  localUrlSet: Set<string>
   settings: LlmSettings
   loading?: boolean
   onDelete: (id: string) => void
@@ -267,7 +281,7 @@ interface BookmarksTableProps {
   menuHost?: HTMLElement | null
 }
 
-export function BookmarksTable({ data, settings, loading, onDelete, onExport, menuHost }: BookmarksTableProps) {
+export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete, onExport, menuHost }: BookmarksTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
@@ -323,8 +337,8 @@ export function BookmarksTable({ data, settings, loading, onDelete, onExport, me
   }
 
   const columns = useMemo(
-    () => makeColumns(onDelete, semanticScores, expandedUrls, onToggleExpanded),
-    [onDelete, semanticScores, expandedUrls],
+    () => makeColumns(onDelete, semanticScores, localUrlSet, expandedUrls, onToggleExpanded),
+    [onDelete, semanticScores, localUrlSet, expandedUrls],
   )
 
   const hasCategories = data.some((b) => b.category)

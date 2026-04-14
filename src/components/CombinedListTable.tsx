@@ -38,6 +38,7 @@ interface CombinedRow {
 interface CombinedListTableProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
+  localUrlSet: Set<string>
   sourceFilterLabel: string
   settings: LlmSettings
   loading?: boolean
@@ -143,6 +144,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
 export function CombinedListTable({
   bookmarks,
   tabs,
+  localUrlSet,
   sourceFilterLabel,
   settings,
   loading,
@@ -239,7 +241,14 @@ export function CombinedListTable({
     {
       accessorKey: 'domain',
       header: 'Domain',
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.domain}</span>,
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <span>{row.original.domain}</span>
+          {localUrlSet.has(row.original.url) && (
+            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+          )}
+        </span>
+      ),
     },
     {
       accessorKey: 'folder',
@@ -278,6 +287,7 @@ export function CombinedListTable({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
+          {localUrlSet.has(row.original.url) && <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>}
           {row.original.tabIds.length > 0 && <Badge variant="accent" className="text-[10px]">open</Badge>}
           {row.original.bookmarkIds.length > 0 && <Badge variant="primary" className="text-[10px]">saved</Badge>}
           {row.original.isDuplicate && <Badge variant="muted" className="text-[10px]">dup</Badge>}
@@ -365,7 +375,7 @@ export function CombinedListTable({
         </div>
       ),
     },
-  ], [onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
+  ], [localUrlSet, onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
 
   const hasCategories = merged.some((row) => row.category)
   const toolbar = (

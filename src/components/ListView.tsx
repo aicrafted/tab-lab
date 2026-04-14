@@ -7,6 +7,7 @@ import type { BookmarkItem, LlmSettings, TabItem } from '@/lib/types'
 interface ListViewProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
+  localUrlSet: Set<string>
   sourceFilter: SourceFilter
   settings: LlmSettings
   loading: boolean
@@ -20,6 +21,7 @@ interface ListViewProps {
 export function ListView({
   bookmarks,
   tabs,
+  localUrlSet,
   sourceFilter,
   settings,
   loading,
@@ -33,6 +35,7 @@ export function ListView({
     return (
       <BookmarksTable
         data={bookmarks}
+        localUrlSet={localUrlSet}
         settings={settings}
         loading={loading}
         onDelete={(id) => void onDeleteBookmark(id)}
@@ -46,6 +49,7 @@ export function ListView({
     return (
       <TabsTable
         data={tabs}
+        localUrlSet={localUrlSet}
         settings={settings}
         loading={loading}
         onClose={(id) => void onCloseTab(id)}
@@ -59,6 +63,7 @@ export function ListView({
     <CombinedListTable
       bookmarks={bookmarks}
       tabs={tabs}
+      localUrlSet={localUrlSet}
       sourceFilterLabel={sourceFilter}
       settings={settings}
       loading={loading}

@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/classifier'
-import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from '@/lib/types'
+import { DEFAULT_LOCAL_NETWORKS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from '@/lib/types'
 import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings } from '@/lib/types'
 import {
   isWebllmModelCached,
@@ -46,6 +46,7 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
   const [lmStudioBaseUrl, setLmStudioBaseUrl] = useState(settings.providers.lmstudio.baseUrl)
   const [lmStudioApiKey, setLmStudioApiKey] = useState(settings.providers.lmstudio.apiKey)
   const [openRouterApiKey, setOpenRouterApiKey] = useState(settings.providers.openrouter.apiKey)
+  const [localNetworksText, setLocalNetworksText] = useState(settings.localNetworks.join('\n'))
 
   const [models, setModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
@@ -69,6 +70,7 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
     setLmStudioBaseUrl(settings.providers.lmstudio.baseUrl)
     setLmStudioApiKey(settings.providers.lmstudio.apiKey)
     setOpenRouterApiKey(settings.providers.openrouter.apiKey)
+    setLocalNetworksText(settings.localNetworks.join('\n'))
 
     setModels([])
     setError(null)
@@ -146,6 +148,7 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
     setError(null)
     try {
       const list = await fetchLmStudioModels({
+        localNetworks: settings.localNetworks,
         providers: {
           lmstudio: { baseUrl: lmStudioBaseUrl, apiKey: lmStudioApiKey },
           openrouter: { apiKey: openRouterApiKey },
@@ -172,7 +175,13 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
   }, [chatModel, chatProvider, classificationMethod, embeddingModel, embeddingProvider, lmStudioApiKey, lmStudioBaseUrl, openRouterApiKey])
 
   const handleSave = useCallback(() => {
+    const localNetworks = localNetworksText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const nextLocalNetworks = localNetworks.length > 0 ? localNetworks : [...DEFAULT_LOCAL_NETWORKS]
     onSave({
+      localNetworks: nextLocalNetworks,
       providers: {
         lmstudio: { baseUrl: lmStudioBaseUrl.trim(), apiKey: lmStudioApiKey.trim() },
         openrouter: { apiKey: openRouterApiKey.trim() },
@@ -189,7 +198,7 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
       },
     })
     onClose()
-  }, [chatModel, chatProvider, classificationMethod, embeddingModel, embeddingProvider, lmStudioApiKey, lmStudioBaseUrl, nliAvailable, onClose, onSave, openRouterApiKey])
+  }, [chatModel, chatProvider, classificationMethod, embeddingModel, embeddingProvider, lmStudioApiKey, lmStudioBaseUrl, localNetworksText, nliAvailable, onClose, onSave, openRouterApiKey])
 
   const handlePreloadWebllm = useCallback(async () => {
     setError(null)
@@ -452,6 +461,20 @@ export function LlmSettingsPanel({ open, settings, onSave, onClose }: LlmSetting
           )}
         </div>
         </div>
+      </div>
+
+      <div className="space-y-2 rounded-md border border-border/70 p-3">
+        <p className="text-xs font-medium text-foreground">Local Network Patterns</p>
+        <p className="text-[11px] text-muted-foreground">
+          One pattern per line: hostname, CIDR or glob (e.g. <code>*.lan</code>).
+        </p>
+        <textarea
+          value={localNetworksText}
+          onChange={(event) => setLocalNetworksText(event.target.value)}
+          placeholder={DEFAULT_LOCAL_NETWORKS.join('\n')}
+          rows={6}
+          className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        />
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
