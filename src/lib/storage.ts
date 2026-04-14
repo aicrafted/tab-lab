@@ -6,6 +6,7 @@
  */
 
 import * as cacheDb from './cacheDb'
+import { clearDomainKnowledgeCache } from './domain-enricher'
 import { clearEmbeddingCache } from './embedder'
 import { migrateLlmSettings } from './types'
 import type { BookmarkScopeFilter, CacheEntry, LlmSettings } from './types'
@@ -23,6 +24,11 @@ export { clearAll as clearCache } from './cacheDb'
 /** Clear ALL AI caches (IndexedDB for per-URL cache + embeddings). */
 export async function clearAllAICache(): Promise<void> {
   await cacheDb.clearAll()
+  try {
+    await clearDomainKnowledgeCache()
+  } catch (err) {
+    console.warn('[storage] failed to clear domain knowledge cache', err)
+  }
   try {
     await clearEmbeddingCache()
   } catch (err) {

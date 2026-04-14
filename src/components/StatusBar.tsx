@@ -1,4 +1,4 @@
-import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { formatAge } from '@/lib/utils'
@@ -6,11 +6,14 @@ import type { LlmStatus } from '@/lib/classifier'
 
 interface StatusBarAiActions {
   onClearCache?: () => Promise<void>
+  onRunDomains?: () => Promise<void>
+  onRedomains?: () => Promise<void>
   onClassify?: () => Promise<void>
+  onReclassify?: () => Promise<void>
   onRunTags?: () => Promise<void>
+  onRetag?: () => Promise<void>
   onRunIntent?: () => Promise<void>
-  onMergeCategories?: () => Promise<void>
-  onSplitLarge?: () => Promise<void>
+  onReintent?: () => Promise<void>
   onRunEmbeddings?: () => Promise<void>
   onReembed?: () => Promise<void>
 }
@@ -47,12 +50,40 @@ export function StatusBar({
       title: 'Run category classification (pass 1)',
       onClick: aiActions.onClassify,
     } : null,
+    aiActions.onRunDomains ? {
+      key: 'domains',
+      label: 'Domains',
+      icon: Database,
+      title: 'Save domain knowledge (site descriptions) to cache',
+      onClick: aiActions.onRunDomains,
+    } : null,
+    aiActions.onRedomains ? {
+      key: 'redomains',
+      label: 'Re-Domains',
+      icon: Database,
+      title: 'Clear and rebuild domain knowledge cache',
+      onClick: aiActions.onRedomains,
+    } : null,
+    aiActions.onReclassify ? {
+      key: 'reclassify',
+      label: 'Re-Classify',
+      icon: Wand2,
+      title: 'Clear only category cache and classify again',
+      onClick: aiActions.onReclassify,
+    } : null,
     aiActions.onRunTags ? {
       key: 'tags',
       label: 'Tags',
       icon: Hash,
       title: 'Generate tags for all items',
       onClick: aiActions.onRunTags,
+    } : null,
+    aiActions.onRetag ? {
+      key: 'retag',
+      label: 'Re-Tags',
+      icon: Hash,
+      title: 'Clear only tags cache and run tagging again',
+      onClick: aiActions.onRetag,
     } : null,
     aiActions.onRunIntent ? {
       key: 'intent',
@@ -61,19 +92,12 @@ export function StatusBar({
       title: 'Classify pages by intent',
       onClick: aiActions.onRunIntent,
     } : null,
-    aiActions.onMergeCategories ? {
-      key: 'merge',
-      label: 'Merge',
-      icon: GitMerge,
-      title: 'Merge similar category labels',
-      onClick: aiActions.onMergeCategories,
-    } : null,
-    aiActions.onSplitLarge ? {
-      key: 'split',
-      label: 'Split',
-      icon: Split,
-      title: 'Split large categories',
-      onClick: aiActions.onSplitLarge,
+    aiActions.onReintent ? {
+      key: 'reintent',
+      label: 'Re-Intent',
+      icon: Tag,
+      title: 'Clear only intent cache and classify intent again',
+      onClick: aiActions.onReintent,
     } : null,
     aiActions.onRunEmbeddings ? {
       key: 'embeddings',

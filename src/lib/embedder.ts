@@ -1,4 +1,5 @@
 import { projectTo2D, type Point2D } from './project'
+import type { DomainInfo } from './domain-enricher'
 import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, type LlmSettings } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
@@ -209,6 +210,7 @@ export async function fetchAndCacheEmbeddings(
   items: { url: string; title: string; domain: string; category?: string }[],
   settings: LlmSettings,
   onProgress?: (updates: { url: string; embedding: number[] }[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<Map<string, number[]>> {
   const provider = settings.tasks.embedding.provider
   if (provider === 'lmstudio') {
@@ -246,8 +248,11 @@ export async function fetchAndCacheEmbeddings(
   for (const item of uncached) {
     try {
       const path = urlPathSnippet(item.url)
+      const domainDesc = domainMap?.get(item.domain)?.description
+        ?? domainMap?.get(item.domain.toLowerCase())?.description
       const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
-      const text = item.category ? `${item.category}\n${baseText}` : baseText
+      const enrichedText = domainDesc ? `${domainDesc}\n${baseText}` : baseText
+      const text = item.category ? `${item.category}\n${enrichedText}` : enrichedText
       const embedding = await fetchEmbedding(text, settings)
       await storeEmbedding(item.url, embedding)
       result.set(item.url, embedding)

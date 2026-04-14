@@ -3,9 +3,10 @@ import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyT
 import { kMeans, type ClusterResult } from '@/lib/cluster'
 import { saveClusterNames } from '@/lib/cluster-names'
 import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
+import { clearDomainKnowledgeCache, enrichDomains } from '@/lib/domain-enricher'
 import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
-import { clearAllAICache, setCached } from '@/lib/storage'
+import { clearAllAICache, getCached, setCached } from '@/lib/storage'
 import { tagWithGeminiNano, tagWithLmStudio } from '@/lib/tagger'
 import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
 
@@ -120,6 +121,19 @@ function hasChatProviderConfig(settings: LlmSettings): boolean {
   return false
 }
 
+function hasDomainKnowledgeProviderConfig(settings: LlmSettings): boolean {
+  const provider = settings.tasks.chat.provider
+  if (provider === 'gemini-nano') return false
+  if (provider === 'webllm') return Boolean(settings.tasks.chat.model)
+  if (provider === 'lmstudio') {
+    return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.chat.model)
+  }
+  if (provider === 'openrouter') {
+    return Boolean(settings.providers.openrouter.apiKey && settings.tasks.chat.model)
+  }
+  return false
+}
+
 interface UseAiPipelinesArgs {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
@@ -221,14 +235,16 @@ export function useAiPipelines({
         ...tb.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
         ...bm.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
       ]
+      const allDomains = [...new Set(allItems.map((item) => item.domain).filter(Boolean))]
       const embedLog = createTaskLogger('auto-embed', 'Auto embeddings', allItems.length, onTaskProgress)
       const tabsLog = createTaskLogger('auto-cluster-tabs', 'Auto cluster tabs', tb.length, onTaskProgress)
       const bookmarksLog = createTaskLogger('auto-cluster-bookmarks', 'Auto cluster bookmarks', bm.length, onTaskProgress)
       setLlmStatus('classifying')
       try {
+        const domainMap = await enrichDomains(allDomains, llmSettings)
         const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
           embedLog.progress(updates.length)
-        })
+        }, domainMap)
         embedLog.done()
 
         const tabItems = tb
@@ -241,7 +257,7 @@ export function useAiPipelines({
             tabsLog.progress(updates.length)
             applyTabCategoryBatch(updates)
             applyTabClusterBatch(updates)
-          })
+          }, domainMap)
           setClusterNames((prev) => {
             const next = new Map(prev)
             for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
@@ -264,7 +280,7 @@ export function useAiPipelines({
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
             applyBookmarkClusterBatch(updates)
-          })
+          }, domainMap)
           setClusterNames((prev) => {
             const next = new Map(prev)
             for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
@@ -329,14 +345,16 @@ export function useAiPipelines({
         ...tb.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
         ...bm.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
       ]
+      const allDomains = [...new Set(allItems.map((item) => item.domain).filter(Boolean))]
       const embedLog = createTaskLogger('auto-embed', 'Auto embeddings', allItems.length, onTaskProgress)
       const tabsLog = createTaskLogger('auto-cluster-tabs', 'Auto cluster tabs', tb.length, onTaskProgress)
       const bookmarksLog = createTaskLogger('auto-cluster-bookmarks', 'Auto cluster bookmarks', bm.length, onTaskProgress)
       setLlmStatus('classifying')
       try {
+        const domainMap = await enrichDomains(allDomains, llmSettings)
         const embeddings = await fetchAndCacheEmbeddings(allItems, llmSettings, (updates) => {
           embedLog.progress(updates.length)
-        })
+        }, domainMap)
         embedLog.done()
 
         const tabItems = tb
@@ -349,7 +367,7 @@ export function useAiPipelines({
             tabsLog.progress(updates.length)
             applyTabCategoryBatch(updates)
             applyTabClusterBatch(updates)
-          })
+          }, domainMap)
           setClusterNames((prev) => {
             const next = new Map(prev)
             for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
@@ -372,7 +390,7 @@ export function useAiPipelines({
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
             applyBookmarkClusterBatch(updates)
-          })
+          }, domainMap)
           setClusterNames((prev) => {
             const next = new Map(prev)
             for (const [clusterId, name] of names.entries()) next.set(clusterId, name)
@@ -440,6 +458,107 @@ export function useAiPipelines({
     setProjectedPoints(new Map())
     reload()
   }, [reload, setClusterNames, setProjectedPoints])
+
+  const runDomainKnowledgePass = useCallback(async (forceRefresh: boolean) => {
+    if (!hasDomainKnowledgeProviderConfig(llmSettings)) {
+      setLlmStatus('unavailable')
+      return
+    }
+    const allDomains = [...new Set([
+      ...tabs.map((item) => item.domain),
+      ...bookmarks.map((item) => item.domain),
+    ].filter(Boolean))]
+    const domainsLog = createTaskLogger('manual-domains', 'LLM domain knowledge', allDomains.length, onTaskProgress)
+    setLlmStatus('classifying')
+    try {
+      if (forceRefresh) await clearDomainKnowledgeCache()
+      await enrichDomains(allDomains, llmSettings, (delta) => {
+        domainsLog.progress(delta)
+      })
+      domainsLog.done()
+      setLlmStatus('ready')
+    } catch (err) {
+      domainsLog.failed(err)
+      setLlmError(String(err))
+      setLlmStatus('error')
+    }
+  }, [bookmarks, llmSettings, onTaskProgress, setLlmError, setLlmStatus, tabs])
+
+  const handleRunDomainKnowledge = useCallback(async () => {
+    await runDomainKnowledgePass(false)
+  }, [runDomainKnowledgePass])
+
+  const handleRedomainKnowledge = useCallback(async () => {
+    if (!confirm('Rebuild domain knowledge cache? This clears only cached domain descriptions.')) return
+    await runDomainKnowledgePass(true)
+  }, [runDomainKnowledgePass])
+
+  const clearCategoryCache = useCallback(async () => {
+    const clearPrefix = async (
+      prefix: 'tab' | 'bm',
+      items: { url: string }[],
+    ) => {
+      await Promise.all(items.map(async (item) => {
+        const existing = await getCached(prefix, item.url)
+        if (!existing) return
+        await setCached(prefix, item.url, {
+          ...existing,
+          category: '',
+          clusterId: undefined,
+          processedAt: Date.now(),
+        })
+      }))
+    }
+
+    await Promise.all([
+      clearPrefix('tab', tabs),
+      clearPrefix('bm', bookmarks),
+    ])
+  }, [bookmarks, tabs])
+
+  const clearTagsCache = useCallback(async () => {
+    const clearPrefix = async (
+      prefix: 'tab' | 'bm',
+      items: { url: string }[],
+    ) => {
+      await Promise.all(items.map(async (item) => {
+        const existing = await getCached(prefix, item.url)
+        if (!existing) return
+        await setCached(prefix, item.url, {
+          ...existing,
+          tags: undefined,
+          processedAt: Date.now(),
+        })
+      }))
+    }
+
+    await Promise.all([
+      clearPrefix('tab', tabs),
+      clearPrefix('bm', bookmarks),
+    ])
+  }, [bookmarks, tabs])
+
+  const clearIntentCache = useCallback(async () => {
+    const clearPrefix = async (
+      prefix: 'tab' | 'bm',
+      items: { url: string }[],
+    ) => {
+      await Promise.all(items.map(async (item) => {
+        const existing = await getCached(prefix, item.url)
+        if (!existing) return
+        await setCached(prefix, item.url, {
+          ...existing,
+          intent: undefined,
+          processedAt: Date.now(),
+        })
+      }))
+    }
+
+    await Promise.all([
+      clearPrefix('tab', tabs),
+      clearPrefix('bm', bookmarks),
+    ])
+  }, [bookmarks, tabs])
 
   const handleClassify = useCallback(async () => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
@@ -768,6 +887,32 @@ export function useAiPipelines({
     tabs,
   ])
 
+  const handleReclassify = useCallback(async () => {
+    if (!confirm('Re-classify all pages? This clears only cached categories and cluster assignments.')) return
+    await clearCategoryCache()
+    setTabs((prev) => prev.map((item) => ({ ...item, category: undefined, clusterId: undefined })))
+    setBookmarks((prev) => prev.map((item) => ({ ...item, category: undefined, clusterId: undefined })))
+    setClusterNames(new Map())
+    await saveClusterNames(new Map())
+    await handleClassify()
+  }, [clearCategoryCache, handleClassify, setBookmarks, setClusterNames, setTabs])
+
+  const handleRetag = useCallback(async () => {
+    if (!confirm('Re-run tags for all pages? This clears only cached tags.')) return
+    await clearTagsCache()
+    setTabs((prev) => prev.map((item) => ({ ...item, tags: undefined })))
+    setBookmarks((prev) => prev.map((item) => ({ ...item, tags: undefined })))
+    await handleRunTags()
+  }, [clearTagsCache, handleRunTags, setBookmarks, setTabs])
+
+  const handleReintent = useCallback(async () => {
+    if (!confirm('Re-run intent classification for all pages? This clears only cached intents.')) return
+    await clearIntentCache()
+    setTabs((prev) => prev.map((item) => ({ ...item, intent: undefined })))
+    setBookmarks((prev) => prev.map((item) => ({ ...item, intent: undefined })))
+    await handleRunIntent()
+  }, [clearIntentCache, handleRunIntent, setBookmarks, setTabs])
+
   const handleReembedAll = useCallback(async () => {
     if (!confirm('Re-embed all pages using the new text format? This clears cached embeddings first.')) return
     await clearEmbeddingCache()
@@ -786,10 +931,15 @@ export function useAiPipelines({
     runAutoAiPipeline,
     handleClearCache,
     handleClassify,
+    handleRunDomainKnowledge,
+    handleRedomainKnowledge,
+    handleReclassify,
     handleRunIntent,
+    handleReintent,
     handlePass2,
     handlePass3,
     handleRunTags,
+    handleRetag,
     handleReembedAll,
   }
 }

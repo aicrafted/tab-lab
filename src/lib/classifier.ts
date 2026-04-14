@@ -1,6 +1,7 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
 import type { ClusterResult } from './cluster'
+import type { DomainInfo } from './domain-enricher'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
@@ -138,9 +139,15 @@ function urlPathSnippet(url: string): string {
   }
 }
 
-async function classifyItemNLI(item: ClassifiedItem, model: string): Promise<string> {
+async function classifyItemNLI(
+  item: ClassifiedItem,
+  model: string,
+  domainMap?: Map<string, DomainInfo>,
+): Promise<string> {
   const path = urlPathSnippet(item.url)
-  const text = [item.title, item.domain, path].filter(Boolean).join(' ')
+  const domainDesc = domainMap?.get(item.domain)?.description
+    ?? domainMap?.get(item.domain.toLowerCase())?.description
+  const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
   const queryEmbedding = await webgpuEmbed(text, model)
   const labelEmbeddings = await getCategoryLabelEmbeddings(model)
   let bestLabel = 'Other'
@@ -200,6 +207,7 @@ export async function classifyItems(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<void> {
   const uncached: ClassifiedItem[] = []
   const cached: { url: string; category: string }[] = []
@@ -235,12 +243,13 @@ export async function classifyItems(
       try {
         let category = 'Other'
         if (useNli) {
-          category = await classifyItemNLI(item, nliModel)
+          category = await classifyItemNLI(item, nliModel, domainMap)
         } else {
           const path = urlPathSnippet(item.url)
-          const userMsg = path
-            ? `Title: ${item.title}\nDomain: ${item.domain}\nPath: ${path}`
-            : `Title: ${item.title}\nDomain: ${item.domain}`
+          const domainDesc = domainMap?.get(item.domain)?.description
+            ?? domainMap?.get(item.domain.toLowerCase())?.description
+          const siteLine = domainDesc ? `\nSite: ${domainDesc}` : ''
+          const userMsg = `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, options)
           category = isWebLLM ? parseCategoryJson(raw) : (raw.trim().slice(0, 40) || 'Other')
         }
@@ -443,8 +452,9 @@ export async function classifyWithLmStudio(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<void> {
-  await classifyItems(items, prefix, settings, onProgress)
+  await classifyItems(items, prefix, settings, onProgress, domainMap)
 }
 
 function inferClusterNameFromRepresentative(title: string, category: string): string {
@@ -476,6 +486,7 @@ export async function classifyByClusters(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string; clusterId: number }[]) => void,
+  domainMap?: Map<string, DomainInfo>,
 ): Promise<Map<number, string>> {
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
@@ -499,7 +510,10 @@ export async function classifyByClusters(
     } else {
       const samples = representativeItems.map((item) => {
         const path = urlPathSnippet(item.url)
-        return `Title: ${item.title}\nDomain: ${item.domain}${path ? `\nPath: ${path}` : ''}`
+        const domainDesc = domainMap?.get(item.domain)?.description
+          ?? domainMap?.get(item.domain.toLowerCase())?.description
+        const siteLine = domainDesc ? `\nSite: ${domainDesc}` : ''
+        return `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
       }).join('\n---\n')
       const raw = await chatComplete(
         CLUSTER_SYSTEM_PROMPT,

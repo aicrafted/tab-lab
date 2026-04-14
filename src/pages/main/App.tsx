@@ -32,7 +32,7 @@ import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
 import { effectiveIntent } from '@/lib/static-intent'
 import { formatAge } from '@/lib/utils'
-import { Brain, Eraser, GitMerge, Hash, RefreshCw, Settings, Split, Tag, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -201,10 +201,13 @@ export function App() {
     runEmbeddingPass,
     handleClearCache,
     handleClassify,
+    handleRunDomainKnowledge,
+    handleRedomainKnowledge,
+    handleReclassify,
     handleRunIntent,
-    handlePass2,
-    handlePass3,
+    handleReintent,
     handleRunTags,
+    handleRetag,
     handleReembedAll,
   } = useAiPipelines({
     bookmarks,
@@ -231,11 +234,14 @@ export function App() {
   })
 
   const aiActionItems: AiActionItem[] = [
+    { key: 'domains', label: 'Domains', icon: Database, title: 'Save domain knowledge (site descriptions) to cache', onClick: handleRunDomainKnowledge },
+    { key: 'redomains', label: 'Re-Domains', icon: Database, title: 'Clear and rebuild domain knowledge cache', onClick: handleRedomainKnowledge },
     { key: 'classify', label: 'Classify', icon: Wand2, title: 'Run category classification (pass 1)', onClick: handleClassify },
+    { key: 'reclassify', label: 'Re-Classify', icon: Wand2, title: 'Clear only category cache and classify again', onClick: handleReclassify },
     { key: 'tags', label: 'Tags', icon: Hash, title: 'Generate tags for all items', onClick: handleRunTags },
+    { key: 'retag', label: 'Re-Tags', icon: Hash, title: 'Clear only tags cache and run tagging again', onClick: handleRetag },
     { key: 'intent', label: 'Intent', icon: Tag, title: 'Classify pages by intent', onClick: handleRunIntent },
-    { key: 'merge', label: 'Merge', icon: GitMerge, title: 'Merge similar category labels', onClick: handlePass2 },
-    { key: 'split', label: 'Split', icon: Split, title: 'Split large categories', onClick: handlePass3 },
+    { key: 'reintent', label: 'Re-Intent', icon: Tag, title: 'Clear only intent cache and classify intent again', onClick: handleReintent },
     { key: 'embeddings', label: 'Embeddings', icon: Brain, title: 'Run embeddings + 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
     { key: 'reembed', label: 'Re-embed', icon: Brain, title: 'Clear embedding cache and re-embed all pages', onClick: handleReembedAll },
     { key: 'clear', label: 'Clear', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
