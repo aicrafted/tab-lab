@@ -7,24 +7,6 @@ const STORE_NAME = 'domain-knowledge'
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4
 const UNKNOWN_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const VALID_CATEGORIES = new Set([
-  'Development',
-  'AI & ML',
-  'Design',
-  'Documentation',
-  'News',
-  'Science',
-  'Finance',
-  'Shopping',
-  'Social Media',
-  'Entertainment',
-  'Video',
-  'Productivity',
-  'Education',
-  'Security',
-  'DevOps',
-  'Other',
-])
 
 const DOMAIN_SYSTEM_PROMPT = `You are a web domain classifier. You have knowledge of major websites and online services.
 For each domain you recognize, return structured data. Skip domains you don't know (personal servers, internal tools, IP addresses, localhost, random subdomains).
@@ -112,7 +94,7 @@ export async function clearDomainKnowledgeCache(): Promise<void> {
 function buildDomainPrompt(domains: string[]): string {
   return `Classify these domains. For each domain you recognize, provide:
 - "domain": exact domain string from the input
-- "category": one of [Development, AI & ML, Design, Documentation, News, Science, Finance, Shopping, Social Media, Entertainment, Video, Productivity, Education, Security, DevOps, Other]
+- "category": a short category label (1-4 words, Title Case) that best describes the site
 - "description": 3-7 words describing what the site is
 
 Return a JSON array. Include ONLY domains you recognize. Skip unknown ones entirely.
@@ -129,12 +111,6 @@ function normalizeDescription(value: string): string {
   if (!compact) return ''
   const words = compact.split(' ')
   return words.slice(0, 7).join(' ').slice(0, 120)
-}
-
-function normalizeCategory(value: string): string {
-  const trimmed = value.trim()
-  if (VALID_CATEGORIES.has(trimmed)) return trimmed
-  return 'Other'
 }
 
 function chunkDomains(domains: string[], size: number): string[][] {
@@ -176,7 +152,9 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
       const domain = normalizeDomain(domainValue)
       if (!sentDomains.has(domain) || seen.has(domain)) continue
 
-      const category = typeof categoryValue === 'string' ? normalizeCategory(categoryValue) : 'Other'
+      const category = typeof categoryValue === 'string'
+        ? categoryValue.trim().slice(0, 40) || undefined
+        : undefined
       const description = normalizeDescription(descriptionValue)
       if (!description) continue
 
@@ -244,7 +222,9 @@ function parseDomainResponseHeuristic(raw: string, sentDomains: Set<string>, fet
 
     const description = normalizeDescription(descriptionMatch[1] ?? '')
     if (!description) continue
-    const category = normalizeCategory(categoryMatch?.[1] ?? 'Other')
+    const category = typeof categoryMatch?.[1] === 'string'
+      ? categoryMatch[1].trim().slice(0, 40) || undefined
+      : undefined
 
     results.push({
       domain,
@@ -266,7 +246,7 @@ async function classifyDomainBatch(domains: string[], settings: LlmSettings): Pr
 function estimateDomainMaxTokens(domainCount: number): number {
   // Each recognized domain returns ~20-40 tokens in JSON.
   // Keep a generous ceiling to avoid truncation on larger batches.
-  return Math.min(4_000, Math.max(1_000, domainCount * 50))
+  return Math.min(5_000, Math.max(1_000, domainCount * 100))
 }
 
 function looksTruncatedResponse(raw: string): boolean {

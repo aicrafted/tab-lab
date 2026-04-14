@@ -7,8 +7,8 @@ import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
-const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case). Choose from common topics like: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. If unsure, use "Other". Reply with the category label only — no explanation, no punctuation.`
-const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case). Choose from: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health. Use "Other" if unsure.
+const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case) that best describes the content. Reply with the category label only — no explanation, no punctuation.`
+const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case) that best describes the content.
 
 Example output: {"category": "Development"}`
 const CLUSTER_SYSTEM_PROMPT = `You classify clusters of browser pages.
@@ -16,7 +16,7 @@ Given 2-3 representative pages from one cluster, return strict JSON:
 {"category":"<broad category>","name":"<specific short cluster name>"}
 
 Rules:
-- category must be one of: Development, Design, AI & ML, Science, News, Finance, Shopping, Social Media, Entertainment, Productivity, Documentation, Video, Research, Education, Health, Other
+- category should be a broad, human-friendly label (2-4 words, Title Case) that best describes the cluster
 - name must be short (2-5 words), specific, and not generic
 - prefer concrete names like "Rust async runtime" over generic "Development"
 - output JSON only`

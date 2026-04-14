@@ -217,6 +217,53 @@ export function useAiPipelines({
     if (map.size > 0) setProjectedPoints(map)
   }, [onTaskProgress, setProjectedPoints])
 
+  const normalizeCategoriesAfterClassification = useCallback(async (
+    tabItems: { url: string }[],
+    bookmarkItems: { url: string }[],
+  ) => {
+    try {
+      const [tabEntries, bookmarkEntries] = await Promise.all([
+        Promise.all(tabItems.map(async (item) => ({ url: item.url, entry: await getCached('tab', item.url) }))),
+        Promise.all(bookmarkItems.map(async (item) => ({ url: item.url, entry: await getCached('bm', item.url) }))),
+      ])
+
+      const labels = [...new Set([
+        ...tabEntries.map(({ entry }) => entry?.category).filter(Boolean),
+        ...bookmarkEntries.map(({ entry }) => entry?.category).filter(Boolean),
+      ] as string[])]
+      if (labels.length <= 1) return
+
+      const mergeMap = await normalizeCategoryLabels(labels, llmSettings)
+      const tabUpdates: { url: string; category: string }[] = []
+      const bookmarkUpdates: { url: string; category: string }[] = []
+      const cacheWrites: Promise<void>[] = []
+
+      for (const { url, entry } of tabEntries) {
+        const from = entry?.category
+        if (!from) continue
+        const to = mergeMap[from] ?? from
+        if (to === from) continue
+        tabUpdates.push({ url, category: to })
+        cacheWrites.push(setCached('tab', url, { ...entry, category: to, processedAt: Date.now() }))
+      }
+
+      for (const { url, entry } of bookmarkEntries) {
+        const from = entry?.category
+        if (!from) continue
+        const to = mergeMap[from] ?? from
+        if (to === from) continue
+        bookmarkUpdates.push({ url, category: to })
+        cacheWrites.push(setCached('bm', url, { ...entry, category: to, processedAt: Date.now() }))
+      }
+
+      await Promise.all(cacheWrites)
+      if (tabUpdates.length > 0) applyTabCategoryBatch(tabUpdates)
+      if (bookmarkUpdates.length > 0) applyBookmarkCategoryBatch(bookmarkUpdates)
+    } catch (err) {
+      console.warn('[llm] post-classification category normalization skipped', err)
+    }
+  }, [applyBookmarkCategoryBatch, applyTabCategoryBatch, llmSettings])
+
   const runAutoAiPipeline = useCallback(async (
     tb: TabItem[],
     bm: BookmarkItem[],
@@ -291,6 +338,7 @@ export function useAiPipelines({
 
         tabsLog.done()
         bookmarksLog.done()
+        await normalizeCategoriesAfterClassification(tb, bm)
         setLlmStatus('ready')
         void classifyIntentLmStudio(
           tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -322,6 +370,7 @@ export function useAiPipelines({
         classifyBookmarks(bm, (updates) => {
           applyBookmarkCategoryBatch(updates)
         }).then(() => {
+          void normalizeCategoriesAfterClassification(tb, bm)
           setLlmStatus('ready')
           void tagWithGeminiNano(tb, 'tab', (updates) => {
             applyTabTagsBatch(updates)
@@ -401,6 +450,7 @@ export function useAiPipelines({
 
         tabsLog.done()
         bookmarksLog.done()
+        await normalizeCategoriesAfterClassification(tb, bm)
         setLlmStatus('ready')
         void tagWithLmStudio(
           tb.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -444,6 +494,7 @@ export function useAiPipelines({
     applyTabIntentBatch,
     applyTabTagsBatch,
     llmSettings,
+    normalizeCategoriesAfterClassification,
     runEmbeddingPass,
     setClusterNames,
     setLlmError,
@@ -583,7 +634,8 @@ export function useAiPipelines({
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
           },
-        ).then(() => {
+        ).then(async () => {
+          await normalizeCategoriesAfterClassification(tabs, bookmarks)
           tabsLog.done()
           bookmarksLog.done()
           setLlmStatus('ready')
@@ -603,7 +655,8 @@ export function useAiPipelines({
         classifyBookmarks(bookmarks, (updates) => {
           bookmarksLog.progress(updates.length)
           applyBookmarkCategoryBatch(updates)
-        }).then(() => {
+        }).then(async () => {
+          await normalizeCategoriesAfterClassification(tabs, bookmarks)
           tabsLog.done()
           bookmarksLog.done()
           setLlmStatus('ready')
@@ -628,7 +681,8 @@ export function useAiPipelines({
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
           },
-        ).then(() => {
+        ).then(async () => {
+          await normalizeCategoriesAfterClassification(tabs, bookmarks)
           tabsLog.done()
           bookmarksLog.done()
           setLlmStatus('ready')
@@ -647,7 +701,9 @@ export function useAiPipelines({
     applyTabCategoryBatch,
     bookmarks,
     llmSettings,
+    normalizeCategoriesAfterClassification,
     onTaskProgress,
+    setLlmError,
     setLlmStatus,
     tabs,
   ])
