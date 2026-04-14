@@ -7,6 +7,34 @@ const TAG_SYSTEM_PROMPT = `You are a web page tagger. For each browser tab title
 const TAG_SYSTEM_PROMPT_JSON = `You are a web page tagger. Output a JSON object with a "tags" key containing an array of 3-5 lowercase tags. Tags must be concise (1-2 words), specific, and useful for filtering a personal collection. Avoid generic tags like "website" or "internet".
 
 Example output: {"tags": ["rust", "async", "performance"]}`
+const tagParseMetrics = {
+  strict: 0,
+  fallback: 0,
+}
+
+function trackTagParse(strict: boolean): void {
+  if (strict) tagParseMetrics.strict += 1
+  else tagParseMetrics.fallback += 1
+  const total = tagParseMetrics.strict + tagParseMetrics.fallback
+  if (total > 0 && total % 25 === 0) {
+    console.info(`[tagger:parse] strict=${tagParseMetrics.strict} fallback=${tagParseMetrics.fallback}`)
+  }
+}
+const TAGS_RESPONSE_SCHEMA = {
+  name: 'tags_response',
+  schema: {
+    type: 'object',
+    properties: {
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+    required: ['tags'],
+    additionalProperties: false,
+  },
+  strict: false,
+} as const
 
 function urlPathSnippet(url: string): string {
   try {
@@ -29,14 +57,17 @@ function parseTagsJson(raw: string): string[] {
   try {
     const parsed = JSON.parse(extractJson(raw)) as { tags?: unknown }
     if (Array.isArray(parsed.tags)) {
-      return (parsed.tags as unknown[])
+      const tags = (parsed.tags as unknown[])
         .filter((tag): tag is string => typeof tag === 'string')
         .map((tag) => tag.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, ''))
         .filter((tag) => tag.length > 1 && tag.length < 30)
         .slice(0, 5)
+      trackTagParse(true)
+      return tags
     }
   } catch {
   }
+  trackTagParse(false)
   return parseTags(raw)
 }
 
@@ -60,9 +91,17 @@ export async function tagItems(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const isWebLLM = settings.tasks.chat.provider === 'webllm'
-  const systemPrompt = isWebLLM ? TAG_SYSTEM_PROMPT_JSON : TAG_SYSTEM_PROMPT
-  const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
+  const provider = settings.tasks.chat.provider
+  const useJsonOutput = provider !== 'gemini-nano'
+  const systemPrompt = useJsonOutput ? TAG_SYSTEM_PROMPT_JSON : TAG_SYSTEM_PROMPT
+  const options = useJsonOutput
+    ? {
+      responseFormat: 'json' as const,
+      metricKey: 'tags',
+      jsonSchema: TAGS_RESPONSE_SCHEMA,
+      ...(provider === 'webllm' ? { disableThinking: true } : {}),
+    }
+    : {}
 
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
@@ -77,7 +116,7 @@ export async function tagItems(
           : `Title: ${item.title}\nDomain: ${item.domain}`
         const raw = await chatComplete(systemPrompt, userMsg, settings, 60, options,
         )
-        const tags = isWebLLM ? parseTagsJson(raw) : parseTags(raw)
+        const tags = useJsonOutput ? parseTagsJson(raw) : parseTags(raw)
         if (tags.length > 0) {
           const existing = await getCached(prefix, item.url)
           await setCached(prefix, item.url, {

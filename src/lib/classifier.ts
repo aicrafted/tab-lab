@@ -22,6 +22,52 @@ Rules:
 - prefer concrete names like "Rust async runtime" over generic "Development"
 - avoid using "Other" unless the samples are truly ambiguous
 - output JSON only`
+const classifierParseMetrics = {
+  strict: 0,
+  fallback: 0,
+}
+
+function trackClassifierParse(strict: boolean): void {
+  if (strict) classifierParseMetrics.strict += 1
+  else classifierParseMetrics.fallback += 1
+  const total = classifierParseMetrics.strict + classifierParseMetrics.fallback
+  if (total > 0 && total % 25 === 0) {
+    console.info(`[classifier:parse] strict=${classifierParseMetrics.strict} fallback=${classifierParseMetrics.fallback}`)
+  }
+}
+const CATEGORY_RESPONSE_SCHEMA = {
+  name: 'category_response',
+  schema: {
+    type: 'object',
+    properties: {
+      category: { type: 'string' },
+    },
+    required: ['category'],
+    additionalProperties: false,
+  },
+  strict: false,
+} as const
+const CLUSTER_RESPONSE_SCHEMA = {
+  name: 'cluster_response',
+  schema: {
+    type: 'object',
+    properties: {
+      category: { type: 'string' },
+      name: { type: 'string' },
+    },
+    required: ['category', 'name'],
+    additionalProperties: false,
+  },
+  strict: false,
+} as const
+const CATEGORY_MERGE_MAP_SCHEMA = {
+  name: 'category_merge_map',
+  schema: {
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  },
+  strict: false,
+} as const
 
 function extractJsonObject(text: string): string {
   // Always look for { ... }, never [ ... ] — our responses are always objects
@@ -64,7 +110,11 @@ function isInvalidCategoryLabel(label: string): boolean {
 
 function parseCategoryFromRaw(raw: string): string {
   const fromJson = parseCategoryJson(raw)
-  if (fromJson !== 'Other') return fromJson
+  if (fromJson !== 'Other') {
+    trackClassifierParse(true)
+    return fromJson
+  }
+  trackClassifierParse(false)
   return normalizeCategoryLabel(raw)
 }
 
@@ -281,6 +331,8 @@ export async function classifyItems(
   const options = useJsonOutput
     ? {
       responseFormat: 'json' as const,
+      metricKey: 'classifier-items',
+      jsonSchema: CATEGORY_RESPONSE_SCHEMA,
       ...(provider === 'webllm' ? { disableThinking: true } : {}),
     }
     : {}
@@ -385,8 +437,13 @@ Reply with JSON only, no explanation.`
     prompt,
     settings,
     300,
-    settings.tasks.chat.provider === 'webllm'
-      ? { responseFormat: 'json', disableThinking: true }
+    settings.tasks.chat.provider !== 'gemini-nano'
+      ? {
+        responseFormat: 'json',
+        metricKey: 'classifier-normalize',
+        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
+        ...(settings.tasks.chat.provider === 'webllm' ? { disableThinking: true } : {}),
+      }
       : {},
   )
 
@@ -426,6 +483,8 @@ export async function splitLargeClusters(
     const options = useJsonOutput
       ? {
         responseFormat: 'json' as const,
+        metricKey: 'classifier-split',
+        jsonSchema: CATEGORY_RESPONSE_SCHEMA,
         ...(provider === 'webllm' ? { disableThinking: true } : {}),
       }
       : {}
@@ -583,6 +642,8 @@ export async function classifyByClusters(
         useJsonOutput
           ? {
             responseFormat: 'json',
+            metricKey: 'classifier-clusters',
+            jsonSchema: CLUSTER_RESPONSE_SCHEMA,
             ...(provider === 'webllm' ? { disableThinking: true } : {}),
           }
           : {},

@@ -48,6 +48,38 @@ export function extractJson(text: string): string {
 export interface ChatOptions {
   responseFormat?: 'json'
   disableThinking?: boolean
+  metricKey?: string
+  jsonSchema?: {
+    name: string
+    schema: Record<string, unknown>
+    strict?: boolean
+  }
+}
+
+type LlmMetric = {
+  calls: number
+  structuredRequested: number
+  structuredFallback: number
+  failures: number
+}
+
+const llmMetrics = new Map<string, LlmMetric>()
+
+function trackLlmMetric(
+  key: string,
+  updater: (metric: LlmMetric) => void,
+): void {
+  const metric = llmMetrics.get(key) ?? {
+    calls: 0,
+    structuredRequested: 0,
+    structuredFallback: 0,
+    failures: 0,
+  }
+  updater(metric)
+  llmMetrics.set(key, metric)
+  if (metric.calls > 0 && metric.calls % 20 === 0) {
+    console.info(`[llm:metrics:${key}] calls=${metric.calls} structured=${metric.structuredRequested} fallback=${metric.structuredFallback} failures=${metric.failures}`)
+  }
 }
 
 // Retry helper with exponential backoff for HTTP requests
@@ -73,6 +105,11 @@ export async function chatComplete(
   options: ChatOptions = {},
 ): Promise<string> {
   const cleanMessage = sanitizeForLlm(userMessage)
+  const metricKey = options.metricKey ?? 'default'
+  trackLlmMetric(metricKey, (metric) => {
+    metric.calls += 1
+    if (options.responseFormat === 'json') metric.structuredRequested += 1
+  })
   const provider = settings.tasks.chat.provider
   switch (provider) {
     case 'gemini-nano': {
@@ -97,20 +134,35 @@ export async function chatComplete(
         : settings.providers.lmstudio.apiKey
       const model = settings.tasks.chat.model
 
-      const body = JSON.stringify({
+      const defaultJsonSchema = {
+        name: 'response',
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+        },
+        strict: false,
+      } as const
+
+      const buildBody = (useStructuredJson: boolean): string => JSON.stringify({
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: sanitizeForLlm(userMessage) },
+          { role: 'user', content: cleanMessage },
         ],
         max_tokens: maxTokens,
         temperature: 0.1,
-        ...(options.responseFormat === 'json'
-          ? { response_format: { type: 'json_object' } }
+        ...(provider === 'lmstudio' && useStructuredJson
+          ? {
+            response_format: {
+              type: 'json_schema',
+              json_schema: options.jsonSchema ?? defaultJsonSchema,
+            },
+          }
           : {}),
       })
 
-      const res = await withHttpRetry(async () => {
+      const request = async (useStructuredJson: boolean): Promise<Response> => {
+        const body = buildBody(useStructuredJson)
         const r = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
@@ -121,8 +173,32 @@ export async function chatComplete(
           body,
           signal: AbortSignal.timeout(30_000),
         })
-        if (!r.ok) throw new Error(`LM Studio: ${r.status}`)
+        if (!r.ok) {
+          const errorText = await r.text().catch(() => '')
+          throw new Error(`Chat API ${r.status}${errorText ? `: ${errorText}` : ''}`)
+        }
         return r
+      }
+
+      const wantsStructuredJson = options.responseFormat === 'json'
+      const res = await withHttpRetry(async () => {
+        try {
+          return await request(wantsStructuredJson)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          const responseFormatIssue = /response_format|json_schema|json_object/i.test(message)
+          if (provider === 'lmstudio' && wantsStructuredJson && responseFormatIssue) {
+            console.warn('[llm] structured response rejected by server; retrying without response_format', message)
+            trackLlmMetric(metricKey, (metric) => {
+              metric.structuredFallback += 1
+            })
+            return request(false)
+          }
+          trackLlmMetric(metricKey, (metric) => {
+            metric.failures += 1
+          })
+          throw err
+        }
       })
       const json = (await res.json()) as { choices: { message: { content: string } }[] }
       return json.choices[0]?.message.content?.trim() ?? ''

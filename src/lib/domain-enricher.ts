@@ -15,12 +15,49 @@ const VALID_PLATFORMS = new Set<KnownPlatform>([
   'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
   'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
 ])
+const domainParseMetrics = {
+  strict: 0,
+  heuristic: 0,
+  fail: 0,
+}
+
+function trackDomainParse(kind: 'strict' | 'heuristic' | 'fail'): void {
+  domainParseMetrics[kind] += 1
+  const total = domainParseMetrics.strict + domainParseMetrics.heuristic + domainParseMetrics.fail
+  if (total > 0 && total % 20 === 0) {
+    console.info(`[domain-enricher:parse] strict=${domainParseMetrics.strict} heuristic=${domainParseMetrics.heuristic} fail=${domainParseMetrics.fail}`)
+  }
+}
 
 const DOMAIN_SYSTEM_PROMPT = `You are a web domain classifier with broad knowledge of websites worldwide.
 Classify every domain you can identify — including well-known companies, brands, media, shops, tools, and services in any country.
 Only skip domains that are clearly private/internal: IP addresses, localhost, random subdomains of unknown services, corporate intranets.
 When in doubt whether you know a domain, include it rather than skipping it.
 Always respond with valid JSON only.`
+const DOMAIN_BATCH_RESPONSE_SCHEMA = {
+  name: 'domain_batch_response',
+  schema: {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string' },
+        category: { type: 'string' },
+        description: { type: 'string' },
+        platform: {
+          type: 'string',
+          enum: [
+            'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
+            'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
+          ],
+        },
+      },
+      required: ['domain', 'category', 'description'],
+      additionalProperties: false,
+    },
+  },
+  strict: false,
+} as const
 
 export interface DomainInfo {
   domain: string
@@ -224,16 +261,21 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
       })
       seen.add(domain)
     }
+    trackDomainParse('strict')
     return result
   } catch (err) {
     console.warn('[domain-enricher] strict parse failed, trying heuristic parser', err, {
       rawResponse: raw,
     })
     const heuristic = parseDomainResponseHeuristic(raw, sentDomains, fetchedAt)
-    if (heuristic.length > 0) return heuristic
+    if (heuristic.length > 0) {
+      trackDomainParse('heuristic')
+      return heuristic
+    }
     console.warn('[domain-enricher] failed to parse domain response', err, {
       rawResponse: raw,
     })
+    trackDomainParse('fail')
     return []
   }
 }
@@ -335,7 +377,9 @@ async function classifyDomainBatchWithRetry(
     buildDomainPrompt(domains),
     settings,
     estimateDomainMaxTokens(domains.length),
-    {},
+    settings.tasks.chat.provider !== 'gemini-nano'
+      ? { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA }
+      : {},
   )
   const parsed = parseDomainResponse(raw, new Set(domains), fetchedAt)
   const truncated = looksTruncatedResponse(raw)

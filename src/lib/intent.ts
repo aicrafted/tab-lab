@@ -49,6 +49,31 @@ const VALID_INTENTS: PageIntent[] = [
   'repository',
   'other',
 ]
+const intentParseMetrics = {
+  strict: 0,
+  fallback: 0,
+}
+
+function trackIntentParse(strict: boolean): void {
+  if (strict) intentParseMetrics.strict += 1
+  else intentParseMetrics.fallback += 1
+  const total = intentParseMetrics.strict + intentParseMetrics.fallback
+  if (total > 0 && total % 25 === 0) {
+    console.info(`[intent:parse] strict=${intentParseMetrics.strict} fallback=${intentParseMetrics.fallback}`)
+  }
+}
+const INTENT_RESPONSE_SCHEMA = {
+  name: 'intent_response',
+  schema: {
+    type: 'object',
+    properties: {
+      intent: { type: 'string', enum: VALID_INTENTS },
+    },
+    required: ['intent'],
+    additionalProperties: false,
+  },
+  strict: false,
+} as const
 // Rich descriptors for NLI intent classification.
 // Keywords matching what page titles/domains of that intent look like.
 const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
@@ -124,10 +149,13 @@ function parseIntentJson(raw: string): PageIntent {
   try {
     const parsed = JSON.parse(extractJson(raw)) as { intent?: unknown }
     if (typeof parsed.intent === 'string') {
-      return VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
+      const value = VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
+      trackIntentParse(true)
+      return value
     }
   } catch {
   }
+  trackIntentParse(false)
   return parseIntent(raw)
 }
 
@@ -165,9 +193,17 @@ export async function classifyIntent(
     console.warn('[intent] NLI method requires embedding provider "transformers"; falling back to LLM intent classification')
   }
 
-  const isWebLLM = settings.tasks.chat.provider === 'webllm'
-  const prompt = isWebLLM ? INTENT_PROMPT_JSON : INTENT_PROMPT
-  const options = isWebLLM ? { responseFormat: 'json' as const, disableThinking: true } : {}
+  const provider = settings.tasks.chat.provider
+  const useJsonOutput = provider !== 'gemini-nano'
+  const prompt = useJsonOutput ? INTENT_PROMPT_JSON : INTENT_PROMPT
+  const options = useJsonOutput
+    ? {
+      responseFormat: 'json' as const,
+      metricKey: 'intent',
+      jsonSchema: INTENT_RESPONSE_SCHEMA,
+      ...(provider === 'webllm' ? { disableThinking: true } : {}),
+    }
+    : {}
 
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
@@ -185,7 +221,7 @@ export async function classifyIntent(
           const siteLine = domainDesc ? `\nSite: ${domainDesc}` : ''
           const userMsg = `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
           const raw = await chatComplete(prompt, userMsg, settings, 15, options)
-          intent = isWebLLM ? parseIntentJson(raw) : parseIntent(raw)
+          intent = useJsonOutput ? parseIntentJson(raw) : parseIntent(raw)
         }
         const existing = await getCached(prefix, item.url)
         await setCached(prefix, item.url, {
