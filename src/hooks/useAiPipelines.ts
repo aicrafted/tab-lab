@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/apply-updates'
 import { kMeans, type ClusterResult } from '@/lib/cluster'
 import { saveClusterNames } from '@/lib/cluster-names'
@@ -162,6 +162,29 @@ export function useAiPipelines({
   reload,
   onTaskProgress,
 }: UseAiPipelinesArgs) {
+  const activeRunIdRef = useRef<number>(0)
+  const runSeqRef = useRef<number>(0)
+
+  const beginRun = useCallback(() => {
+    const id = ++runSeqRef.current
+    activeRunIdRef.current = id
+    return id
+  }, [])
+
+  const isRunActive = useCallback((id: number) => activeRunIdRef.current === id, [])
+
+  const finishRun = useCallback((id: number) => {
+    if (activeRunIdRef.current === id) {
+      activeRunIdRef.current = 0
+    }
+  }, [])
+
+  const handleStopPipeline = useCallback(async () => {
+    activeRunIdRef.current = 0
+    setLlmError('Pipeline stopped by user')
+    setLlmStatus('ready')
+  }, [setLlmError, setLlmStatus])
+
   const applyTabCategoryBatch = useCallback((updates: { url: string; category: string }[]) => {
     setTabs((prev) => applyCategoryUpdates(prev, updates))
   }, [setTabs])
@@ -241,6 +264,7 @@ export function useAiPipelines({
     bm: BookmarkItem[],
     settings: LlmSettings,
   ) => {
+    const runId = beginRun()
     const embeddingProvider = settings.tasks.embedding.provider
     if (embeddingProvider === 'lmstudio' && !settings.tasks.embedding.model) return
     if (embeddingProvider === 'openrouter' && (!settings.providers.openrouter.apiKey || !settings.tasks.embedding.model)) return
@@ -251,14 +275,26 @@ export function useAiPipelines({
     ]
 
     const embeddingLog = createTaskLogger('embeddings', 'LLM calc embeddings', allItems.length, onTaskProgress)
-    await fetchEmbeddingsBatch(allItems, settings, (updates) => {
-      embeddingLog.progress(updates.length)
-    })
+    try {
+      await fetchEmbeddingsBatch(allItems, settings, (updates) => {
+        if (!isRunActive(runId)) return
+        embeddingLog.progress(updates.length)
+      })
+      if (!isRunActive(runId)) return
 
-    const map = await reprojectAllEmbeddings()
-    embeddingLog.done({ projectedPoints: map.size })
-    if (map.size > 0) setProjectedPoints(map)
-  }, [onTaskProgress, setProjectedPoints])
+      const map = await reprojectAllEmbeddings()
+      if (!isRunActive(runId)) return
+      embeddingLog.done({ projectedPoints: map.size })
+      if (map.size > 0) setProjectedPoints(map)
+    } catch (err) {
+      embeddingLog.failed(err)
+      if (!isRunActive(runId)) return
+      setLlmError(String(err))
+      setLlmStatus('error')
+    } finally {
+      finishRun(runId)
+    }
+  }, [beginRun, finishRun, isRunActive, onTaskProgress, setLlmError, setLlmStatus, setProjectedPoints])
 
   const normalizeCategoriesAfterClassification = useCallback(async (
     tabItems: { url: string }[],
@@ -615,6 +651,7 @@ export function useAiPipelines({
   }, [reload, setClusterNames, setProjectedPoints])
 
   const runDomainKnowledgePass = useCallback(async (forceRefresh: boolean) => {
+    const runId = beginRun()
     if (!hasDomainKnowledgeProviderConfig(llmSettings)) {
       setLlmStatus('unavailable')
       return
@@ -634,17 +671,23 @@ export function useAiPipelines({
     try {
       if (forceRefresh) await clearDomainKnowledgeCache()
       const domainMap = await enrichDomains(allDomains, llmSettings, (delta) => {
+        if (!isRunActive(runId)) return
         domainsLog.progress(delta)
       })
+      if (!isRunActive(runId)) return
       applyPlatformsFromDomainMap(tabs, bookmarks, domainMap)
+      if (!isRunActive(runId)) return
       domainsLog.done()
       setLlmStatus('ready')
     } catch (err) {
       domainsLog.failed(err)
+      if (!isRunActive(runId)) return
       setLlmError(String(err))
       setLlmStatus('error')
+    } finally {
+      finishRun(runId)
     }
-  }, [applyPlatformsFromDomainMap, bookmarks, llmSettings, onTaskProgress, setLlmError, setLlmStatus, tabs])
+  }, [applyPlatformsFromDomainMap, beginRun, bookmarks, finishRun, isRunActive, llmSettings, onTaskProgress, setLlmError, setLlmStatus, tabs])
 
   const handleRunDomainKnowledge = useCallback(async () => {
     await runDomainKnowledgePass(false)
@@ -724,94 +767,97 @@ export function useAiPipelines({
   }, [bookmarks, tabs])
 
   const handleClassify = useCallback(async () => {
+    const runId = beginRun()
     const nanoStatus = await checkLlmAvailability(llmSettings)
     const tabsLog = createTaskLogger('manual-classify-tabs', 'LLM classifying tabs', tabs.length, onTaskProgress)
     const bookmarksLog = createTaskLogger('manual-classify-bookmarks', 'LLM classifying bookmarks', bookmarks.length, onTaskProgress)
-    if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
-      setLlmStatus('classifying')
-      void classifyWithLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          applyTabCategoryBatch(updates)
-        },
-      ).then(() =>
-        classifyWithLmStudio(
+    try {
+      if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+        setLlmStatus('classifying')
+        await classifyWithLmStudio(
+          tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            if (!isRunActive(runId)) return
+            tabsLog.progress(updates.length)
+            applyTabCategoryBatch(updates)
+          },
+        )
+        if (!isRunActive(runId)) return
+        await classifyWithLmStudio(
           bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           (updates) => {
+            if (!isRunActive(runId)) return
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
           },
-        ).then(async () => {
-          await normalizeCategoriesAfterClassification(tabs, bookmarks)
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmError(String(err))
-        setLlmStatus('error')
-      })
-    } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void classifyTabs(tabs, (updates) => {
-        tabsLog.progress(updates.length)
-        applyTabCategoryBatch(updates)
-      }).then(() =>
-        classifyBookmarks(bookmarks, (updates) => {
+        )
+      } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+        setLlmStatus('classifying')
+        await classifyTabs(tabs, (updates) => {
+          if (!isRunActive(runId)) return
+          tabsLog.progress(updates.length)
+          applyTabCategoryBatch(updates)
+        })
+        if (!isRunActive(runId)) return
+        await classifyBookmarks(bookmarks, (updates) => {
+          if (!isRunActive(runId)) return
           bookmarksLog.progress(updates.length)
           applyBookmarkCategoryBatch(updates)
-        }).then(async () => {
-          await normalizeCategoriesAfterClassification(tabs, bookmarks)
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (hasChatProviderConfig(llmSettings)) {
-      setLlmStatus('classifying')
-      void classifyWithLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          applyTabCategoryBatch(updates)
-        },
-      ).then(() =>
-        classifyWithLmStudio(
+        })
+      } else if (hasChatProviderConfig(llmSettings)) {
+        setLlmStatus('classifying')
+        await classifyWithLmStudio(
+          tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            if (!isRunActive(runId)) return
+            tabsLog.progress(updates.length)
+            applyTabCategoryBatch(updates)
+          },
+        )
+        if (!isRunActive(runId)) return
+        await classifyWithLmStudio(
           bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           (updates) => {
+            if (!isRunActive(runId)) return
             bookmarksLog.progress(updates.length)
             applyBookmarkCategoryBatch(updates)
           },
-        ).then(async () => {
-          await normalizeCategoriesAfterClassification(tabs, bookmarks)
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmError(String(err))
-        setLlmStatus('error')
-      })
-    } else {
-      setLlmStatus('unavailable')
+        )
+      } else {
+        setLlmStatus('unavailable')
+        return
+      }
+
+      if (!isRunActive(runId)) return
+      await normalizeCategoriesAfterClassification(tabs, bookmarks)
+      if (!isRunActive(runId)) return
+      tabsLog.done()
+      bookmarksLog.done()
+      setLlmStatus('ready')
+    } catch (err) {
+      tabsLog.failed(err)
+      bookmarksLog.failed(err)
+      if (!isRunActive(runId)) return
+      setLlmError(String(err))
+      setLlmStatus('error')
+    } finally {
+      finishRun(runId)
     }
   }, [
     applyBookmarkCategoryBatch,
     applyTabCategoryBatch,
+    beginRun,
     bookmarks,
+    finishRun,
+    isRunActive,
     llmSettings,
     normalizeCategoriesAfterClassification,
     onTaskProgress,
@@ -821,94 +867,99 @@ export function useAiPipelines({
   ])
 
   const handleRunIntent = useCallback(async () => {
+    const runId = beginRun()
     const nanoStatus = await checkLlmAvailability(llmSettings)
     const tabsLog = createTaskLogger('manual-intent-tabs', 'LLM intent tabs', tabs.length, onTaskProgress)
     const bookmarksLog = createTaskLogger('manual-intent-bookmarks', 'LLM intent bookmarks', bookmarks.length, onTaskProgress)
 
-    if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
-      setLlmStatus('classifying')
-      void classifyIntentLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          applyTabIntentBatch(updates)
-        },
-      ).then(() =>
-        classifyIntentLmStudio(
+    try {
+      if (llmSettings.tasks.classification.method === 'nli' && llmSettings.tasks.embedding.provider === 'transformers') {
+        setLlmStatus('classifying')
+        await classifyIntentLmStudio(
+          tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            if (!isRunActive(runId)) return
+            tabsLog.progress(updates.length)
+            applyTabIntentBatch(updates)
+          },
+        )
+        if (!isRunActive(runId)) return
+        await classifyIntentLmStudio(
           bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           (updates) => {
+            if (!isRunActive(runId)) return
             bookmarksLog.progress(updates.length)
             applyBookmarkIntentBatch(updates)
           },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmError(String(err))
-        setLlmStatus('error')
-      })
-    } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-        tabsLog.progress(updates.length)
-        applyTabIntentBatch(updates)
-      }).then(() =>
-        classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
+        )
+      } else if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+        setLlmStatus('classifying')
+        await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
+          if (!isRunActive(runId)) return
+          tabsLog.progress(updates.length)
+          applyTabIntentBatch(updates)
+        })
+        if (!isRunActive(runId)) return
+        await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
+          if (!isRunActive(runId)) return
           bookmarksLog.progress(updates.length)
           applyBookmarkIntentBatch(updates)
-        }).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (hasChatProviderConfig(llmSettings)) {
-      setLlmStatus('classifying')
-      void classifyIntentLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
-          tabsLog.progress(updates.length)
-          applyTabIntentBatch(updates)
-        },
-      ).then(() =>
-        classifyIntentLmStudio(
+        })
+      } else if (hasChatProviderConfig(llmSettings)) {
+        setLlmStatus('classifying')
+        await classifyIntentLmStudio(
+          tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            if (!isRunActive(runId)) return
+            tabsLog.progress(updates.length)
+            applyTabIntentBatch(updates)
+          },
+        )
+        if (!isRunActive(runId)) return
+        await classifyIntentLmStudio(
           bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           (updates) => {
+            if (!isRunActive(runId)) return
             bookmarksLog.progress(updates.length)
             applyBookmarkIntentBatch(updates)
           },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmError(String(err))
-        setLlmStatus('error')
-      })
-    } else {
-      setLlmStatus('unavailable')
+        )
+      } else {
+        setLlmStatus('unavailable')
+        return
+      }
+
+      if (!isRunActive(runId)) return
+      tabsLog.done()
+      bookmarksLog.done()
+      setLlmStatus('ready')
+    } catch (err) {
+      tabsLog.failed(err)
+      bookmarksLog.failed(err)
+      if (!isRunActive(runId)) return
+      setLlmError(String(err))
+      setLlmStatus('error')
+    } finally {
+      finishRun(runId)
     }
   }, [
     applyBookmarkIntentBatch,
     applyTabIntentBatch,
+    beginRun,
     bookmarks,
+    finishRun,
+    isRunActive,
     llmSettings,
     onTaskProgress,
+    setLlmError,
     setLlmStatus,
     tabs,
   ])
@@ -1009,63 +1060,107 @@ export function useAiPipelines({
   }, [applyTabCategoryBatch, llmSettings, setLlmStatus, tabs])
 
   const handleRunTags = useCallback(async () => {
+    const runId = beginRun()
     const nanoStatus = await checkLlmAvailability(llmSettings)
     const tabsLog = createTaskLogger('manual-tags-tabs', 'LLM tagging tabs', tabs.length, onTaskProgress)
     const bookmarksLog = createTaskLogger('manual-tags-bookmarks', 'LLM tagging bookmarks', bookmarks.length, onTaskProgress)
-    if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      setLlmStatus('classifying')
-      void tagWithGeminiNano(tabs, 'tab', (updates) => {
-        tabsLog.progress(updates.length)
-        applyTabTagsBatch(updates)
-      }).then(() =>
-        tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-          bookmarksLog.progress(updates.length)
-          applyBookmarkTagsBatch(updates)
-        }).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      )
-    } else if (hasChatProviderConfig(llmSettings)) {
-      setLlmStatus('classifying')
-      void tagWithLmStudio(
-        tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
-        'tab',
-        llmSettings,
-        (updates) => {
+
+    try {
+      if (llmSettings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
+        setLlmStatus('classifying')
+        await tagWithGeminiNano(tabs, 'tab', (updates) => {
+          if (!isRunActive(runId)) return
           tabsLog.progress(updates.length)
           applyTabTagsBatch(updates)
-        },
-      ).then(() =>
-        tagWithLmStudio(
+        })
+        if (!isRunActive(runId)) return
+        await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
+          if (!isRunActive(runId)) return
+          bookmarksLog.progress(updates.length)
+          applyBookmarkTagsBatch(updates)
+        })
+      } else if (hasChatProviderConfig(llmSettings)) {
+        setLlmStatus('classifying')
+        await tagWithLmStudio(
+          tabs.map(t => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          llmSettings,
+          (updates) => {
+            if (!isRunActive(runId)) return
+            tabsLog.progress(updates.length)
+            applyTabTagsBatch(updates)
+          },
+        )
+        if (!isRunActive(runId)) return
+        await tagWithLmStudio(
           bookmarks.map(b => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           llmSettings,
           (updates) => {
+            if (!isRunActive(runId)) return
             bookmarksLog.progress(updates.length)
             applyBookmarkTagsBatch(updates)
           },
-        ).then(() => {
-          tabsLog.done()
-          bookmarksLog.done()
-          setLlmStatus('ready')
-        }),
-      ).catch((err) => {
-        tabsLog.failed(err)
-        bookmarksLog.failed(err)
-        setLlmError(String(err))
-        setLlmStatus('error')
-      })
-    } else {
-      setLlmStatus('unavailable')
+        )
+      } else {
+        setLlmStatus('unavailable')
+        return
+      }
+
+      if (!isRunActive(runId)) return
+      tabsLog.done()
+      bookmarksLog.done()
+      setLlmStatus('ready')
+    } catch (err) {
+      tabsLog.failed(err)
+      bookmarksLog.failed(err)
+      if (!isRunActive(runId)) return
+      setLlmError(String(err))
+      setLlmStatus('error')
+    } finally {
+      finishRun(runId)
     }
   }, [
     applyBookmarkTagsBatch,
     applyTabTagsBatch,
+    beginRun,
     bookmarks,
+    finishRun,
+    isRunActive,
     llmSettings,
     onTaskProgress,
+    setLlmError,
+    setLlmStatus,
+    tabs,
+  ])
+
+  const handlePostProcessCategories = useCallback(async () => {
+    const runId = beginRun()
+    if (!hasChatProviderConfig(llmSettings)) {
+      setLlmStatus('unavailable')
+      finishRun(runId)
+      return
+    }
+    setLlmStatus('normalizing')
+    try {
+      await normalizeCategoriesAfterClassification(tabs, bookmarks)
+      if (!isRunActive(runId)) return
+      setLlmStatus('ready')
+    } catch (err) {
+      if (!isRunActive(runId)) return
+      setLlmError(String(err))
+      setLlmStatus('error')
+    } finally {
+      finishRun(runId)
+    }
+  }, [
+    beginRun,
+    bookmarks,
+    finishRun,
+    isRunActive,
+    llmSettings,
+    normalizeCategoriesAfterClassification,
+    setLlmError,
     setLlmStatus,
     tabs,
   ])
@@ -1121,8 +1216,10 @@ export function useAiPipelines({
     handleReintent,
     handlePass2,
     handlePass3,
+    handlePostProcessCategories,
     handleRunTags,
     handleRetag,
     handleReembedAll,
+    handleStopPipeline,
   }
 }

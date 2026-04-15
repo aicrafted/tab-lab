@@ -242,9 +242,11 @@ export function App() {
     handleReclassify,
     handleRunIntent,
     handleReintent,
+    handlePostProcessCategories,
     handleRunTags,
     handleRetag,
     handleReembedAll,
+    handleStopPipeline,
   } = useAiPipelines({
     bookmarks,
     tabs,
@@ -274,6 +276,7 @@ export function App() {
     { key: 'redomains', label: 'Re-Domains', icon: Database, title: 'Clear and rebuild domain knowledge cache', onClick: handleRedomainKnowledge },
     { key: 'classify', label: 'Classify', icon: Wand2, title: 'Run category classification (pass 1)', onClick: handleClassify },
     { key: 'reclassify', label: 'Re-Classify', icon: Wand2, title: 'Clear only category cache and classify again', onClick: handleReclassify },
+    { key: 'postcategories', label: 'Post-Categories', icon: Wand2, title: 'Run category post-processing (normalize + group rare)', onClick: handlePostProcessCategories },
     { key: 'tags', label: 'Tags', icon: Hash, title: 'Generate tags for all items', onClick: handleRunTags },
     { key: 'retag', label: 'Re-Tags', icon: Hash, title: 'Clear only tags cache and run tagging again', onClick: handleRetag },
     { key: 'intent', label: 'Intent', icon: Tag, title: 'Classify pages by intent', onClick: handleRunIntent },
@@ -682,8 +685,17 @@ export function App() {
               {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
               {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
               {llmStatus === 'ready' && <span className="text-primary">LLM: ready</span>}
-              {llmStatus === 'classifying' && <span className="text-accent">LLM: classifying…</span>}
-              {llmStatus === 'normalizing' && <span className="text-accent">LLM: normalizing…</span>}
+              {(llmStatus === 'classifying' || llmStatus === 'normalizing') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { void handleStopPipeline() }}
+                  className="h-6 px-2 text-[11px] text-accent hover:text-destructive"
+                  title="Stop current AI pipeline"
+                >
+                  {llmStatus === 'classifying' ? 'LLM: classifying… Stop' : 'LLM: normalizing… Stop'}
+                </Button>
+              )}
             </span>
             <Button
               variant="ghost"

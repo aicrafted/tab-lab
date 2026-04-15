@@ -7,6 +7,11 @@ import { patchRequestAdapterForWindows } from './webgpu-compat'
 export interface WebllmChatOptions {
   responseFormat?: 'json'
   disableThinking?: boolean
+  jsonSchema?: {
+    name: string
+    schema: Record<string, unknown>
+    strict?: boolean
+  }
 }
 
 interface ChatMessage {
@@ -74,10 +79,13 @@ export async function webllmChat(
   options: WebllmChatOptions = {},
 ): Promise<string> {
   const eng = await getEngine(modelId)
+  // Qwen3 supports /no_think prefix in the user message to suppress <think> blocks.
+  // We use it alongside extra_body for maximum compatibility across WebLLM versions.
+  const userContent = options.disableThinking ? `/no_think\n${userMessage}` : userMessage
   const baseRequest: CompletionRequest = {
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
+      { role: 'user', content: userContent },
     ],
     max_tokens: maxTokens,
     temperature: 0.1,
@@ -91,10 +99,13 @@ export async function webllmChat(
 
   let reply: CompletionResponse
   if (options.responseFormat === 'json' && WEBLLM_JSON_MODE_ENABLED) {
+    const schemaStr = options.jsonSchema
+      ? JSON.stringify(options.jsonSchema.schema)
+      : '{}'
     try {
       reply = await createCompletion({
         ...baseRequest,
-        response_format: { type: 'json_object' as const, schema: '{}' },
+        response_format: { type: 'json_object' as const, schema: schemaStr },
       })
     } catch (err) {
       // Use String(err) so the error type prefix (e.g. "BindingError: ...") is included —
@@ -118,7 +129,9 @@ export async function webllmChat(
   }
 
   const raw = reply.choices?.[0]?.message?.content ?? ''
-  return stripThinkBlocks(raw).trim()
+  const result = stripThinkBlocks(raw).trim()
+  console.debug('[webllm:raw]', { modelId, raw: raw.slice(0, 300), result: result.slice(0, 300) })
+  return result
 }
 
 function stripThinkBlocks(text: string): string {

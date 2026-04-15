@@ -97,6 +97,7 @@ function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
   const candidate = firstPhrase.slice(0, 40).trim()
   if (!candidate) return fallback
   if (/^(analysis|final|assistant|user|system|channel)$/i.test(candidate)) return fallback
+  if (/^-?\d+(\.\d+)?$/.test(candidate)) return fallback  // raw number from model, not a category
   return candidate
 }
 
@@ -105,6 +106,7 @@ function isInvalidCategoryLabel(label: string): boolean {
   if (!text) return true
   if (/<\|[^|>]*\|>/.test(text)) return true
   if (/^(analysis|final|assistant|user|system|channel)$/i.test(text)) return true
+  if (/^-?\d+(\.\d+)?$/.test(text)) return true  // model returned a raw number instead of a label
   return false
 }
 
@@ -125,8 +127,10 @@ function parseCategoryJson(raw: string): string {
     if (typeof parsed.category === 'string' && parsed.category.trim()) {
       return normalizeCategoryLabel(parsed.category)
     }
+    if (parsed.category !== undefined && typeof parsed.category !== 'string') {
+      console.warn('[classifier:parseJson] category is not a string', { categoryType: typeof parsed.category, categoryValue: parsed.category })
+    }
   } catch {
-    // ignore
   }
   return 'Other'
 }
