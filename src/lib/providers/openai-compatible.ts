@@ -60,7 +60,16 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
         messages: messagesToSent,
         max_tokens: options?.maxTokens,
         temperature: options?.temperature ?? this.getTemperature(settings),
-        ...(options as any).responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}
+        ...(options?.jsonSchema ? {
+          response_format: { 
+            type: 'json_schema', 
+            json_schema: { 
+              name: options.jsonSchema.name, 
+              schema: options.jsonSchema.schema,
+              strict: options.jsonSchema.strict 
+            } 
+          }
+        } : {})
       },
       options?.signal
     )
