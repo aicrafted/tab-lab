@@ -16,6 +16,7 @@ export const PLATFORM_TO_INTENT: Partial<Record<KnownPlatform, PageIntent>> = {
   reference: 'reference',
   qa: 'article',
   blog: 'article',
+  ai: 'tool',
 }
 
 function normalizeDomain(domain: string): string {

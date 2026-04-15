@@ -9,6 +9,11 @@
 "description": "Video hosting, streaming, and creator platform",
 "platform": "video"
 },
+"aistudio.google.com": {
+"category": "AI Development",
+"description": "Google AI Studio for prototyping and developing with Gemini models",
+"platform": "ai"
+},
 "facebook.com": {
 "category": "Social Network",
 "description": "Social networking platform for posts and communities",
