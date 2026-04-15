@@ -10,6 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/classifier'
+import { getChatProvider } from '@/lib/providers/factory'
+import { GeminiNanoProvider } from '@/lib/providers/gemini-nano'
 import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from '@/lib/types'
 import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings } from '@/lib/types'
 import {
@@ -85,15 +87,11 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     }
     const status = await checkLlmAvailability(geminiProbeSettings)
     
-    let caps
-    const promptApi = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
-    if (promptApi) {
-      try {
-        caps = await (promptApi.capabilities?.() || promptApi.availability?.())
-      } catch (e) {}
-    }
-
-    setGeminiInfo({ apis, caps })
+    // Get full status object from provider for diagnostics (message etc)
+    const provider = getChatProvider('gemini-nano') as GeminiNanoProvider
+    const fullStatus = await provider.checkStatus(geminiProbeSettings)
+    
+    setGeminiInfo({ apis, caps: fullStatus })
     setGeminiStatus(status)
   }, [llmSettings])
 
@@ -579,6 +577,11 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                       {typeof geminiInfo.caps === 'string' ? geminiInfo.caps : geminiInfo.caps?.available || 'unknown'}
                     </span>
                   </p>
+                  {geminiInfo.caps?.message && (
+                    <p className="text-[9px] font-medium uppercase text-destructive mt-1">
+                      Error: <span className="text-foreground">{geminiInfo.caps.message}</span>
+                    </p>
+                  )}
               </div>
             </div>
           </div>

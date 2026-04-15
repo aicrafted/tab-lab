@@ -232,9 +232,7 @@ async function classifyDomainBatchWithRetry(
     enrichDomain.user(domains),
     settings,
     estimateDomainMaxTokens(domains.length),
-    settings.tasks.chat.provider !== 'gemini-nano'
-      ? { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA }
-      : {},
+    { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA },
   )
   const parsedDetailed = enrichDomain.parseResponseDetailed(raw, new Set(domains), fetchedAt)
   if (parsedDetailed.strict) {

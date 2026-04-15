@@ -273,24 +273,22 @@ export async function classifyItems(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const chatProvider = settings.tasks.chat.provider
-  const embedProvider = settings.tasks.embedding.provider
-  const browserMl = settings.providers.browserMl
-
-  const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
+  const chatProviderId = settings.tasks.chat.provider
+  const embedProviderId = settings.tasks.embedding.provider
+  const embedProvider = getEmbeddingProvider(embedProviderId)
   
-  const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProvider })
-  const format = chatProvider !== 'gemini-nano' ? 'json' : 'text'
-  const useJsonOutput = format === 'json'
+  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
+  
+  const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProviderId })
+  const format = 'json' as const
+  const useJsonOutput = true
   const systemPrompt = classifyItem.system(format)
-  const options = useJsonOutput
-    ? {
-      responseFormat: 'json' as const,
-      metricKey: 'classifier-items',
-      jsonSchema: CATEGORY_RESPONSE_SCHEMA,
-      ...(chatProvider === 'browser-ml' ? { disableThinking: true } : {}),
-    }
-    : {}
+  const options = {
+    responseFormat: 'json' as const,
+    metricKey: 'classifier-items',
+    jsonSchema: CATEGORY_RESPONSE_SCHEMA,
+    ...(chatProviderId === 'browser-ml' ? { disableThinking: true } : {}),
+  }
 
   const BATCH = 5
   let failed = 0
@@ -490,21 +488,18 @@ export async function groupRareCategories(
     })
 
     const provider = settings.tasks.chat.provider
-    const useJsonOutput = provider !== 'gemini-nano'
     const maxTokens = Math.min(4000, rare.length * 50 + 300)
     const raw = await chatComplete(
       groupRareCategoriesContract.system(),
       prompt,
       settings,
       maxTokens,
-      useJsonOutput
-        ? {
-          responseFormat: 'json',
-          metricKey: 'classifier-group-rare',
-          jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
-          ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
-        }
-        : {},
+      {
+        responseFormat: 'json',
+        metricKey: 'classifier-group-rare',
+        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
+        ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
+      },
     )
 
     let mergeMap: Record<string, string> = {}
@@ -782,7 +777,6 @@ export async function classifyByClusters(
       name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
     } else {
       const provider = settings.tasks.chat.provider
-      const useJsonOutput = provider !== 'gemini-nano'
       const raw = await chatComplete(
         classifyCluster.system(),
         classifyCluster.user(representativeItems.map((item) => {
@@ -792,14 +786,12 @@ export async function classifyByClusters(
         })),
         settings,
         200,
-        useJsonOutput
-          ? {
-            responseFormat: 'json',
-            metricKey: 'classifier-clusters',
-            jsonSchema: CLUSTER_RESPONSE_SCHEMA,
-            ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
-          }
-          : {},
+        {
+          responseFormat: 'json',
+          metricKey: 'classifier-clusters',
+          jsonSchema: CLUSTER_RESPONSE_SCHEMA,
+          ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
+        },
       )
       const parsed = classifyCluster.parseResponse(raw)
       category = parsed.category || 'Other'

@@ -9,6 +9,12 @@ export interface ChatOptions {
   maxTokens?: number
   temperature?: number
   signal?: AbortSignal
+  responseFormat?: 'json'
+  jsonSchema?: {
+    name: string
+    schema: Record<string, unknown>
+    strict?: boolean
+  }
 }
 
 export interface ProviderStatus {

@@ -119,17 +119,15 @@ export async function classifyIntent(
   const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
 
   const provider = settings.tasks.chat.provider
-  const format = provider !== 'gemini-nano' ? 'json' : 'text'
-  const useJsonOutput = format === 'json'
+  const format = 'json' as const
+  const useJsonOutput = true
   const prompt = classifyIntentContract.system(format)
-  const options = useJsonOutput
-    ? {
-      responseFormat: 'json' as const,
-      metricKey: 'intent',
-      jsonSchema: INTENT_RESPONSE_SCHEMA,
-      ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
-    }
-    : {}
+  const options = {
+    responseFormat: 'json' as const,
+    metricKey: 'intent',
+    jsonSchema: INTENT_RESPONSE_SCHEMA,
+    ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
+  }
 
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
