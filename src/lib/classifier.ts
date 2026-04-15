@@ -760,9 +760,9 @@ export async function classifyByClusters(
   const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length })
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
-  const embedProvider = settings.tasks.embedding.provider
-  const browserMl = settings.providers.browserMl
-  const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
+  const embedProviderId = settings.tasks.embedding.provider
+  const embedProvider = getEmbeddingProvider(embedProviderId)
+  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
 
   for (const cluster of clusters) {
     const representativeItems = cluster.representatives

@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
-import type { LlmSettings } from '../types'
+import type { LlmSettings, ClassificationMethod } from '../types'
 import { webllmChat, isWebllmModelCached } from '../webllm-provider'
 import { webgpuEmbed, isTransformersEmbeddingModelCached } from '../webgpu-provider'
 
@@ -12,6 +12,10 @@ export class BrowserMlProvider extends LlmProvider {
 
   getEmbeddingModel(settings: LlmSettings) {
     return settings.providers.browserMl.embeddingModel
+  }
+
+  getClassificationMethod(settings: LlmSettings): ClassificationMethod {
+    return settings.providers.browserMl.classificationMethod
   }
 
   async chat(messages: ChatMessage[], settings: LlmSettings, options?: ChatOptions): Promise<string> {

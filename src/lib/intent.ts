@@ -114,11 +114,9 @@ export async function classifyIntent(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const useNli = settings.providers.browserMl.classificationMethod === 'nli'
-    && settings.tasks.embedding.provider === 'browser-ml'
-  if (settings.providers.browserMl.classificationMethod === 'nli' && !useNli) {
-    console.warn('[intent] NLI method requires embedding provider "browser-ml"; falling back to LLM intent classification')
-  }
+  const embedProviderId = settings.tasks.embedding.provider
+  const embedProvider = getEmbeddingProvider(embedProviderId)
+  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
 
   const provider = settings.tasks.chat.provider
   const format = provider !== 'gemini-nano' ? 'json' : 'text'

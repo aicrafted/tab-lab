@@ -32,6 +32,9 @@ export abstract class LlmProvider {
   /** Returns the embedding model name for this provider from settings */
   abstract getEmbeddingModel(settings: LlmSettings): string | undefined
 
+  /** Returns the preferred classification method (LLM vs NLI) from settings */
+  abstract getClassificationMethod(settings: LlmSettings): ClassificationMethod
+
   abstract chat(
     messages: ChatMessage[],
     settings: LlmSettings,

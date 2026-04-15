@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
-import type { LlmSettings } from '../types'
+import type { LlmSettings, ClassificationMethod } from '../types'
 
 async function fetchRemote(
   text: string,
@@ -36,6 +36,7 @@ async function fetchRemote(
 export abstract class OpenAiCompatibleProvider extends LlmProvider {
   protected abstract getBaseUrl(settings: LlmSettings): string
   protected abstract getApiKey(settings: LlmSettings): string
+  abstract getClassificationMethod(settings: LlmSettings): ClassificationMethod
 
   async chat(messages: ChatMessage[], settings: LlmSettings, options?: ChatOptions): Promise<string> {
     const model = this.getChatModel(settings)
@@ -94,6 +95,7 @@ export class LmStudioProvider extends OpenAiCompatibleProvider {
   readonly id = 'lmstudio'
   getChatModel(settings: LlmSettings) { return settings.providers.lmstudio.chatModel }
   getEmbeddingModel(settings: LlmSettings) { return settings.providers.lmstudio.embeddingModel }
+  getClassificationMethod(settings: LlmSettings) { return settings.providers.lmstudio.classificationMethod }
   protected getBaseUrl(settings: LlmSettings) { return settings.providers.lmstudio.baseUrl }
   protected getApiKey(settings: LlmSettings) { return settings.providers.lmstudio.apiKey }
 }
@@ -102,6 +104,7 @@ export class OpenRouterProvider extends OpenAiCompatibleProvider {
   readonly id = 'openrouter'
   getChatModel(settings: LlmSettings) { return settings.providers.openrouter.chatModel }
   getEmbeddingModel(settings: LlmSettings) { return settings.providers.openrouter.embeddingModel }
+  getClassificationMethod(settings: LlmSettings) { return settings.providers.openrouter.classificationMethod }
   protected getBaseUrl(_settings: LlmSettings) { return 'https://openrouter.ai/api/v1' }
   protected getApiKey(settings: LlmSettings) { return settings.providers.openrouter.apiKey }
 }

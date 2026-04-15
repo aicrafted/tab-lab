@@ -149,14 +149,16 @@ export interface LlmSettings {
       apiKey: string
       chatModel: string
       embeddingModel: string
+      classificationMethod: ClassificationMethod
     }
     openrouter: {
       apiKey: string
       chatModel: string
       embeddingModel: string
+      classificationMethod: ClassificationMethod
     }
     geminiNano: {
-      // currently no settings, but structured for consistency
+      classificationMethod: ClassificationMethod
     }
   }
   tasks: {
@@ -227,13 +229,17 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
       apiKey: '',
       chatModel: '',
       embeddingModel: '',
+      classificationMethod: 'llm',
     },
     openrouter: {
       apiKey: '',
       chatModel: '',
       embeddingModel: '',
+      classificationMethod: 'llm',
     },
-    geminiNano: {},
+    geminiNano: {
+      classificationMethod: 'llm',
+    },
   },
   tasks: {
     chat: { provider: 'lmstudio' },
@@ -271,13 +277,17 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
           apiKey: asString(lmstudio.apiKey, ''),
           chatModel: asString(lmstudio.chatModel, ''),
           embeddingModel: asString(lmstudio.embeddingModel, ''),
+          classificationMethod: toClassificationMethod(lmstudio.classificationMethod, 'llm'),
         },
         openrouter: {
           apiKey: asString(openrouter.apiKey, ''),
           chatModel: asString(openrouter.chatModel, ''),
           embeddingModel: asString(openrouter.embeddingModel, ''),
+          classificationMethod: toClassificationMethod(openrouter.classificationMethod, 'llm'),
         },
-        geminiNano: {},
+        geminiNano: {
+          classificationMethod: toClassificationMethod(asObject(providers.geminiNano).classificationMethod, 'llm'),
+        },
       },
       tasks: {
         chat: {

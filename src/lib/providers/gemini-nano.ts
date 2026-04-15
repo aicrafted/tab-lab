@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
-import type { LlmSettings } from '../types'
+import type { LlmSettings, ClassificationMethod } from '../types'
 
 export class GeminiNanoProvider extends LlmProvider {
   readonly id = 'gemini-nano'
@@ -14,6 +14,10 @@ export class GeminiNanoProvider extends LlmProvider {
 
   getEmbeddingModel(_settings: LlmSettings) {
     return undefined
+  }
+
+  getClassificationMethod(settings: LlmSettings): ClassificationMethod {
+    return settings.providers.geminiNano.classificationMethod
   }
 
   async chat(messages: ChatMessage[], _settings: LlmSettings, options?: ChatOptions): Promise<string> {
