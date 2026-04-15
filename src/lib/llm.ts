@@ -1,4 +1,5 @@
 import { webllmChat } from './webllm-provider'
+import { llmLog } from './logger'
 import type { LlmSettings } from './types'
 
 /**
@@ -78,7 +79,12 @@ function trackLlmMetric(
   updater(metric)
   llmMetrics.set(key, metric)
   if (metric.calls > 0 && metric.calls % 20 === 0) {
-    console.info(`[llm:metrics:${key}] calls=${metric.calls} structured=${metric.structuredRequested} fallback=${metric.structuredFallback} failures=${metric.failures}`)
+    llmLog.info(`metrics ${key}`, {
+      calls: metric.calls,
+      structuredRequested: metric.structuredRequested,
+      structuredFallback: metric.structuredFallback,
+      failures: metric.failures,
+    })
   }
 }
 
@@ -90,7 +96,11 @@ async function withHttpRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T
     } catch (err) {
       if (attempt === maxRetries - 1) throw err
       const delay = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
-      console.warn(`[llm] attempt ${attempt + 1} failed, retrying in ${delay}ms…`, err)
+      llmLog.warn('http retry scheduled', {
+        attempt: attempt + 1,
+        delayMs: delay,
+        err: err instanceof Error ? err.message : String(err),
+      })
       await new Promise(r => setTimeout(r, delay))
     }
   }
@@ -174,7 +184,12 @@ export async function chatComplete(
           signal: AbortSignal.timeout(30_000),
         })
         if (!r.ok) {
-          const errorText = await r.text().catch(() => '')
+          const errorText = await r.text().catch((err) => {
+            llmLog.warn('failed to read http error response body', {
+              err: err instanceof Error ? err.message : String(err),
+            })
+            return ''
+          })
           throw new Error(`Chat API ${r.status}${errorText ? `: ${errorText}` : ''}`)
         }
         return r
@@ -188,7 +203,9 @@ export async function chatComplete(
           const message = err instanceof Error ? err.message : String(err)
           const responseFormatIssue = /response_format|json_schema|json_object/i.test(message)
           if (provider === 'lmstudio' && wantsStructuredJson && responseFormatIssue) {
-            console.warn('[llm] structured response rejected by server; retrying without response_format', message)
+            llmLog.warn('structured response rejected; retrying without response_format', {
+              message,
+            })
             trackLlmMetric(metricKey, (metric) => {
               metric.structuredFallback += 1
             })

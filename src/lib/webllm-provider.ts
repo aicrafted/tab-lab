@@ -2,6 +2,7 @@ import { CreateMLCEngine } from '@mlc-ai/web-llm'
 import { hasModelInCache } from '@mlc-ai/web-llm'
 import { prebuiltAppConfig } from '@mlc-ai/web-llm'
 import type { MLCEngine } from '@mlc-ai/web-llm'
+import { webllmLog } from './logger'
 import { patchRequestAdapterForWindows } from './webgpu-compat'
 
 export interface WebllmChatOptions {
@@ -118,7 +119,7 @@ export async function webllmChat(
 
       if (!isWasmGrammarError) throw err
 
-      console.warn('[webllm] grammar-constrained JSON not supported by this runtime, retrying without response_format', {
+      webllmLog.warn('grammar-constrained JSON unsupported; retrying without response_format', {
         modelId,
         error: full,
       })
@@ -130,7 +131,7 @@ export async function webllmChat(
 
   const raw = reply.choices?.[0]?.message?.content ?? ''
   const result = stripThinkBlocks(raw).trim()
-  console.debug('[webllm:raw]', { modelId, raw: raw.slice(0, 300), result: result.slice(0, 300) })
+  webllmLog.debug('chat raw', { modelId, raw: raw.slice(0, 300), result: result.slice(0, 300) })
   return result
 }
 
@@ -152,7 +153,10 @@ export async function isWebllmModelCached(modelId: string): Promise<boolean> {
   try {
     return await hasModelInCache(normalized)
   } catch (err) {
-    console.warn('[webllm] failed to check model cache status', { modelId: normalized, err })
+    webllmLog.warn('failed to check model cache status', {
+      modelId: normalized,
+      err: err instanceof Error ? err.message : String(err),
+    })
     return false
   }
 }

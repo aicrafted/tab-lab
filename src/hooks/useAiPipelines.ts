@@ -5,6 +5,7 @@ import { saveClusterNames } from '@/lib/cluster-names'
 import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, groupRareCategories, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork } from '@/lib/domain-enricher'
 import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, reprojectAllEmbeddings } from '@/lib/embedder'
+import { aiPipelineLog } from '@/lib/logger'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
 import { detectPlatform } from '@/lib/platform-detection'
 import { clearAllAICache, getCached, setCached } from '@/lib/storage'
@@ -33,7 +34,7 @@ function createTaskLogger(
   let lastLoggedPercent = -1
   let closed = false
   const startedAt = Date.now()
-  console.info(`[llm:${task}] start`, { total })
+  aiPipelineLog.info(`${task} start`, { total })
   const emitRunning = () => {
     const rawPct = (done / safeTotal) * 100
     const uiPct = Math.round(rawPct * 10) / 10
@@ -41,7 +42,7 @@ function createTaskLogger(
     while (lastLoggedPercent < logPct) {
       lastLoggedPercent += 1
       if (lastLoggedPercent >= 0) {
-        console.info(`[llm:${task}] progress ${done}/${safeTotal} (${lastLoggedPercent}%)`)
+        aiPipelineLog.debug(`${task} progress`, { done, total: safeTotal, pct: lastLoggedPercent })
       }
     }
     onProgress?.({
@@ -77,10 +78,10 @@ function createTaskLogger(
       while (lastLoggedPercent < finalLogPct) {
         lastLoggedPercent += 1
         if (lastLoggedPercent >= 0) {
-          console.info(`[llm:${task}] progress ${done}/${safeTotal} (${lastLoggedPercent}%)`)
+          aiPipelineLog.debug(`${task} progress`, { done, total: safeTotal, pct: lastLoggedPercent })
         }
       }
-      console.info(`[llm:${task}] done`, {
+      aiPipelineLog.info(`${task} done`, {
         elapsedMs: Date.now() - startedAt,
         ...extra,
       })
@@ -96,7 +97,9 @@ function createTaskLogger(
     failed(error: unknown) {
       if (closed) return
       closed = true
-      console.error(`[llm:${task}] failed`, error)
+      aiPipelineLog.error(`${task} failed`, {
+        err: error instanceof Error ? error.message : String(error),
+      })
       onProgress?.({
         id: task,
         label,
@@ -361,7 +364,9 @@ export function useAiPipelines({
       if (rareTabUpdates.length > 0) applyTabCategoryBatch(rareTabUpdates)
       if (rareBookmarkUpdates.length > 0) applyBookmarkCategoryBatch(rareBookmarkUpdates)
     } catch (err) {
-      console.warn('[llm] post-classification category normalization skipped', err)
+      aiPipelineLog.warn('post-classification category normalization skipped', {
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
   }, [applyBookmarkCategoryBatch, applyTabCategoryBatch, llmSettings])
 
@@ -371,7 +376,7 @@ export function useAiPipelines({
     _tabsWithCache: TabItem[],
   ) => {
     const nanoStatus = await checkLlmAvailability(llmSettings)
-    console.info('[llm:auto] evaluate provider', {
+    aiPipelineLog.info('auto evaluate provider', {
       provider: llmSettings.tasks.chat.provider,
       status: nanoStatus,
       tabs: tb.length,
@@ -616,7 +621,10 @@ export function useAiPipelines({
           domainMap,
         )
 
-      } catch {
+      } catch (err) {
+        aiPipelineLog.warn('auto pipeline provider run failed, marking unavailable', {
+          err: err instanceof Error ? err.message : String(err),
+        })
         setLlmStatus('unavailable')
       }
       return
@@ -971,14 +979,13 @@ export function useAiPipelines({
       const allLabels = [...new Set(tabs.map(t => t.category).filter(Boolean) as string[])]
       if (allLabels.length <= 1) { setLlmStatus('ready'); return }
 
-      console.group('[Pass 2] Merge categories')
-      console.log('Input labels:', allLabels)
+      aiPipelineLog.info('pass2 merge categories start', { totalLabels: allLabels.length, labels: allLabels })
 
       const mergeMap = await normalizeCategoryLabels(allLabels, llmSettings)
-      console.log('Merge map:', mergeMap)
+      aiPipelineLog.debug('pass2 merge map', { mergeMap })
 
       const changes = Object.entries(mergeMap).filter(([from, to]) => from !== to)
-      console.log('Changes:', changes)
+      aiPipelineLog.info('pass2 merge changes', { changes: changes.length })
 
       setTabs(prev =>
         prev.map(t => ({
@@ -989,7 +996,7 @@ export function useAiPipelines({
       )
 
       const affectedCount = tabs.filter(t => t.category && mergeMap[t.category] !== t.category).length
-      console.log(`Affected ${affectedCount} tabs`)
+      aiPipelineLog.info('pass2 affected tabs', { affectedCount })
 
       await Promise.all(
         Object.entries(mergeMap)
@@ -1002,12 +1009,13 @@ export function useAiPipelines({
       )
 
       if (changes.length === 0) {
-        console.log('No merges needed')
+        aiPipelineLog.info('pass2 no merges needed')
       }
-
-      console.groupEnd()
+      aiPipelineLog.info('pass2 merge categories done')
     } catch (err) {
-      console.error('[Pass 2] Failed:', err)
+      aiPipelineLog.error('pass2 failed', {
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
     setLlmStatus('ready')
   }, [llmSettings, setLlmStatus, setTabs, tabs])
@@ -1024,8 +1032,7 @@ export function useAiPipelines({
         if (t.category) categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1)
       }
       const large = [...categoryCounts.entries()].filter(([, c]) => c > 15)
-      console.group('[Pass 3] Split large categories')
-      console.log('Categories to split:', large)
+      aiPipelineLog.info('pass3 split large categories start', { largeCategories: large.length, categories: large })
 
       await splitLargeClusters(
         tabs.map(t => ({
@@ -1037,7 +1044,7 @@ export function useAiPipelines({
         'tab',
         llmSettings,
         (updates) => {
-          console.log('Split batch updates:', updates.map(u => u.category))
+          aiPipelineLog.debug('pass3 split batch updates', { categories: updates.map(u => u.category) })
           applyTabCategoryBatch(updates)
         },
         domainMap,
@@ -1052,9 +1059,11 @@ export function useAiPipelines({
       )).filter((item): item is { url: string; category: string } => Boolean(item))
       const rareUpdates = await groupRareCategories(tabCategoryItems, 'tab', llmSettings)
       if (rareUpdates.length > 0) applyTabCategoryBatch(rareUpdates)
-      console.groupEnd()
+      aiPipelineLog.info('pass3 split large categories done')
     } catch (err) {
-      console.error('[Pass 3] Failed:', err)
+      aiPipelineLog.error('pass3 failed', {
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
     setLlmStatus('ready')
   }, [applyTabCategoryBatch, llmSettings, setLlmStatus, tabs])

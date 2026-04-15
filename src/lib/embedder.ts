@@ -1,5 +1,6 @@
 import { projectTo2D, type Point2D } from './project'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
+import { embedderLog } from './logger'
 import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, type LlmSettings } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
@@ -34,7 +35,9 @@ export async function loadCached2D(): Promise<Map<string, [number, number]>> {
     if (!points?.length) return new Map()
     return new Map(points.map(p => [p.url, [p.x, p.y] as [number, number]]))
   } catch (err) {
-    console.warn('[embedder] failed to load cached 2D projection', err)
+    embedderLog.warn('failed to load cached 2D projection', {
+      err: err instanceof Error ? err.message : String(err),
+    })
     return new Map()
   }
 }
@@ -66,7 +69,9 @@ export async function clearEmbeddingCache(): Promise<void> {
       tx.onerror = () => reject(tx.error)
     })
   } catch (err) {
-    console.warn('[embedder] failed to clear embedding cache', err)
+    embedderLog.warn('failed to clear embedding cache', {
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -108,7 +113,9 @@ export async function loadCachedEmbeddings(): Promise<Map<string, number[]>> {
     }
     return map
   } catch (err) {
-    console.warn('[embedder] failed to load cached embeddings', err)
+    embedderLog.warn('failed to load cached embeddings', {
+      err: err instanceof Error ? err.message : String(err),
+    })
     return new Map()
   }
 }
@@ -201,7 +208,11 @@ function urlPathSnippet(url: string): string {
   try {
     const path = new URL(url).pathname.replace(/\/$/, '')
     return path.slice(0, 80)
-  } catch {
+  } catch (err) {
+    embedderLog.debug('failed to parse url path snippet', {
+      url,
+      err: err instanceof Error ? err.message : String(err),
+    })
     return ''
   }
 }
@@ -239,7 +250,9 @@ export async function fetchAndCacheEmbeddings(
       }
     }
   } catch (err) {
-    console.warn('[embedder] failed to read cached embedding urls', err)
+    embedderLog.warn('failed to read cached embedding urls', {
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 
   const uncached = items.filter(item => !cachedUrls.has(item.url))
@@ -260,7 +273,10 @@ export async function fetchAndCacheEmbeddings(
       result.set(item.url, embedding)
       onProgress?.([{ url: item.url, embedding }])
     } catch (err) {
-      console.warn('Embedding failed for', item.url, err)
+      embedderLog.error('embedding failed for item', {
+        url: item.url,
+        err: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 

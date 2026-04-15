@@ -2,6 +2,7 @@ import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
 import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
+import { classifierLog } from './logger'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
@@ -32,7 +33,45 @@ function trackClassifierParse(strict: boolean): void {
   else classifierParseMetrics.fallback += 1
   const total = classifierParseMetrics.strict + classifierParseMetrics.fallback
   if (total > 0 && total % 25 === 0) {
-    console.info(`[classifier:parse] strict=${classifierParseMetrics.strict} fallback=${classifierParseMetrics.fallback}`)
+    classifierLog.info('parse metrics', {
+      strict: classifierParseMetrics.strict,
+      fallback: classifierParseMetrics.fallback,
+    })
+  }
+}
+
+function createProgressTracker(operation: string, total: number, context?: Record<string, unknown>) {
+  const startedAt = Date.now()
+  const safeTotal = Math.max(total, 1)
+  let done = 0
+  let lastPct = -1
+  let lastLoggedDone = 0
+
+  classifierLog.info(`${operation} start`, { total: safeTotal, ...context })
+
+  return {
+    tick(delta = 1, extra?: Record<string, unknown>) {
+      const nextDone = Math.min(safeTotal, done + Math.max(0, Math.floor(delta)))
+      for (let current = done + 1; current <= nextDone; current += 1) {
+        const pct = Math.floor((current / safeTotal) * 100)
+        const shouldLog =
+          pct > lastPct
+          || current === safeTotal
+          || (safeTotal < 100 && current - lastLoggedDone >= 5)
+        if (!shouldLog) continue
+        lastPct = pct
+        lastLoggedDone = current
+        classifierLog.debug(`${operation} progress`, { done: current, total: safeTotal, pct, ...extra })
+      }
+      done = nextDone
+    },
+    finish(extra?: Record<string, unknown>) {
+      classifierLog.info(`${operation} done`, {
+        total: safeTotal,
+        durationMs: Date.now() - startedAt,
+        ...extra,
+      })
+    },
   }
 }
 const CATEGORY_RESPONSE_SCHEMA = {
@@ -128,9 +167,16 @@ function parseCategoryJson(raw: string): string {
       return normalizeCategoryLabel(parsed.category)
     }
     if (parsed.category !== undefined && typeof parsed.category !== 'string') {
-      console.warn('[classifier:parseJson] category is not a string', { categoryType: typeof parsed.category, categoryValue: parsed.category })
+      classifierLog.warn('parseCategoryJson category is not string', {
+        categoryType: typeof parsed.category,
+        categoryValue: parsed.category,
+      })
     }
-  } catch {
+  } catch (err) {
+    classifierLog.warn('parseCategoryJson failed', {
+      err: err instanceof Error ? err.message : String(err),
+      raw: raw.slice(0, 100),
+    })
   }
   return 'Other'
 }
@@ -148,7 +194,10 @@ function parseClusterJson(raw: string): { category: string; name: string } {
       : category
     return { category, name }
   } catch (err) {
-    console.warn('[classifier] cluster JSON parse failed:', err, '| raw:', raw.slice(0, 120))
+    classifierLog.warn('parseClusterJson failed', {
+      err: err instanceof Error ? err.message : String(err),
+      raw: raw.slice(0, 120),
+    })
     return { category: 'Other', name: 'Other' }
   }
 }
@@ -221,7 +270,11 @@ function urlPathSnippet(url: string): string {
   try {
     const path = new URL(url).pathname.replace(/\/$/, '')
     return path.slice(0, 80)
-  } catch {
+  } catch (err) {
+    classifierLog.debug('failed to parse url path snippet', {
+      url,
+      err: err instanceof Error ? err.message : String(err),
+    })
     return ''
   }
 }
@@ -278,7 +331,9 @@ export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmS
     if (caps.available === 'after-download') return 'after-download'
     return 'ready'
   } catch (err) {
-    console.warn('[classifier] failed to check Gemini Nano availability', err)
+    classifierLog.warn('failed to check Gemini Nano availability', {
+      err: err instanceof Error ? err.message : String(err),
+    })
     return 'unavailable'
   }
 }
@@ -327,10 +382,11 @@ export async function classifyItems(
     && settings.tasks.embedding.provider === 'transformers'
   const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
   if (settings.tasks.classification.method === 'nli' && !useNli) {
-    console.warn('[classifier] NLI method requires embedding provider "transformers"; falling back to LLM classification')
+    classifierLog.warn('NLI requires transformers embedding provider; falling back to LLM classification')
   }
 
   const provider = settings.tasks.chat.provider
+  const tracker = createProgressTracker('classifyItems', uncached.length, { provider })
   const useJsonOutput = provider !== 'gemini-nano'
   const systemPrompt = useJsonOutput ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
   const options = useJsonOutput
@@ -343,6 +399,7 @@ export async function classifyItems(
     : {}
 
   const BATCH = 5
+  let failed = 0
   for (let i = 0; i < uncached.length; i += BATCH) {
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; category: string }[] = []
@@ -368,11 +425,19 @@ export async function classifyItems(
         })
         results.push({ url: item.url, category })
       } catch (err) {
-        console.warn(`[classifier] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+        failed += 1
+        classifierLog.error('classifyItems item failed', {
+          url: item.url,
+          domain: item.domain,
+          err: err instanceof Error ? err.message : String(err),
+        })
+      } finally {
+        tracker.tick(1)
       }
     }
     if (results.length > 0) onProgress(results)
   }
+  tracker.finish({ failed })
 }
 
 /** Load cached categories for a set of items. Returns url → category map. */
@@ -450,6 +515,7 @@ export async function normalizeCategoryLabels(
   settings: LlmSettings,
 ): Promise<Record<string, string>> {
   if (labels.length <= 1) return Object.fromEntries(labels.map((label) => [label, label]))
+  const tracker = createProgressTracker('normalizeCategoryLabels', labels.length)
 
   const prompt = `You are a category deduplicator. I will give you a list of category labels from browser tabs. Your job is to aggressively merge semantically similar or overlapping labels into a single canonical name. Be generous with merges — if two labels describe roughly the same topic, merge them.
 
@@ -485,9 +551,15 @@ Reply with JSON only, no explanation.`
     for (const label of labels) {
       if (!(label in parsed)) parsed[label] = label
     }
+    tracker.tick(labels.length)
+    tracker.finish()
     return parsed
   } catch (err) {
-    console.warn('[classifier] normalizeCategoryLabels JSON parse failed, keeping original labels', err)
+    tracker.tick(labels.length)
+    classifierLog.warn('normalizeCategoryLabels JSON parse failed, keeping originals', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+    tracker.finish({ fallback: true })
     return Object.fromEntries(labels.map((label) => [label, label]))
   }
 }
@@ -502,6 +574,7 @@ export async function groupRareCategories(
     .map((item) => ({ url: item.url, category: item.category.trim() }))
     .filter((item) => item.category.length > 0)
   if (current.length === 0) return []
+  const tracker = createProgressTracker('groupRareCategories', current.length * Math.max(1, maxPasses), { maxPasses })
 
   const allUpdates = new Map<string, string>() // url → final category
 
@@ -519,11 +592,11 @@ export async function groupRareCategories(
       .map(([category]) => category)
 
     if (rare.length === 0) {
-      console.log(`[classifier] groupRareCategories: no rare categories after pass ${pass}, stopping`)
+      classifierLog.info('groupRareCategories no rare categories; stopping', { pass })
       break
     }
 
-    console.log(`[classifier] groupRareCategories pass ${pass + 1}: ${rare.length} rare, ${frequent.length} frequent`)
+    classifierLog.info('groupRareCategories pass', { pass: pass + 1, rare: rare.length, frequent: frequent.length })
 
     const allCategories = [
       ...frequent.map((c) => `${c} (${counts.get(c)} tabs)`),
@@ -567,14 +640,18 @@ Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"
     let mergeMap: Record<string, string> = {}
     try {
       mergeMap = JSON.parse(extractJson(raw)) as Record<string, string>
-    } catch {
-      console.warn(`[classifier] groupRareCategories pass ${pass + 1} parse failed, stopping`)
+    } catch (err) {
+      classifierLog.warn('groupRareCategories parse failed; stopping', {
+        pass: pass + 1,
+        err: err instanceof Error ? err.message : String(err),
+        raw: raw.slice(0, 120),
+      })
       break
     }
 
-    // Apply mapping to current items, track changes
     let changed = false
     current = current.map((item) => {
+      tracker.tick(1)
       const targetRaw = mergeMap[item.category]
       const target = typeof targetRaw === 'string' ? targetRaw.trim().slice(0, 40) : ''
       if (!target || target === item.category) return item
@@ -584,12 +661,15 @@ Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"
     })
 
     if (!changed) {
-      console.log(`[classifier] groupRareCategories: no changes in pass ${pass + 1}, stopping`)
+      classifierLog.info('groupRareCategories no changes; stopping', { pass: pass + 1 })
       break
     }
   }
 
-  if (allUpdates.size === 0) return []
+  if (allUpdates.size === 0) {
+    tracker.finish({ updates: 0 })
+    return []
+  }
 
   const updates = [...allUpdates.entries()].map(([url, category]) => ({ url, category }))
 
@@ -603,6 +683,7 @@ Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"
     })
   }))
 
+  tracker.finish({ updates: updates.length })
   return updates
 }
 
@@ -622,6 +703,13 @@ export async function splitLargeClusters(
     bucket.push(item)
     groups.set(item.category, bucket)
   }
+  const totalWork = [...groups.values()]
+    .filter((members) => members.length > SPLIT_THRESHOLD)
+    .reduce((sum, members) => sum + members.length, 0)
+  const tracker = createProgressTracker('splitLargeClusters', Math.max(totalWork, 1), {
+    groups: groups.size,
+    totalItems: items.length,
+  })
 
   for (const [parentCategory, members] of groups) {
     if (members.length <= SPLIT_THRESHOLD) continue
@@ -648,6 +736,7 @@ export async function splitLargeClusters(
         },
         domainMap,
       )
+      tracker.tick(members.length, { parentCategory, strategy: 'kmeans' })
       continue
     }
 
@@ -694,12 +783,20 @@ export async function splitLargeClusters(
           })
           updates.push({ url: item.url, category, parentCategory })
         } catch (err) {
-          console.warn(`[split] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+          classifierLog.error('splitLargeClusters item failed', {
+            url: item.url,
+            domain: item.domain,
+            parentCategory,
+            err: err instanceof Error ? err.message : String(err),
+          })
+        } finally {
+          tracker.tick(1, { parentCategory, strategy: 'batch-llm' })
         }
       }
       if (updates.length > 0) onProgress(updates)
     }
   }
+  tracker.finish()
 }
 
 export async function classifyTabs(
@@ -787,6 +884,8 @@ export async function classifyByClusters(
   onProgress: (updates: { url: string; category: string; parentCategory?: string; clusterId: number }[]) => void,
   domainMap?: Map<string, DomainInfo>,
 ): Promise<Map<number, string>> {
+  const totalMembers = clusters.reduce((sum, cluster) => sum + cluster.members.length, 0)
+  const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length })
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
   const useNli = settings.tasks.classification.method === 'nli'
@@ -798,7 +897,10 @@ export async function classifyByClusters(
       .map((url) => byUrl.get(url))
       .filter((item): item is ClusterInputItem => Boolean(item))
 
-    if (representativeItems.length === 0 || cluster.members.length === 0) continue
+    if (representativeItems.length === 0 || cluster.members.length === 0) {
+      tracker.tick(cluster.members.length, { clusterId: cluster.clusterId, skipped: true })
+      continue
+    }
 
     let category = 'Other'
     let name = 'Other'
@@ -853,7 +955,9 @@ export async function classifyByClusters(
       updates.push({ url, category, parentCategory: category, clusterId: cluster.clusterId })
     }
     if (updates.length > 0) onProgress(updates)
+    tracker.tick(cluster.members.length, { clusterId: cluster.clusterId })
   }
 
+  tracker.finish({ namedClusters: names.size })
   return names
 }

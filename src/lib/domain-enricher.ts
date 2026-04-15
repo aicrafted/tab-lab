@@ -1,4 +1,5 @@
 import { chatComplete, extractJson } from './llm'
+import { domainEnricherLog } from './logger'
 import type { KnownPlatform, LlmSettings } from './types'
 
 const DB_NAME = 'tabmind-domains'
@@ -25,7 +26,11 @@ function trackDomainParse(kind: 'strict' | 'heuristic' | 'fail'): void {
   domainParseMetrics[kind] += 1
   const total = domainParseMetrics.strict + domainParseMetrics.heuristic + domainParseMetrics.fail
   if (total > 0 && total % 20 === 0) {
-    console.info(`[domain-enricher:parse] strict=${domainParseMetrics.strict} heuristic=${domainParseMetrics.heuristic} fail=${domainParseMetrics.fail}`)
+    domainEnricherLog.info('parse metrics', {
+      strict: domainParseMetrics.strict,
+      heuristic: domainParseMetrics.heuristic,
+      fail: domainParseMetrics.fail,
+    })
   }
 }
 
@@ -162,7 +167,9 @@ export async function clearDomainKnowledgeCache(): Promise<void> {
       tx.onerror = () => reject(tx.error)
     })
   } catch (err) {
-    console.warn('[domain-enricher] failed to clear domain cache', err)
+    domainEnricherLog.warn('failed to clear domain cache', {
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -264,7 +271,8 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
     trackDomainParse('strict')
     return result
   } catch (err) {
-    console.warn('[domain-enricher] strict parse failed, trying heuristic parser', err, {
+    domainEnricherLog.warn('strict parse failed, trying heuristic parser', {
+      err: err instanceof Error ? err.message : String(err),
       rawResponse: raw,
     })
     const heuristic = parseDomainResponseHeuristic(raw, sentDomains, fetchedAt)
@@ -272,7 +280,8 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
       trackDomainParse('heuristic')
       return heuristic
     }
-    console.warn('[domain-enricher] failed to parse domain response', err, {
+    domainEnricherLog.warn('failed to parse domain response', {
+      err: err instanceof Error ? err.message : String(err),
       rawResponse: raw,
     })
     trackDomainParse('fail')
@@ -283,7 +292,10 @@ function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: n
 function parseJsonLenient(text: string): unknown {
   try {
     return JSON.parse(text)
-  } catch {
+  } catch (err) {
+    domainEnricherLog.debug('strict JSON parse failed, attempting repair', {
+      err: err instanceof Error ? err.message : String(err),
+    })
   }
 
   const repaired = text
@@ -385,7 +397,7 @@ async function classifyDomainBatchWithRetry(
   const truncated = looksTruncatedResponse(raw)
   const unmatchedStructured = parsed.length === 0 && looksStructuredButUnmatched(raw)
   if (parsed.length === 0 && raw.trim()) {
-    console.warn('[domain-enricher] empty parse result for non-empty response', {
+    domainEnricherLog.warn('empty parse result for non-empty response', {
       rawPreview: raw.slice(0, 240),
       rawResponse: raw,
     })
@@ -442,7 +454,11 @@ async function queryDomainsIntoResult(
           await putDomainRows(rowsToStore)
           onProgress?.(batch.length)
         } catch (err) {
-          console.warn('[domain-enricher] domain enrichment batch failed', err)
+          domainEnricherLog.error('domain enrichment batch failed', {
+            err: err instanceof Error ? err.message : String(err),
+            batchIndex,
+            batchSize: batch.length,
+          })
           onProgress?.(batch.length)
         }
       }
@@ -468,7 +484,9 @@ export async function loadCachedDomains(): Promise<Map<string, DomainInfo>> {
     }
     return map
   } catch (err) {
-    console.warn('[domain-enricher] failed to load domain cache', err)
+    domainEnricherLog.warn('failed to load domain cache', {
+      err: err instanceof Error ? err.message : String(err),
+    })
     return new Map()
   }
 }
@@ -568,7 +586,9 @@ export async function enrichDomains(
 
     return result
   } catch (err) {
-    console.warn('[domain-enricher] enrich failed, using fallback', err)
+    domainEnricherLog.error('enrich failed, using fallback', {
+      err: err instanceof Error ? err.message : String(err),
+    })
     return new Map()
   }
 }
