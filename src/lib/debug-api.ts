@@ -134,7 +134,7 @@ function createDebugApi(): TablabDebugApi {
       ) {
         const settings = await getLlmSettings()
         const provider = settings.tasks.chat.provider
-        const model = settings.tasks.chat.model
+        const model = provider === 'gemini-nano' ? 'gemini-nano' : settings.providers[provider === 'browser-ml' ? 'browserMl' : provider as 'lmstudio' | 'openrouter']?.chatModel
         console.info('[tablab] chat ->', { provider, model, userMessage })
         const raw = await chatComplete(systemPrompt, userMessage, settings, maxTokens)
         console.info('[tablab] chat <-', raw)

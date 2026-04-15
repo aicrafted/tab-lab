@@ -2,7 +2,7 @@ import { Database, Zap } from 'lucide-react'
 import type { ViewProps } from '@/components/views/types'
 import { Button } from '@/components/ui/button'
 
-export function KnowledgeSettingsView({ onRunTags }: ViewProps) {
+export function KnowledgeSettingsView(_props: ViewProps) {
   return (
     <div className="max-w-4xl space-y-6 py-4">
       <div className="space-y-4">

@@ -81,26 +81,26 @@ const BOOKMARK_CLUSTER_OFFSET = 10_000
 function hasChatProviderConfig(settings: LlmSettings): boolean {
   const provider = settings.tasks.chat.provider
   if (provider === 'gemini-nano') return true
-  if (provider === 'webllm') return Boolean(settings.tasks.chat.model)
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.chat.model)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.tasks.chat.model)
+  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
+  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
+  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
   return false
 }
 
 function hasDomainKnowledgeProviderConfig(settings: LlmSettings): boolean {
   const provider = settings.tasks.chat.provider
   if (provider === 'gemini-nano') return false
-  if (provider === 'webllm') return Boolean(settings.tasks.chat.model)
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.chat.model)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.tasks.chat.model)
+  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
+  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
+  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
   return false
 }
 
 function hasEmbeddingProviderConfig(settings: LlmSettings): boolean {
   const provider = settings.tasks.embedding.provider
-  if (provider === 'transformers') return true
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.embedding.model)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.tasks.embedding.model)
+  if (provider === 'browser-ml') return true
+  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.embeddingModel)
+  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.embeddingModel)
   return false
 }
 
@@ -371,7 +371,7 @@ export class PipelineOrchestrator {
       bookmarks: bookmarks.length,
     })
 
-    if (settings.tasks.classification.method === 'nli' && settings.tasks.embedding.provider === 'transformers') {
+    if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
       await this.runAutoClusterFlow(runId, tabs, bookmarks, settings)
       return
     }
@@ -651,7 +651,7 @@ export class PipelineOrchestrator {
     const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'LLM classifying bookmarks', bookmarks.length)
     try {
       const nanoStatus = await checkLlmAvailability(settings)
-      if (settings.tasks.classification.method === 'nli' && settings.tasks.embedding.provider === 'transformers') {
+      if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
         await classifyWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',
@@ -807,7 +807,7 @@ export class PipelineOrchestrator {
     const bookmarksTask = this.createTaskTracker(TASK_IDS.INTENT_BOOKMARKS, 'LLM intent bookmarks', bookmarks.length)
     try {
       const nanoStatus = await checkLlmAvailability(settings)
-      if (settings.tasks.classification.method === 'nli' && settings.tasks.embedding.provider === 'transformers') {
+      if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
         await classifyIntentLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',

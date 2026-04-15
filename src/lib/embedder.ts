@@ -161,17 +161,18 @@ export async function fetchEmbedding(
   signal?: AbortSignal,
 ): Promise<number[]> {
   const provider = settings.tasks.embedding.provider
-  const model = settings.tasks.embedding.model
 
-  if (provider === 'transformers') {
+  if (provider === 'browser-ml') {
+    const model = settings.providers.browserMl.embeddingModel
     return webgpuEmbed(text, model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL)
   }
   if (provider === 'lmstudio') {
-    const { baseUrl, apiKey } = settings.providers.lmstudio
-    return fetchEmbeddingRemote(text, baseUrl, apiKey, model, signal)
+    const { baseUrl, apiKey, embeddingModel } = settings.providers.lmstudio
+    return fetchEmbeddingRemote(text, baseUrl, apiKey, embeddingModel || '', signal)
   }
   if (provider === 'openrouter') {
-    return fetchEmbeddingRemote(text, 'https://openrouter.ai/api/v1', settings.providers.openrouter.apiKey, model, signal)
+    const { apiKey, embeddingModel } = settings.providers.openrouter
+    return fetchEmbeddingRemote(text, 'https://openrouter.ai/api/v1', apiKey, embeddingModel || '', signal)
   }
   throw new Error('Unsupported embedding provider')
 }
@@ -226,11 +227,11 @@ export async function fetchAndCacheEmbeddings(
   const provider = settings.tasks.embedding.provider
   if (provider === 'lmstudio') {
     if (!settings.providers.lmstudio.baseUrl) return new Map()
-    if (!settings.tasks.embedding.model) return new Map()
+    if (!settings.providers.lmstudio.embeddingModel) return new Map()
   }
   if (provider === 'openrouter') {
     if (!settings.providers.openrouter.apiKey) return new Map()
-    if (!settings.tasks.embedding.model) return new Map()
+    if (!settings.providers.openrouter.embeddingModel) return new Map()
   }
 
   const cachedEmbeddings = await loadCachedEmbeddings()

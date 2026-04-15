@@ -14,7 +14,7 @@ interface SidePanelData {
   tabHistory: { tabId: number; windowId: number; url: string; title: string; favIconUrl?: string; ts: number }[]
 }
 
-type DockSide = 'left' | 'right'
+
 
 export function SidePanel() {
   const [data, setData] = useState<SidePanelData | null>(null)
@@ -108,7 +108,6 @@ export function SidePanel() {
             currentTab={currentTabData}
             allTabs={data.tabs}
             currentWindowId={currentWindowId}
-            onReload={loadData}
           />
         )}
         {currentTabData && data && (

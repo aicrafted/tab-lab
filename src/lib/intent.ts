@@ -108,11 +108,11 @@ export async function classifyIntent(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const useNli = settings.tasks.classification.method === 'nli'
-    && settings.tasks.embedding.provider === 'transformers'
-  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
-  if (settings.tasks.classification.method === 'nli' && !useNli) {
-    console.warn('[intent] NLI method requires embedding provider "transformers"; falling back to LLM intent classification')
+  const useNli = settings.providers.browserMl.classificationMethod === 'nli'
+    && settings.tasks.embedding.provider === 'browser-ml'
+  const nliModel = settings.providers.browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+  if (settings.providers.browserMl.classificationMethod === 'nli' && !useNli) {
+    console.warn('[intent] NLI method requires embedding provider "browser-ml"; falling back to LLM intent classification')
   }
 
   const provider = settings.tasks.chat.provider
@@ -124,7 +124,7 @@ export async function classifyIntent(
       responseFormat: 'json' as const,
       metricKey: 'intent',
       jsonSchema: INTENT_RESPONSE_SCHEMA,
-      ...(provider === 'webllm' ? { disableThinking: true } : {}),
+      ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
     }
     : {}
 
@@ -183,9 +183,8 @@ export async function classifyIntentGeminiNano(
       ...DEFAULT_LLM_SETTINGS,
       tasks: {
         ...DEFAULT_LLM_SETTINGS.tasks,
-        chat: { provider: 'gemini-nano', model: '' },
-        embedding: { provider: 'transformers', model: '' },
-        classification: { method: 'llm' },
+        chat: { provider: 'gemini-nano' },
+        embedding: { provider: 'browser-ml' },
       },
     },
     onProgress,

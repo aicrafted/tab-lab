@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX } from 'lucide-react'
+import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -29,38 +29,45 @@ const WEBLLM_CHAT_MODELS = [
   'Phi-3.5-mini-instruct-q4f16_1-MLC',
 ] as const
 
+const TRANSFORMERS_EMBEDDING_MODELS = [
+  'Xenova/all-MiniLM-L6-v2',
+  'Xenova/bge-small-en-v1.5',
+  'Xenova/multilingual-e5-small',
+] as const
+
+const OPENROUTER_EMBEDDING_MODELS = [
+  'google/gemini-embedding-004',
+  'openai/text-embedding-3-small',
+  'openai/text-embedding-3-large',
+] as const
+
 export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   if (!llmSettings || !onSaveSettings) return <div>Settings state missing</div>
 
+  // Provider Settings
+  const [browserMl, setBrowserMl] = useState(llmSettings.providers.browserMl)
+  const [lmstudio, setLmstudio] = useState(llmSettings.providers.lmstudio)
+  const [openrouter, setOpenrouter] = useState(llmSettings.providers.openrouter)
+
+  // Task Assignments
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
-  const [chatModel, setChatModel] = useState(llmSettings.tasks.chat.model)
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(llmSettings.tasks.embedding.provider)
-  const [embeddingModel, setEmbeddingModel] = useState(
-    llmSettings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
-  )
-  const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(llmSettings.tasks.classification.method)
 
-  const [lmStudioBaseUrl, setLmStudioBaseUrl] = useState(llmSettings.providers.lmstudio.baseUrl)
-  const [lmStudioApiKey, setLmStudioApiKey] = useState(llmSettings.providers.lmstudio.apiKey)
-  const [openRouterApiKey, setOpenRouterApiKey] = useState(llmSettings.providers.openrouter.apiKey)
-
+  // UI State
   const [models, setModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [geminiStatus, setGeminiStatus] = useState<'checking' | 'ready' | 'after-download' | 'unavailable'>('checking')
   const [geminiInfo, setGeminiInfo] = useState<{ apis: string[]; caps?: any }>({ apis: [] })
+  
   const [loadingWebllm, setLoadingWebllm] = useState(false)
-  const [webllmReady, setWebllmReady] = useState(false)
   const [webllmCached, setWebllmCached] = useState(false)
   const [loadingEmbeddingModel, setLoadingEmbeddingModel] = useState(false)
   const [embeddingModelCached, setEmbeddingModelCached] = useState(false)
 
-  const nliAvailable = embeddingProvider === 'transformers'
-
   const checkGemini = useCallback(async () => {
     setGeminiStatus('checking')
     const win = (window as any)
-    const ai = win.ai
     const apis = []
     if (win.ai) apis.push('window.ai')
     if (win.ai?.languageModel) apis.push('ai.languageModel')
@@ -73,10 +80,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       ...llmSettings,
       tasks: {
         ...llmSettings.tasks,
-        chat: {
-          ...llmSettings.tasks.chat,
-          provider: 'gemini-nano',
-        },
+        chat: { provider: 'gemini-nano' },
       },
     }
     const status = await checkLlmAvailability(geminiProbeSettings)
@@ -98,8 +102,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   }, [checkGemini])
 
   useEffect(() => {
-    if (chatProvider !== 'webllm') return
-    const modelId = chatModel.trim()
+    const modelId = browserMl.chatModel.trim()
     if (!modelId) {
       setWebllmCached(false)
       return
@@ -108,42 +111,35 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     void isWebllmModelCached(modelId).then((cached) => {
       if (!active) return
       setWebllmCached(cached)
-      if (cached) setWebllmReady(true)
     })
     return () => { active = false }
-  }, [chatModel, chatProvider])
+  }, [browserMl.chatModel])
 
   useEffect(() => {
-    if (embeddingProvider !== 'transformers') return
-    const modelId = (embeddingModel.trim() || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL)
+    const modelId = (browserMl.embeddingModel.trim() || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL)
     let active = true
     void isTransformersEmbeddingModelCached(modelId).then((cached) => {
       if (!active) return
       setEmbeddingModelCached(cached)
     })
     return () => { active = false }
-  }, [embeddingModel, embeddingProvider])
+  }, [browserMl.embeddingModel])
 
   const canSave = useMemo(() => {
-    if (chatProvider === 'webllm' && !chatModel.trim()) return false
-    if (chatProvider === 'lmstudio' && (!lmStudioBaseUrl.trim() || !chatModel.trim())) return false
-    if (chatProvider === 'openrouter' && (!openRouterApiKey.trim() || !chatModel.trim())) return false
-    if (embeddingProvider === 'lmstudio' && (!lmStudioBaseUrl.trim() || !embeddingModel.trim())) return false
-    if (embeddingProvider === 'openrouter' && (!openRouterApiKey.trim() || !embeddingModel.trim())) return false
+    if (chatProvider === 'browser-ml' && !browserMl.chatModel.trim()) return false
+    if (chatProvider === 'lmstudio' && (!lmstudio.baseUrl.trim() || !lmstudio.chatModel.trim())) return false
+    if (chatProvider === 'openrouter' && (!openrouter.apiKey.trim() || !openrouter.chatModel.trim())) return false
     return true
-  }, [chatModel, chatProvider, embeddingModel, embeddingProvider, lmStudioBaseUrl, openRouterApiKey])
+  }, [chatProvider, browserMl.chatModel, lmstudio, openrouter])
 
   const handleLoadModels = useCallback(async () => {
-    if (!lmStudioBaseUrl.trim()) return
+    if (!lmstudio.baseUrl.trim()) return
     setLoadingModels(true)
     setError(null)
     try {
       const list = await fetchLmStudioModels({
         ...llmSettings,
-        providers: {
-          lmstudio: { baseUrl: lmStudioBaseUrl, apiKey: lmStudioApiKey },
-          openrouter: { apiKey: openRouterApiKey },
-        },
+        providers: { browserMl, lmstudio, openrouter, geminiNano: llmSettings.providers.geminiNano }
       })
       setModels(list)
     } catch (err) {
@@ -151,7 +147,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     } finally {
       setLoadingModels(false)
     }
-  }, [llmSettings, lmStudioApiKey, lmStudioBaseUrl, openRouterApiKey])
+  }, [llmSettings, browserMl, lmstudio, openrouter])
   
   const handleOpenFlag = (flagUrl: string) => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
@@ -165,22 +161,20 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     setError(null)
     setLoadingWebllm(true)
     try {
-      await preloadWebllmModel(chatModel)
-      setWebllmReady(true)
+      await preloadWebllmModel(browserMl.chatModel)
       setWebllmCached(true)
     } catch (err) {
-      setWebllmReady(false)
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoadingWebllm(false)
     }
-  }, [chatModel])
+  }, [browserMl.chatModel])
 
   const handlePreloadEmbeddingModel = useCallback(async () => {
     setError(null)
     setLoadingEmbeddingModel(true)
     try {
-      const modelId = embeddingModel.trim() || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+      const modelId = browserMl.embeddingModel.trim() || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
       await preloadTransformersEmbeddingModel(modelId)
       setEmbeddingModelCached(true)
     } catch (err) {
@@ -188,269 +182,353 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     } finally {
       setLoadingEmbeddingModel(false)
     }
-  }, [embeddingModel])
+  }, [browserMl.embeddingModel])
 
   const handleSave = useCallback(() => {
     onSaveSettings({
       ...llmSettings,
-      providers: {
-        lmstudio: { baseUrl: lmStudioBaseUrl.trim(), apiKey: lmStudioApiKey.trim() },
-        openrouter: { apiKey: openRouterApiKey.trim() },
-      },
+      providers: { browserMl, lmstudio, openrouter, geminiNano: llmSettings.providers.geminiNano },
       tasks: {
-        chat: { provider: chatProvider, model: chatModel.trim() },
-        embedding: {
-          provider: embeddingProvider,
-          model: embeddingModel.trim() || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
-        },
-        classification: {
-          method: nliAvailable ? classificationMethod : 'llm',
-        },
+        chat: { provider: chatProvider },
+        embedding: { provider: embeddingProvider },
       },
     })
-  }, [chatModel, chatProvider, classificationMethod, embeddingModel, embeddingProvider, llmSettings, lmStudioApiKey, lmStudioBaseUrl, nliAvailable, onSaveSettings, openRouterApiKey])
+  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter])
 
   return (
-    <div className="max-w-4xl space-y-8 py-4">
+    <div className="max-w-4xl space-y-10 py-4">
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Providers</h3>
+        {/* PROVIDERS COLUMN */}
+        <div className="space-y-6">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
           
-          <div className="space-y-3 rounded-lg border border-border bg-card/50 p-4">
-            <p className="text-sm font-medium">LM Studio / Ollama</p>
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">Base URL</label>
-              <Input
-                value={lmStudioBaseUrl}
-                onChange={(e) => setLmStudioBaseUrl(e.target.value)}
-                placeholder="http://localhost:1234/v1"
-                className="h-9"
-              />
+          {/* Browser-local ML */}
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <Cpu className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold uppercase">Browser-local ML</p>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">API Key (optional)</label>
-              <Input
-                value={lmStudioApiKey}
-                onChange={(e) => setLmStudioApiKey(e.target.value)}
-                type="password"
-                className="h-9"
-              />
+            
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model (WebLLM)</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={browserMl.chatModel}
+                    onChange={(e) => setBrowserMl({ ...browserMl, chatModel: e.target.value })}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select value={browserMl.chatModel} onValueChange={(v) => setBrowserMl({ ...browserMl, chatModel: v })}>
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {WEBLLM_CHAT_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {browserMl.chatModel && (
+                  <Button
+                    variant={webllmCached ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={handlePreloadWebllm}
+                    disabled={loadingWebllm}
+                    className="h-6 text-[9px] px-2 mt-1"
+                  >
+                    {loadingWebllm ? 'Downloading…' : webllmCached ? 'Cached' : 'Download to Cache'}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embeddings (Transformers.js)</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={browserMl.embeddingModel}
+                    onChange={(e) => setBrowserMl({ ...browserMl, embeddingModel: e.target.value })}
+                    placeholder={DEFAULT_TRANSFORMERS_EMBEDDING_MODEL}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select value={browserMl.embeddingModel} onValueChange={(v) => setBrowserMl({ ...browserMl, embeddingModel: v })}>
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TRANSFORMERS_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant={embeddingModelCached ? 'secondary' : 'outline'}
+                  size="sm"
+                  onClick={handlePreloadEmbeddingModel}
+                  disabled={loadingEmbeddingModel}
+                  className="h-6 text-[9px] px-2 mt-1"
+                >
+                  {loadingEmbeddingModel ? 'Downloading…' : embeddingModelCached ? 'Cached' : 'Download to Cache'}
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
+                <Select 
+                  value={browserMl.classificationMethod} 
+                  onValueChange={(v) => setBrowserMl({ ...browserMl, classificationMethod: v as ClassificationMethod })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
+                    <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-lg border border-border bg-card/50 p-4">
-            <p className="text-sm font-medium">OpenRouter</p>
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">API Key</label>
-              <Input
-                value={openRouterApiKey}
-                onChange={(e) => setOpenRouterApiKey(e.target.value)}
-                placeholder="sk-or-v1-..."
-                type="password"
-                className="h-9"
-              />
+          {/* LM Studio / Ollama */}
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <Server className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold uppercase">LM Studio / Ollama</p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Base URL</label>
+                <Input
+                  value={lmstudio.baseUrl}
+                  onChange={(e) => setLmstudio({ ...lmstudio, baseUrl: e.target.value })}
+                  placeholder="http://localhost:1234/v1"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model ID</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={lmstudio.chatModel}
+                    onChange={(e) => setLmstudio({ ...lmstudio, chatModel: e.target.value })}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select 
+                    value={lmstudio.chatModel} 
+                    onValueChange={(v) => setLmstudio({ ...lmstudio, chatModel: v })}
+                    onOpenChange={(open) => open && handleLoadModels()}
+                  >
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
+                      {models.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embedding Model ID</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={lmstudio.embeddingModel}
+                    onChange={(e) => setLmstudio({ ...lmstudio, embeddingModel: e.target.value })}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select 
+                    value={lmstudio.embeddingModel} 
+                    onValueChange={(v) => setLmstudio({ ...lmstudio, embeddingModel: v })}
+                    onOpenChange={(open) => open && handleLoadModels()}
+                  >
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
+                      {models.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* OpenRouter */}
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <Globe className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold uppercase">OpenRouter (Cloud)</p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">API Key</label>
+                <Input
+                  value={openrouter.apiKey}
+                  onChange={(e) => setOpenrouter({ ...openrouter, apiKey: e.target.value })}
+                  placeholder="sk-or-v1-..."
+                  type="password"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model ID</label>
+                <Input
+                  value={openrouter.chatModel}
+                  onChange={(e) => setOpenrouter({ ...openrouter, chatModel: e.target.value })}
+                  placeholder="google/gemini-pro-1.5"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embedding Model ID</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={openrouter.embeddingModel}
+                    onChange={(e) => setOpenrouter({ ...openrouter, embeddingModel: e.target.value })}
+                    placeholder="google/gemini-embedding-004"
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select value={openrouter.embeddingModel} onValueChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}>
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPENROUTER_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Model Assignments</h3>
+        {/* ASSIGNMENTS COLUMN */}
+        <div className="space-y-6">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Assignments</h3>
 
-          <div className="space-y-4 rounded-lg border border-border bg-card/50 p-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Chat & Reasoning</p>
+          <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold uppercase tracking-tight">Chat Logic</p>
+                  <p className="text-[11px] text-muted-foreground">Used for categorization & tagging</p>
+                </div>
                 <Select value={chatProvider} onValueChange={(v) => setChatProvider(v as ChatProvider)}>
-                  <SelectTrigger className="h-8 w-40 text-xs">
+                  <SelectTrigger className="h-9 w-44 text-xs font-medium">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {(geminiStatus === 'ready' || geminiStatus === 'after-download') && (
-                      <SelectItem value="gemini-nano">Gemini Nano (Chrome Built-in)</SelectItem>
+                      <SelectItem value="gemini-nano">Gemini Nano</SelectItem>
                     )}
-                    <SelectItem value="webllm">WebLLM (Local Browser)</SelectItem>
+                    <SelectItem value="browser-ml">Browser-local ML</SelectItem>
                     <SelectItem value="lmstudio">LM Studio / Ollama</SelectItem>
-                    <SelectItem value="openrouter">OpenRouter (Cloud)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {chatProvider !== 'gemini-nano' && (
-                <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">Model ID</label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={chatModel}
-                      onChange={(e) => setChatModel(e.target.value)}
-                      className="h-9 flex-1"
-                    />
-                    {chatProvider === 'webllm' && (
-                      <Select value={chatModel} onValueChange={setChatModel}>
-                        <SelectTrigger className="h-9 w-10 px-0 flex items-center justify-center">
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {WEBLLM_CHAT_MODELS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  {chatProvider === 'webllm' && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant={webllmCached ? 'secondary' : 'outline'}
-                        size="sm"
-                        onClick={handlePreloadWebllm}
-                        disabled={loadingWebllm || !chatModel.trim()}
-                        className="h-7 text-[10px]"
-                      >
-                        {loadingWebllm ? 'Downloading…' : webllmCached ? 'Cached' : 'Download Model'}
-                      </Button>
-                      {webllmReady && <span className="text-[10px] text-emerald-500">Ready</span>}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="h-px bg-border/50" />
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Embeddings</p>
-                <Select value={embeddingProvider} onValueChange={(v) => setEmbeddingProvider(v as EmbeddingProvider)}>
-                  <SelectTrigger className="h-8 w-40 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="transformers">Transformers.js</SelectItem>
-                    <SelectItem value="lmstudio">LM Studio</SelectItem>
                     <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">Model ID</label>
-                <Input
-                  value={embeddingModel}
-                  onChange={(e) => setEmbeddingModel(e.target.value)}
-                  className="h-9"
-                />
-                {embeddingProvider === 'transformers' && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant={embeddingModelCached ? 'secondary' : 'outline'}
-                      size="sm"
-                      onClick={handlePreloadEmbeddingModel}
-                      disabled={loadingEmbeddingModel}
-                      className="h-7 text-[10px]"
-                    >
-                      {loadingEmbeddingModel ? 'Downloading…' : embeddingModelCached ? 'Cached' : 'Download Model'}
-                    </Button>
-                    {embeddingModelCached && <span className="text-[10px] text-emerald-500">Ready</span>}
-                  </div>
-                )}
+
+              <div className="h-px bg-border/40" />
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold uppercase tracking-tight">Embeddings</p>
+                  <p className="text-[11px] text-muted-foreground">Used for semantic search & focus</p>
+                </div>
+                <Select value={embeddingProvider} onValueChange={(v) => setEmbeddingProvider(v as EmbeddingProvider)}>
+                  <SelectTrigger className="h-9 w-44 text-xs font-medium">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="browser-ml">Browser-local ML</SelectItem>
+                    <SelectItem value="lmstudio">LM Studio / Ollama</SelectItem>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          </div>
 
-          <div className="flex justify-end gap-3">
-            {(chatProvider === 'lmstudio' || embeddingProvider === 'lmstudio') && (
-              <Button variant="outline" size="sm" onClick={handleLoadModels} disabled={loadingModels}>
-                {loadingModels ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-                Refresh Models
+            <div className="pt-4 flex flex-col items-stretch gap-3">
+              <Button onClick={handleSave} disabled={!canSave} className="w-full shadow-lg shadow-primary/10">
+                Save & Apply Configuration
               </Button>
-            )}
-            <Button onClick={handleSave} disabled={!canSave}>
-              Save Model Settings
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Built-in AI (Gemini Nano)</h3>
-        
-        <div className="rounded-lg border border-border bg-card/50 p-6">
-          <div className="flex items-start gap-4">
-            <div className={`shrink-0 p-2 rounded-md ${
-              geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : 
-              geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
-              geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
-              'bg-destructive/10 text-destructive'
-            }`}>
-              {geminiStatus === 'ready' ? <ShieldCheck className="h-6 w-6" /> : 
-               geminiStatus === 'checking' ? <Loader2 className="h-6 w-6 animate-spin" /> :
-               <ShieldX className="h-6 w-6" />}
+              {error && <p className="text-[11px] text-destructive text-center">{error}</p>}
             </div>
-            
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">
-                    {geminiStatus === 'ready' ? 'Gemini Nano is Ready' :
-                     geminiStatus === 'after-download' ? 'Gemini Nano is downloading components...' :
-                     geminiStatus === 'checking' ? 'Checking compatibility...' :
-                     'Gemini Nano is Unsupported'}
+          </div>
+
+          <div className="space-y-4 pt-4">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Diagnostics</h3>
+            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+              <div className="flex items-start gap-4">
+                <div className={`shrink-0 p-2 rounded-lg ${
+                  geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : 
+                  geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
+                  geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
+                  'bg-destructive/10 text-destructive'
+                }`}>
+                  {geminiStatus === 'ready' ? <ShieldCheck className="h-5 w-5" /> : 
+                   geminiStatus === 'checking' ? <Loader2 className="h-5 w-5 animate-spin" /> :
+                   <ShieldX className="h-5 w-5" />}
+                </div>
+                
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs font-bold uppercase tracking-tight">
+                    {geminiStatus === 'ready' ? 'System Ready' :
+                     geminiStatus === 'after-download' ? 'Downloading Model...' :
+                     geminiStatus === 'checking' ? 'Analyzing...' :
+                     'System Unsupported'}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Chrome's built-in AI for privacy-first, on-device processing.
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Native Chrome AI for private inference. Requires specific browser flags.
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={checkGemini} className="h-8">
-                  <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                  Re-check
+                <Button variant="ghost" size="icon" onClick={checkGemini} className="h-8 w-8">
+                  <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
               </div>
 
               {geminiStatus === 'unavailable' && (
-                <div className="mt-4 rounded border border-destructive/20 bg-destructive/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-destructive">
-                    <Info className="h-3.5 w-3.5" />
-                    Troubleshooting
+                <div className="rounded-lg border border-destructive/10 bg-destructive/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-destructive uppercase tracking-widest">
+                    <Info className="h-3 w-3" />
+                    Required Actions
                   </div>
-                  <ul className="text-[11px] text-muted-foreground list-disc list-inside space-y-2">
-                    <li>Use <b>Chrome Dev/Canary</b> (version 127+)</li>
-                    <li>
-                      Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> 
-                      (Set to <b>Enabled BypassPrefavorite</b>)
+                  <ul className="text-[10px] text-muted-foreground space-y-2 list-none">
+                    <li className="flex gap-2">
+                       <span className="text-primary font-bold">1</span>
+                       <span>Use <b>Chrome Canary/Dev</b> (127+)</span>
                     </li>
-                    <li>
-                      Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button>
+                    <li className="flex gap-2">
+                       <span className="text-primary font-bold">2</span>
+                       <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> to <b>Enabled BypassPrefavorite</b></span>
                     </li>
-                    <li className="bg-destructive/10 p-1.5 rounded text-destructive-foreground">
-                      ⚠️ <b>Extension Origin Restriction:</b> Chrome often disables <code className="text-[10px]">window.ai</code> for extension pages (<code className="text-[10px]">chrome-extension://</code>). 
-                      If Detected APIs is "none" but it works on normal sites, this is the reason.
+                    <li className="flex gap-2">
+                       <span className="text-primary font-bold">3</span>
+                       <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button></span>
                     </li>
-                    <li>Note: <b>Summarization API</b> is a different feature; TabLab requires <b>Prompt API</b>.</li>
-                    <li>Restart Chrome and wait for component download (~2GB)</li>
+                    <li className="bg-destructive/10 p-2 rounded-md text-destructive mt-3 font-medium border border-destructive/20">
+                      ⚠️ <b>Extension Origin Policy:</b> Chrome blocks Prompt API on <code className="text-[9px]">chrome-extension://</code> pages. 
+                      If diagnostics show "none" but it works on standard sites, this restriction is active.
+                    </li>
                   </ul>
                 </div>
               )}
 
-              <div className="mt-2 flex flex-wrap gap-2">
-                <p className="text-[10px] text-muted-foreground">
-                  Detected APIs: {geminiInfo.apis.length > 0 ? geminiInfo.apis.join(', ') : 'none'}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 opacity-60">
+                <p className="text-[9px] font-medium uppercase text-muted-foreground">
+                  APIs: <span className="text-foreground">{geminiInfo.apis.length > 0 ? geminiInfo.apis.join(', ') : 'none'}</span>
                 </p>
-                {geminiInfo.caps && (
-                  <p className="text-[10px] text-muted-foreground">
-                    Caps: {geminiInfo.caps.available}
+                  <p className="text-[9px] font-medium uppercase text-muted-foreground">
+                    Availability: <span className="text-foreground">
+                      {typeof geminiInfo.caps === 'string' ? geminiInfo.caps : geminiInfo.caps?.available || 'unknown'}
+                    </span>
                   </p>
-                )}
               </div>
-
-              {geminiStatus === 'after-download' && (
-                <p className="text-[11px] text-amber-500 italic">
-                  Chrome has triggered the model download. This might take a few minutes. 
-                  Check <code className="bg-background px-1 rounded">chrome://components</code> for "Optimization Guide On Device Model" progress.
-                </p>
-              )}
             </div>
           </div>
         </div>
       </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }

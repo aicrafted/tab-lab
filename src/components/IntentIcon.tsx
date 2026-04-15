@@ -9,7 +9,6 @@ import {
   FileText,
   Globe,
   Image as ImageIcon,
-  MessageCircle,
   Music,
   Package,
   Ticket,

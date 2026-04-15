@@ -128,12 +128,14 @@ export async function chatComplete(
   const callId = ++llmCallSeq
   const startedAt = Date.now()
 
+  const model = provider === 'gemini-nano' ? 'gemini-nano' : (settings.providers as any)[provider]?.chatModel ?? ''
+
   if (ENABLE_LLM_CALL_DEBUG) {
     llmLog.info('llm-call start', {
       callId,
       provider,
       metricKey,
-      model: settings.tasks.chat.model,
+      model,
       maxTokens,
       responseFormat: options.responseFormat ?? 'text',
       systemPromptLength: systemPrompt.length,
@@ -155,7 +157,7 @@ export async function chatComplete(
         const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
         if (!LanguageModel) throw new Error('Gemini Nano (Prompt API) unavailable')
         
-        const session = await LanguageModel.create({ systemPrompt })
+        const session = await LanguageModel.create({ systemPrompt, expectedOutputLanguage: 'en' })
         try {
           response = (await session.prompt(cleanMessage)).trim()
         } finally {
@@ -163,8 +165,8 @@ export async function chatComplete(
         }
         break
       }
-      case 'webllm':
-        response = await webllmChat(systemPrompt, cleanMessage, settings.tasks.chat.model, maxTokens, options)
+      case 'browser-ml':
+        response = await webllmChat(systemPrompt, cleanMessage, model, maxTokens, options)
         break
       case 'openrouter':
       case 'lmstudio':
@@ -175,7 +177,7 @@ export async function chatComplete(
         const apiKey = provider === 'openrouter'
           ? settings.providers.openrouter.apiKey
           : settings.providers.lmstudio.apiKey
-        const model = settings.tasks.chat.model
+        // model was already resolved at line 131
 
         const defaultJsonSchema = {
           name: 'response',

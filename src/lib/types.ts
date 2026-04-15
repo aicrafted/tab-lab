@@ -90,6 +90,12 @@ export const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
   other: 'miscellaneous page',
 }
 
+export interface BookmarkScopeFilter {
+  mode: 'root' | 'folder'
+  folderId?: string
+  folderPath?: string
+}
+
 export const KNOWN_PLATFORMS = [
   'social',
   'video',
@@ -125,44 +131,38 @@ export interface CacheEntry {
   intent?: PageIntent      // intent classification
 }
 
-export type ChatProvider = 'gemini-nano' | 'webllm' | 'lmstudio' | 'openrouter'
-export type EmbeddingProvider = 'transformers' | 'lmstudio' | 'openrouter'
+export type ChatProvider = 'gemini-nano' | 'browser-ml' | 'lmstudio' | 'openrouter'
+export type EmbeddingProvider = 'browser-ml' | 'lmstudio' | 'openrouter'
 export type ClassificationMethod = 'llm' | 'nli'
 export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
-export interface BookmarkScopeFilter {
-  mode: 'root' | 'folder'
-  folderId?: string
-  folderPath?: string
-}
 
 export interface LlmSettings {
   localNetworks: string[]
   providers: {
-    lmstudio: { baseUrl: string; apiKey: string }
-    openrouter: { apiKey: string }
+    browserMl: {
+      chatModel: string
+      embeddingModel: string
+      classificationMethod: ClassificationMethod
+    }
+    lmstudio: {
+      baseUrl: string
+      apiKey: string
+      chatModel: string
+      embeddingModel: string
+    }
+    openrouter: {
+      apiKey: string
+      chatModel: string
+      embeddingModel: string
+    }
+    geminiNano: {
+      // currently no settings, but structured for consistency
+    }
   }
   tasks: {
-    chat: {
-      provider: ChatProvider
-      model: string
-    }
-    embedding: {
-      provider: EmbeddingProvider
-      model: string
-    }
-    classification: {
-      method: ClassificationMethod
-    }
+    chat: { provider: ChatProvider }
+    embedding: { provider: EmbeddingProvider }
   }
-}
-
-interface LegacyLlmSettings {
-  chatProvider?: string
-  embeddingProvider?: string
-  baseUrl?: string
-  apiKey?: string
-  model?: string
-  embeddingModel?: string
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -174,14 +174,16 @@ function asString(value: unknown, fallback = ''): string {
 }
 
 function toChatProvider(value: unknown, fallback: ChatProvider): ChatProvider {
-  if (value === 'gemini-nano' || value === 'webllm' || value === 'lmstudio' || value === 'openrouter') {
+  if (value === 'gemini-nano' || value === 'browser-ml' || value === 'webllm' || value === 'lmstudio' || value === 'openrouter') {
+    if (value === 'webllm') return 'browser-ml'
     return value
   }
   return fallback
 }
 
 function toEmbeddingProvider(value: unknown, fallback: EmbeddingProvider): EmbeddingProvider {
-  if (value === 'transformers' || value === 'lmstudio' || value === 'openrouter') {
+  if (value === 'transformers' || value === 'browser-ml' || value === 'lmstudio' || value === 'openrouter') {
+    if (value === 'transformers') return 'browser-ml'
     return value
   }
   return fallback
@@ -215,75 +217,112 @@ export const DEFAULT_LOCAL_NETWORKS = [
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   localNetworks: [...DEFAULT_LOCAL_NETWORKS],
   providers: {
-    lmstudio: { baseUrl: 'http://localhost:1234/v1', apiKey: '' },
-    openrouter: { apiKey: '' },
+    browserMl: {
+      chatModel: '',
+      embeddingModel: DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
+      classificationMethod: 'llm',
+    },
+    lmstudio: {
+      baseUrl: 'http://localhost:1234/v1',
+      apiKey: '',
+      chatModel: '',
+      embeddingModel: '',
+    },
+    openrouter: {
+      apiKey: '',
+      chatModel: '',
+      embeddingModel: '',
+    },
+    geminiNano: {},
   },
   tasks: {
-    chat: { provider: 'lmstudio', model: '' },
-    embedding: { provider: 'lmstudio', model: '' },
-    classification: { method: 'llm' },
+    chat: { provider: 'lmstudio' },
+    embedding: { provider: 'lmstudio' },
   },
 }
 
 export function migrateLlmSettings(raw: unknown): LlmSettings {
-  if (raw && typeof raw === 'object' && 'tasks' in raw) {
+  if (raw && typeof raw === 'object' && 'providers' in raw) {
     const obj = asObject(raw)
     const providers = asObject(obj.providers)
+    
+    // Providers
+    const browserMl = asObject(providers.browserMl)
     const lmstudio = asObject(providers.lmstudio)
     const openrouter = asObject(providers.openrouter)
+    
+    // Tasks
     const tasks = asObject(obj.tasks)
     const chat = asObject(tasks.chat)
     const embedding = asObject(tasks.embedding)
-    const classification = asObject(tasks.classification)
+    
     const localNetworks = toStringArray(obj.localNetworks) ?? [...DEFAULT_LOCAL_NETWORKS]
 
     return {
       localNetworks,
       providers: {
+        browserMl: {
+          chatModel: asString(browserMl.chatModel, ''),
+          embeddingModel: asString(browserMl.embeddingModel, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL),
+          classificationMethod: toClassificationMethod(browserMl.classificationMethod, 'llm'),
+        },
         lmstudio: {
           baseUrl: asString(lmstudio.baseUrl, DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl),
           apiKey: asString(lmstudio.apiKey, ''),
+          chatModel: asString(lmstudio.chatModel, ''),
+          embeddingModel: asString(lmstudio.embeddingModel, ''),
         },
         openrouter: {
           apiKey: asString(openrouter.apiKey, ''),
+          chatModel: asString(openrouter.chatModel, ''),
+          embeddingModel: asString(openrouter.embeddingModel, ''),
         },
+        geminiNano: {},
       },
       tasks: {
         chat: {
           provider: toChatProvider(chat.provider, DEFAULT_LLM_SETTINGS.tasks.chat.provider),
-          model: asString(chat.model, ''),
         },
         embedding: {
           provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
-          model: asString(embedding.model, ''),
-        },
-        classification: {
-          method: toClassificationMethod(classification.method, DEFAULT_LLM_SETTINGS.tasks.classification.method),
         },
       },
     }
   }
 
-  const old = asObject(raw) as LegacyLlmSettings
+  // Legacy fallback for even older structures
+  const old = asObject(raw) as any
+  const tasks = asObject(old.tasks)
+  const chat = asObject(tasks.chat)
+  const embedding = asObject(tasks.embedding)
+  
   return {
-    localNetworks: [...DEFAULT_LOCAL_NETWORKS],
+    ...DEFAULT_LLM_SETTINGS,
     providers: {
-      lmstudio: {
-        baseUrl: old.baseUrl ?? DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl,
-        apiKey: old.apiKey ?? '',
+      ...DEFAULT_LLM_SETTINGS.providers,
+      browserMl: {
+        chatModel: asString(chat.model, ''),
+        embeddingModel: asString(embedding.model, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL),
+        classificationMethod: 'llm',
       },
-      openrouter: { apiKey: '' },
+      lmstudio: {
+        ...DEFAULT_LLM_SETTINGS.providers.lmstudio,
+        chatModel: asString(chat.model, ''),
+        embeddingModel: asString(embedding.model, ''),
+      },
+      openrouter: {
+        ...DEFAULT_LLM_SETTINGS.providers.openrouter,
+        chatModel: asString(chat.model, ''),
+        embeddingModel: asString(embedding.model, ''),
+      },
     },
     tasks: {
       chat: {
-        provider: toChatProvider(old.chatProvider, DEFAULT_LLM_SETTINGS.tasks.chat.provider),
-        model: old.model ?? '',
+        provider: toChatProvider(chat.provider || old.chatProvider, 'lmstudio'),
       },
       embedding: {
-        provider: toEmbeddingProvider(old.embeddingProvider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
-        model: old.embeddingModel ?? '',
+        provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'lmstudio'),
       },
-      classification: { method: 'llm' },
     },
   }
 }

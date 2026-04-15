@@ -126,12 +126,12 @@ export function getDomainInfo(
 function canUseDomainEnrichmentLlm(settings: LlmSettings): boolean {
   const provider = settings.tasks.chat.provider
   if (provider === 'gemini-nano') return false
-  if (provider === 'webllm') return Boolean(settings.tasks.chat.model)
+  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
   if (provider === 'lmstudio') {
-    return Boolean(settings.providers.lmstudio.baseUrl && settings.tasks.chat.model)
+    return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
   }
   if (provider === 'openrouter') {
-    return Boolean(settings.providers.openrouter.apiKey && settings.tasks.chat.model)
+    return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
   }
   return false
 }

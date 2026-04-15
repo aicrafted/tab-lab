@@ -16,12 +16,10 @@ export function Duplicates({
   currentTab,
   allTabs,
   currentWindowId,
-  onReload,
 }: {
   currentTab: TabInfo
   allTabs: chrome.tabs.Tab[]
   currentWindowId: number | null
-  onReload: () => void
 }) {
   const [closed, setClosed] = useState<Set<number>>(new Set())
 

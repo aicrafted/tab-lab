@@ -208,18 +208,17 @@ async function classifyItemNLI(
 
 export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmAvailability> {
   const provider = settings?.tasks.chat.provider ?? 'gemini-nano'
-  if (provider === 'webllm') {
-    return settings?.tasks.chat.model ? 'ready' : 'unavailable'
+  if (provider === 'browser-ml') {
+    return settings?.providers.browserMl.chatModel ? 'ready' : 'unavailable'
   }
   if (provider === 'lmstudio') {
-    return settings?.providers.lmstudio.baseUrl && settings?.tasks.chat.model ? 'ready' : 'unavailable'
+    return settings?.providers.lmstudio.baseUrl && settings?.providers.lmstudio.chatModel ? 'ready' : 'unavailable'
   }
   if (provider === 'openrouter') {
-    return settings?.providers.openrouter.apiKey && settings?.tasks.chat.model ? 'ready' : 'unavailable'
+    return settings?.providers.openrouter.apiKey && settings?.providers.openrouter.chatModel ? 'ready' : 'unavailable'
   }
   try {
     const win = window as any
-    const ai = win.ai
     const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
     
     const apis = []
@@ -294,16 +293,15 @@ export async function classifyItems(
   if (cached.length > 0) onProgress(cached)
   if (uncached.length === 0) return
 
-  const useNli = settings.tasks.classification.method === 'nli'
-    && settings.tasks.embedding.provider === 'transformers'
-  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
-  if (settings.tasks.classification.method === 'nli' && !useNli) {
-    classifierLog.warn('NLI requires transformers embedding provider; falling back to LLM classification')
-  }
+  const chatProvider = settings.tasks.chat.provider
+  const embedProvider = settings.tasks.embedding.provider
+  const browserMl = settings.providers.browserMl
 
-  const provider = settings.tasks.chat.provider
-  const tracker = createProgressTracker('classifyItems', uncached.length, { provider })
-  const format = provider !== 'gemini-nano' ? 'json' : 'text'
+  const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
+  const nliModel = browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+  
+  const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProvider })
+  const format = chatProvider !== 'gemini-nano' ? 'json' : 'text'
   const useJsonOutput = format === 'json'
   const systemPrompt = classifyItem.system(format)
   const options = useJsonOutput
@@ -311,7 +309,7 @@ export async function classifyItems(
       responseFormat: 'json' as const,
       metricKey: 'classifier-items',
       jsonSchema: CATEGORY_RESPONSE_SCHEMA,
-      ...(provider === 'webllm' ? { disableThinking: true } : {}),
+      ...(chatProvider === 'browser-ml' ? { disableThinking: true } : {}),
     }
     : {}
 
@@ -453,7 +451,7 @@ export async function normalizeCategoryLabels(
         responseFormat: 'json',
         metricKey: 'classifier-normalize',
         jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
-        ...(settings.tasks.chat.provider === 'webllm' ? { disableThinking: true } : {}),
+        ...(settings.tasks.chat.provider === 'browser-ml' ? { disableThinking: true } : {}),
       }
       : {},
   )
@@ -525,7 +523,7 @@ export async function groupRareCategories(
           responseFormat: 'json',
           metricKey: 'classifier-group-rare',
           jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
-          ...(provider === 'webllm' ? { disableThinking: true } : {}),
+          ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
         }
         : {},
     )
@@ -642,7 +640,7 @@ export async function splitLargeClusters(
         responseFormat: 'json' as const,
         metricKey: 'classifier-split',
         jsonSchema: CATEGORY_RESPONSE_SCHEMA,
-        ...(provider === 'webllm' ? { disableThinking: true } : {}),
+        ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
       }
       : {}
     const BATCH = 5
@@ -705,9 +703,8 @@ export async function classifyTabs(
     ...DEFAULT_LLM_SETTINGS,
     tasks: {
       ...DEFAULT_LLM_SETTINGS.tasks,
-      chat: { provider: 'gemini-nano', model: '' },
-      embedding: { provider: 'transformers', model: '' },
-      classification: { method: 'llm' },
+      chat: { provider: 'gemini-nano' },
+      embedding: { provider: 'browser-ml' },
     },
   }
   await classifyItems(
@@ -727,9 +724,8 @@ export async function classifyBookmarks(
     ...DEFAULT_LLM_SETTINGS,
     tasks: {
       ...DEFAULT_LLM_SETTINGS.tasks,
-      chat: { provider: 'gemini-nano', model: '' },
-      embedding: { provider: 'transformers', model: '' },
-      classification: { method: 'llm' },
+      chat: { provider: 'gemini-nano' },
+      embedding: { provider: 'browser-ml' },
     },
   }
   await classifyItems(
@@ -785,9 +781,10 @@ export async function classifyByClusters(
   const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length })
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
-  const useNli = settings.tasks.classification.method === 'nli'
-    && settings.tasks.embedding.provider === 'transformers'
-  const nliModel = settings.tasks.embedding.model || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
+  const embedProvider = settings.tasks.embedding.provider
+  const browserMl = settings.providers.browserMl
+  const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
+  const nliModel = browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
 
   for (const cluster of clusters) {
     const representativeItems = cluster.representatives
@@ -822,7 +819,7 @@ export async function classifyByClusters(
             responseFormat: 'json',
             metricKey: 'classifier-clusters',
             jsonSchema: CLUSTER_RESPONSE_SCHEMA,
-            ...(provider === 'webllm' ? { disableThinking: true } : {}),
+            ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
           }
           : {},
       )

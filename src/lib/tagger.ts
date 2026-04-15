@@ -70,7 +70,7 @@ export async function tagItems(
       responseFormat: 'json' as const,
       metricKey: 'tags',
       jsonSchema: TAGS_RESPONSE_SCHEMA,
-      ...(provider === 'webllm' ? { disableThinking: true } : {}),
+      ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
     }
     : {}
 
@@ -121,8 +121,8 @@ export async function tagWithGeminiNano(
       ...DEFAULT_LLM_SETTINGS,
       tasks: {
         ...DEFAULT_LLM_SETTINGS.tasks,
-        chat: { provider: 'gemini-nano', model: '' },
-        embedding: { provider: 'transformers', model: '' },
+        chat: { provider: 'gemini-nano' },
+        embedding: { provider: 'browser-ml' },
       },
     },
     onProgress,
