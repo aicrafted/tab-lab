@@ -98,70 +98,33 @@ export type LlmAvailability = 'checking' | 'ready' | 'after-download' | 'unavail
 export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 const RARE_THRESHOLD = 3
-const CATEGORY_CANDIDATES = [
-  'Development',
-  'Design',
-  'AI & ML',
-  'Science',
-  'News',
-  'Finance',
-  'Shopping',
-  'Social Media',
-  'Entertainment',
-  'Productivity',
-  'Documentation',
-  'Video',
-  'Research',
-  'Education',
-  'Health',
-  'Other',
-] as const
-
-// Rich descriptors for NLI: keywords that actually appear on pages of this type,
-// not a generic label suffix. all-MiniLM-L6-v2 works by semantic proximity,
-// so descriptors should sound like the content of pages in that category.
-const CATEGORY_DESCRIPTORS: Record<string, string> = {
-  'Development':    'code programming software engineering GitHub Stack Overflow npm package library framework debugging API backend frontend',
-  'Design':         'UI UX design Figma prototype wireframe typography color layout visual interface creative',
-  'AI & ML':        'machine learning neural network LLM artificial intelligence deep learning model training dataset transformer',
-  'Science':        'research paper study scientific biology chemistry physics mathematics experiment journal Nature arXiv',
-  'News':           'breaking news article latest update report journalist headline politics world current events',
-  'Finance':        'stock market investment trading portfolio cryptocurrency banking budget personal finance economy',
-  'Shopping':       'buy product price review store checkout cart deal discount Amazon eBay ecommerce',
-  'Social Media':   'feed post profile follow like comment tweet Reddit Twitter Instagram social network',
-  'Entertainment':  'game movie music entertainment fun streaming podcast Spotify Netflix gaming',
-  'Productivity':   'task todo calendar note email meeting schedule workflow Notion Obsidian Jira project management',
-  'Documentation':  'documentation manual guide API reference specification changelog README readthedocs',
-  'Video':          'YouTube video watch streaming episode series channel Vimeo Twitch stream',
-  'Research':       'academic paper abstract methodology findings survey analysis literature review citation',
-  'Education':      'course lesson tutorial learning education Coursera Khan Academy university online class',
-  'Health':         'health medical symptom treatment fitness diet wellness nutrition exercise doctor',
-  'Other':          'miscellaneous general page',
-}
 
 let categoryLabelEmbeddingsPromise: Promise<Map<string, number[]>> | null = null
+let lastUsedCategoryHash: string | null = null
 
 async function getCategoryLabelEmbeddings(settings: LlmSettings): Promise<Map<string, number[]>> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
   const model = provider.getEmbeddingModel(settings) || 'default'
+  
+  // Create a simple hash/key to detect changes in categories or descriptors
+  const categoryHash = `${model}:${JSON.stringify(settings.nliCategories)}`
 
-  if (!categoryLabelEmbeddingsPromise) {
-    categoryLabelEmbeddingsPromise = Promise.resolve(new Map())
+  if (categoryLabelEmbeddingsPromise && categoryHash === lastUsedCategoryHash) {
+    return categoryLabelEmbeddingsPromise
   }
-  const existing = await categoryLabelEmbeddingsPromise
-  // Cache check can be smarter but for now we'll keep it simple
-  if (existing.size > 0 && model === 'default') return existing
 
-  const map = new Map<string, number[]>()
-  for (const label of CATEGORY_CANDIDATES) {
-    const descriptor = CATEGORY_DESCRIPTORS[label] ?? label
-    map.set(label, await provider.embed(descriptor, settings))
-  }
-  if (model === 'default') {
-    categoryLabelEmbeddingsPromise = Promise.resolve(map)
-  }
-  return map
+  categoryLabelEmbeddingsPromise = (async () => {
+    classifierLog.info('re-embedding NLI categories', { count: settings.nliCategories.length })
+    const map = new Map<string, number[]>()
+    for (const cat of settings.nliCategories) {
+      map.set(cat.label, await provider.embed(cat.descriptor || cat.label, settings))
+    }
+    return map
+  })()
+
+  lastUsedCategoryHash = categoryHash
+  return categoryLabelEmbeddingsPromise
 }
 
 function urlPathSnippet(url: string): string {

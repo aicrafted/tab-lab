@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle } from 'lucide-react'
+import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -12,8 +12,8 @@ import {
 import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/classifier'
 import { getChatProvider } from '@/lib/providers/factory'
 import { GeminiNanoProvider } from '@/lib/providers/gemini-nano'
-import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from '@/lib/types'
-import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings } from '@/lib/types'
+import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, DEFAULT_NLI_CATEGORIES } from '@/lib/types'
+import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings, NliCategory } from '@/lib/types'
 import {
   isWebllmModelCached,
   preloadWebllmModel,
@@ -55,6 +55,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   // Task Assignments
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(llmSettings.tasks.embedding.provider)
+  const [nliCategories, setNliCategories] = useState<NliCategory[]>(llmSettings.nliCategories ?? [...DEFAULT_NLI_CATEGORIES])
 
   // UI State
   const [models, setModels] = useState<string[]>([])
@@ -62,11 +63,13 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [geminiStatus, setGeminiStatus] = useState<'checking' | 'ready' | 'after-download' | 'unavailable'>('checking')
   const [geminiInfo, setGeminiInfo] = useState<{ apis: string[]; caps?: any }>({ apis: [] })
-  
+
   const [loadingWebllm, setLoadingWebllm] = useState(false)
   const [webllmCached, setWebllmCached] = useState(false)
   const [loadingEmbeddingModel, setLoadingEmbeddingModel] = useState(false)
   const [embeddingModelCached, setEmbeddingModelCached] = useState(false)
+
+  const [activeTab, setActiveTab] = useState<'providers' | 'advanced'>('providers')
 
   const checkGemini = useCallback(async () => {
     setGeminiStatus('checking')
@@ -87,11 +90,11 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       },
     }
     const status = await checkLlmAvailability(geminiProbeSettings)
-    
+
     // Get full status object from provider for diagnostics (message etc)
     const provider = getChatProvider('gemini-nano') as GeminiNanoProvider
     const fullStatus = await provider.checkStatus(geminiProbeSettings)
-    
+
     setGeminiInfo({ apis, caps: fullStatus })
     setGeminiStatus(status)
   }, [llmSettings])
@@ -147,7 +150,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       setLoadingModels(false)
     }
   }, [llmSettings, browserMl, lmstudio, openrouter])
-  
+
   const handleOpenFlag = (flagUrl: string) => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
       void chrome.tabs.create({ url: flagUrl })
@@ -191,8 +194,9 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         chat: { provider: chatProvider },
         embedding: { provider: embeddingProvider },
       },
+      nliCategories,
     })
-  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano])
+  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories])
 
   return (
     <div className="max-w-4xl space-y-10 py-4">
@@ -200,14 +204,14 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         {/* PROVIDERS COLUMN */}
         <div className="space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
-          
+
           {/* Browser-local ML */}
           <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <Cpu className="h-4 w-4 text-primary" />
               <p className="text-sm font-semibold uppercase">Browser-local ML</p>
             </div>
-            
+
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model (WebLLM)</label>
@@ -271,8 +275,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               <div className="flex gap-4 pt-1">
                 <div className="space-y-1.5 flex-1">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select 
-                    value={browserMl.classificationMethod} 
+                  <Select
+                    value={browserMl.classificationMethod}
                     onValueChange={(v) => setBrowserMl({ ...browserMl, classificationMethod: v as ClassificationMethod })}
                   >
                     <SelectTrigger className="h-8 text-xs">
@@ -306,7 +310,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               <Server className="h-4 w-4 text-primary" />
               <p className="text-sm font-semibold uppercase">LM Studio / Ollama</p>
             </div>
-            
+
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Base URL</label>
@@ -325,8 +329,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     onChange={(e) => setLmstudio({ ...lmstudio, chatModel: e.target.value })}
                     className="h-8 text-xs flex-1"
                   />
-                  <Select 
-                    value={lmstudio.chatModel} 
+                  <Select
+                    value={lmstudio.chatModel}
                     onValueChange={(v) => setLmstudio({ ...lmstudio, chatModel: v })}
                     onOpenChange={(open) => open && handleLoadModels()}
                   >
@@ -348,8 +352,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     onChange={(e) => setLmstudio({ ...lmstudio, embeddingModel: e.target.value })}
                     className="h-8 text-xs flex-1"
                   />
-                  <Select 
-                    value={lmstudio.embeddingModel} 
+                  <Select
+                    value={lmstudio.embeddingModel}
                     onValueChange={(v) => setLmstudio({ ...lmstudio, embeddingModel: v })}
                     onOpenChange={(open) => open && handleLoadModels()}
                   >
@@ -366,8 +370,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               <div className="flex gap-4 pt-1">
                 <div className="space-y-1.5 flex-1">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select 
-                    value={lmstudio.classificationMethod} 
+                  <Select
+                    value={lmstudio.classificationMethod}
                     onValueChange={(v) => setLmstudio({ ...lmstudio, classificationMethod: v as ClassificationMethod })}
                   >
                     <SelectTrigger className="h-8 text-xs">
@@ -408,7 +412,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 <strong className="text-amber-500 not-italic">WARNING!</strong> Using a cloud provider means tab and bookmarks metadata (titles, URLs) will be sent to external servers for processing.
               </p>
             </div>
-            
+
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">API Key</label>
@@ -451,8 +455,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               <div className="flex gap-4 pt-1">
                 <div className="space-y-1.5 flex-1">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select 
-                    value={openrouter.classificationMethod} 
+                  <Select
+                    value={openrouter.classificationMethod}
                     onValueChange={(v) => setOpenrouter({ ...openrouter, classificationMethod: v as ClassificationMethod })}
                   >
                     <SelectTrigger className="h-8 text-xs">
@@ -527,6 +531,69 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
             </div>
 
+            {/* NLI Categories Section */}
+            <div className="space-y-4 pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-primary">
+                  <Tags className="h-4 w-4" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">NLI Taxonomy</h3>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[10px] gap-1.5 border-dashed"
+                  onClick={() => setNliCategories([...nliCategories, { label: 'New Category', descriptor: '' }])}
+                >
+                  <Plus className="h-3 w-3" />
+                  Add Category
+                </Button>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground leading-relaxed px-1">
+                Custom labels used for semantic bucketing. The descriptor should contain keywords that describe the typical content of this category.
+              </p>
+
+              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                {nliCategories.map((cat, idx) => (
+                  <div key={idx} className="group relative rounded-lg border border-border/40 bg-card/10 p-3 space-y-2 hover:border-border/80 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={cat.label}
+                        onChange={(e) => {
+                          const next = [...nliCategories]
+                          next[idx] = { ...cat, label: e.target.value }
+                          setNliCategories(next)
+                        }}
+                        placeholder="Label (e.g. Science)"
+                        className="h-7 text-xs font-semibold bg-background/50 flex-1"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => {
+                          const next = nliCategories.filter((_, i) => i !== idx)
+                          setNliCategories(next)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <textarea
+                      value={cat.descriptor}
+                      onChange={(e) => {
+                        const next = [...nliCategories]
+                        next[idx] = { ...cat, descriptor: e.target.value }
+                        setNliCategories(next)
+                      }}
+                      placeholder="Semantic descriptor (keywords, examples...)"
+                      className="w-full min-h-[40px] text-[11px] bg-background/30 rounded-md border border-input p-2 focus:ring-1 focus:ring-primary outline-none resize-none leading-relaxed"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="pt-4 flex flex-col items-stretch gap-3">
               <Button onClick={handleSave} disabled={!canSave} className="w-full shadow-lg shadow-primary/10">
                 Save & Apply Configuration
@@ -555,23 +622,22 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Diagnostics</h3>
             <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
               <div className="flex items-start gap-4">
-                <div className={`shrink-0 p-2 rounded-lg ${
-                  geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : 
-                  geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
-                  geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
-                  'bg-destructive/10 text-destructive'
-                }`}>
-                  {geminiStatus === 'ready' ? <ShieldCheck className="h-5 w-5" /> : 
-                   geminiStatus === 'checking' ? <Loader2 className="h-5 w-5 animate-spin" /> :
-                   <ShieldX className="h-5 w-5" />}
+                <div className={`shrink-0 p-2 rounded-lg ${geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' :
+                    geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
+                      geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
+                        'bg-destructive/10 text-destructive'
+                  }`}>
+                  {geminiStatus === 'ready' ? <ShieldCheck className="h-5 w-5" /> :
+                    geminiStatus === 'checking' ? <Loader2 className="h-5 w-5 animate-spin" /> :
+                      <ShieldX className="h-5 w-5" />}
                 </div>
-                
+
                 <div className="flex-1 space-y-1">
                   <p className="text-xs font-bold uppercase tracking-tight">
                     {geminiStatus === 'ready' ? 'System Ready' :
-                     geminiStatus === 'after-download' ? 'Downloading Model...' :
-                     geminiStatus === 'checking' ? 'Analyzing...' :
-                     'System Unsupported'}
+                      geminiStatus === 'after-download' ? 'Downloading Model...' :
+                        geminiStatus === 'checking' ? 'Analyzing...' :
+                          'System Unsupported'}
                   </p>
                   <p className="text-[10px] leading-relaxed text-muted-foreground">
                     Native Chrome AI for private inference. Requires specific browser flags.
@@ -590,19 +656,19 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   </div>
                   <ul className="text-[10px] text-muted-foreground space-y-2 list-none">
                     <li className="flex gap-2">
-                       <span className="text-primary font-bold">1</span>
-                       <span>Use <b>Chrome Canary/Dev</b> (127+)</span>
+                      <span className="text-primary font-bold">1</span>
+                      <span>Use <b>Chrome Canary/Dev</b> (127+)</span>
                     </li>
                     <li className="flex gap-2">
-                       <span className="text-primary font-bold">2</span>
-                       <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> to <b>Enabled BypassPrefavorite</b></span>
+                      <span className="text-primary font-bold">2</span>
+                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> to <b>Enabled BypassPrefavorite</b></span>
                     </li>
                     <li className="flex gap-2">
-                       <span className="text-primary font-bold">3</span>
-                       <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button></span>
+                      <span className="text-primary font-bold">3</span>
+                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button></span>
                     </li>
                     <li className="bg-destructive/10 p-2 rounded-md text-destructive mt-3 font-medium border border-destructive/20">
-                      ⚠️ <b>Extension Origin Policy:</b> Chrome blocks Prompt API on <code className="text-[9px]">chrome-extension://</code> pages. 
+                      ⚠️ <b>Extension Origin Policy:</b> Chrome blocks Prompt API on <code className="text-[9px]">chrome-extension://</code> pages.
                       If diagnostics show "none" but it works on standard sites, this restriction is active.
                     </li>
                   </ul>
@@ -613,21 +679,20 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 <p className="text-[9px] font-medium uppercase text-muted-foreground">
                   APIs: <span className="text-foreground">{geminiInfo.apis.length > 0 ? geminiInfo.apis.join(', ') : 'none'}</span>
                 </p>
-                  <p className="text-[9px] font-medium uppercase text-muted-foreground">
-                    Availability: <span className="text-foreground">
-                      {typeof geminiInfo.caps === 'string' ? geminiInfo.caps : geminiInfo.caps?.available || 'unknown'}
-                    </span>
-                  </p>
-                  {geminiInfo.caps?.message && (
-                    <p className={`text-[9px] font-medium uppercase mt-1 ${
-                      geminiStatus === 'ready' || geminiStatus === 'after-download' 
-                        ? 'text-muted-foreground' 
-                        : 'text-destructive'
+                <p className="text-[9px] font-medium uppercase text-muted-foreground">
+                  Availability: <span className="text-foreground">
+                    {typeof geminiInfo.caps === 'string' ? geminiInfo.caps : geminiInfo.caps?.available || 'unknown'}
+                  </span>
+                </p>
+                {geminiInfo.caps?.message && (
+                  <p className={`text-[9px] font-medium uppercase mt-1 ${geminiStatus === 'ready' || geminiStatus === 'after-download'
+                      ? 'text-muted-foreground'
+                      : 'text-destructive'
                     }`}>
-                      {geminiStatus === 'ready' || geminiStatus === 'after-download' ? 'Status' : 'Error'}: {' '}
-                      <span className="text-foreground">{geminiInfo.caps.message}</span>
-                    </p>
-                  )}
+                    {geminiStatus === 'ready' || geminiStatus === 'after-download' ? 'Status' : 'Error'}: {' '}
+                    <span className="text-foreground">{geminiInfo.caps.message}</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -134,10 +134,36 @@ export interface CacheEntry {
 export type ChatProvider = 'gemini-nano' | 'browser-ml' | 'lmstudio' | 'openrouter'
 export type EmbeddingProvider = 'browser-ml' | 'lmstudio' | 'openrouter'
 export type ClassificationMethod = 'llm' | 'nli'
+
+export interface NliCategory {
+  label: string
+  descriptor: string
+}
+
+export const DEFAULT_NLI_CATEGORIES: NliCategory[] = [
+  { label: 'Development', descriptor: 'code programming software engineering GitHub Stack Overflow npm package library framework debugging API backend frontend' },
+  { label: 'Design', descriptor: 'UI UX design Figma prototype wireframe typography color layout visual interface creative' },
+  { label: 'AI & ML', descriptor: 'machine learning neural network LLM artificial intelligence deep learning model training dataset transformer' },
+  { label: 'Science', descriptor: 'research paper study scientific biology chemistry physics mathematics experiment journal Nature arXiv' },
+  { label: 'News', descriptor: 'breaking news article latest update report journalist headline politics world current events' },
+  { label: 'Finance', descriptor: 'stock market investment trading portfolio cryptocurrency banking budget personal finance economy' },
+  { label: 'Shopping', descriptor: 'buy product price review store checkout cart deal discount Amazon eBay ecommerce' },
+  { label: 'Social Media', descriptor: 'feed post profile follow like comment tweet Reddit Twitter Instagram social network' },
+  { label: 'Entertainment', descriptor: 'game movie music entertainment fun streaming podcast Spotify Netflix gaming' },
+  { label: 'Productivity', descriptor: 'task todo calendar note email meeting schedule workflow Notion Obsidian Jira project management' },
+  { label: 'Documentation', descriptor: 'documentation manual guide API reference specification changelog README readthedocs' },
+  { label: 'Video', descriptor: 'YouTube video watch streaming episode series channel Vimeo Twitch stream' },
+  { label: 'Research', descriptor: 'academic paper abstract methodology findings survey analysis literature review citation' },
+  { label: 'Education', descriptor: 'course lesson tutorial learning education Coursera Khan Academy university online class' },
+  { label: 'Health', descriptor: 'health medical symptom treatment fitness diet wellness nutrition exercise doctor' },
+  { label: 'Other', descriptor: 'miscellaneous general page' },
+]
+
 export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
 
 export interface LlmSettings {
   localNetworks: string[]
+  nliCategories: NliCategory[]
   providers: {
     browserMl: {
       chatModel: string
@@ -249,6 +275,7 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
       temperature: 0.1,
     },
   },
+  nliCategories: [...DEFAULT_NLI_CATEGORIES],
   tasks: {
     chat: { provider: 'lmstudio' },
     embedding: { provider: 'lmstudio' },
@@ -309,6 +336,7 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
           provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
         },
       },
+      nliCategories: (obj.nliCategories as NliCategory[]) ?? [...DEFAULT_NLI_CATEGORIES],
     }
   }
 

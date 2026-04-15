@@ -104,9 +104,9 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                   title={group.hint}
                   onClick={() => onChange(group.views[0])}
                   className={cn(
-                    'whitespace-nowrap rounded-t-md rounded-b-none border-b px-2.5 py-1 text-base transition-colors',
+                    'whitespace-nowrap rounded-t-md rounded-b-none border-b-2 px-2.5 py-1 text-base transition-colors',
                     isActive
-                      ? 'border-primary/50 text-primary font-semibold'
+                      ? 'border-primary text-primary font-semibold'
                       : 'border-transparent text-muted-foreground hover:text-foreground',
                     isSettingsGroup && 'ml-2',
                   )}
@@ -118,7 +118,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
           })}
         </div>
 
-        <div className="border-t border-primary/50 bg-primary/15 px-2 py-1.5">
+        <div className="border-t border-primary/50 bg-primary/10 px-2 py-1.5">
           <div className="flex items-center gap-1">
           {activeGroup.views.map((viewId) => {
             const view = VIEW_BY_ID[viewId]
