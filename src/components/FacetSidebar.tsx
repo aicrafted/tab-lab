@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { SourceFilterToggle } from '@/components/SourceFilter'
 import { IntentIcon } from '@/components/IntentIcon'
 import {
@@ -16,6 +17,17 @@ interface FacetItem {
   count: number
 }
 
+export interface CategoryChildFacet {
+  name: string
+  count: number
+}
+
+export interface CategoryGroupFacet {
+  parent: string
+  children: CategoryChildFacet[]
+  totalCount: number
+}
+
 interface FacetSidebarProps {
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
@@ -28,7 +40,7 @@ interface FacetSidebarProps {
   bookmarkFolderOptions: BookmarkFolderOption[]
   onBookmarkScopeChange: (value: BookmarkScopeFilter) => void
   domains: FacetItem[]
-  categories: FacetItem[]
+  categories: CategoryGroupFacet[]
   intents: FacetItem[]
   platforms: FacetItem[]
   activeMode: 'domains' | 'categories' | 'intent' | 'platform'
@@ -60,9 +72,7 @@ export function FacetSidebar({
 }: FacetSidebarProps) {
   const items = activeMode === 'domains'
     ? domains
-    : activeMode === 'categories'
-      ? categories
-      : activeMode === 'intent'
+    : activeMode === 'intent'
         ? intents
         : platforms
   const showEmpty = activeMode === 'categories'
@@ -172,6 +182,12 @@ export function FacetSidebar({
                 ? 'No platforms yet'
                 : 'No categories yet'}
           </p>
+        ) : activeMode === 'categories' ? (
+          <GroupedCategoryList
+            groups={categories}
+            activeValues={activeValues}
+            onToggle={onToggle}
+          />
         ) : (
           items.map(item => (
             <FacetRow
@@ -197,6 +213,85 @@ export function FacetSidebar({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function GroupedCategoryList({
+  groups,
+  activeValues,
+  onToggle,
+}: {
+  groups: CategoryGroupFacet[]
+  activeValues: string[]
+  onToggle: (value: string) => void
+}) {
+  const activeSet = useMemo(() => new Set(activeValues), [activeValues])
+
+  return (
+    <div className="py-1">
+      {groups.map((group) => {
+        const parentToken = `parent:${group.parent}`
+        const parentActive = activeSet.has(parentToken)
+        const visibleChildren = group.children.length === 1 && group.children[0]?.name === group.parent
+          ? []
+          : group.children
+        return (
+          <div key={group.parent} className="border-b border-border/30 last:border-b-0">
+            <div className="flex items-center gap-1.5 px-2 py-1">
+              <button
+                type="button"
+                onClick={() => onToggle(parentToken)}
+                className={cn(
+                  'flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-card',
+                  parentActive && 'bg-card',
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full transition-colors',
+                    parentActive ? 'bg-primary' : 'bg-muted-foreground/30',
+                  )}
+                />
+                <span className={cn('truncate', parentActive ? 'text-primary' : 'text-muted-foreground')} title={group.parent}>
+                  {group.parent}
+                </span>
+                <span className="ml-auto shrink-0 tabular-nums text-muted-foreground/60">{group.totalCount}</span>
+              </button>
+            </div>
+            {visibleChildren.length > 0 && (
+              <div className="pb-1 pl-8">
+                {visibleChildren.map((child) => {
+                  const childToken = `child:${child.name}`
+                  const childActive = activeSet.has(childToken)
+                  return (
+                    <button
+                      key={`${group.parent}:${child.name}`}
+                      type="button"
+                      onClick={() => onToggle(childToken)}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors hover:bg-card',
+                        childActive && 'bg-card',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'h-2 w-2 shrink-0 rounded-full transition-colors',
+                          childActive ? 'bg-primary' : 'bg-muted-foreground/25',
+                        )}
+                      />
+                      <span className={cn('min-w-0 flex-1 truncate', childActive ? 'text-primary' : 'text-muted-foreground')} title={child.name}>
+                        {child.name}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground/60">{child.count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

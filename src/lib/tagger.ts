@@ -121,6 +121,8 @@ export async function tagItems(
           const existing = await getCached(prefix, item.url)
           await setCached(prefix, item.url, {
             category: existing?.category ?? 'Other',
+            parentCategory: existing?.parentCategory,
+            clusterId: existing?.clusterId,
             processedAt: Date.now(),
             tags,
             intent: existing?.intent,

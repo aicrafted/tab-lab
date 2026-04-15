@@ -1,6 +1,6 @@
 import { chatComplete, extractJson } from './llm'
 import { cosineSimilarity } from './embedder'
-import type { ClusterResult } from './cluster'
+import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
@@ -151,6 +151,7 @@ function parseClusterJson(raw: string): { category: string; name: string } {
 
 export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing' | 'error'
 export const SPLIT_THRESHOLD = 15
+const RARE_THRESHOLD = 3
 const CATEGORY_CANDIDATES = [
   'Development',
   'Design',
@@ -354,7 +355,13 @@ export async function classifyItems(
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, options)
           category = useJsonOutput ? parseCategoryFromRaw(raw) : normalizeCategoryLabel(raw)
         }
-        await setCached(prefix, item.url, { category, processedAt: Date.now() })
+        const existing = await getCached(prefix, item.url)
+        await setCached(prefix, item.url, {
+          ...existing,
+          category,
+          parentCategory: existing?.parentCategory ?? category,
+          processedAt: Date.now(),
+        })
         results.push({ url: item.url, category })
       } catch (err) {
         console.warn(`[classifier] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
@@ -377,6 +384,27 @@ export async function loadCachedCategories(
       if (cachedCategory && !isInvalidCategoryLabel(cachedCategory)) {
         map.set(item.url, cachedCategory)
       }
+    }),
+  )
+  return map
+}
+
+/** Load cached category hierarchy for a set of items. Returns url → { category, parentCategory }. */
+export async function loadCachedCategoryData(
+  items: { url: string }[],
+  prefix: 'tab' | 'bm',
+): Promise<Map<string, { category: string; parentCategory?: string }>> {
+  const map = new Map<string, { category: string; parentCategory?: string }>()
+  await Promise.all(
+    items.map(async (item) => {
+      const entry = await getCached(prefix, item.url)
+      const cachedCategory = entry?.category?.trim()
+      if (!cachedCategory || isInvalidCategoryLabel(cachedCategory)) return
+      const parentCategory = entry?.parentCategory?.trim()
+      map.set(item.url, {
+        category: cachedCategory,
+        ...(parentCategory ? { parentCategory } : {}),
+      })
     }),
   )
   return map
@@ -459,6 +487,93 @@ Reply with JSON only, no explanation.`
   }
 }
 
+export async function groupRareCategories(
+  items: { url: string; category: string }[],
+  prefix: 'tab' | 'bm',
+  settings: LlmSettings,
+): Promise<{ url: string; category: string }[]> {
+  const normalizedItems = items
+    .map((item) => ({ url: item.url, category: item.category.trim() }))
+    .filter((item) => item.category.length > 0)
+  if (normalizedItems.length === 0) return []
+
+  const counts = new Map<string, number>()
+  for (const item of normalizedItems) {
+    counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
+  }
+
+  const frequent = [...counts.entries()]
+    .filter(([, count]) => count >= RARE_THRESHOLD)
+    .map(([category]) => category)
+  const rare = [...counts.entries()]
+    .filter(([, count]) => count < RARE_THRESHOLD)
+    .map(([category]) => category)
+  if (rare.length === 0) return []
+
+  const frequentSection = frequent.length > 0
+    ? frequent.map((category) => `- ${category} (${counts.get(category)} tabs)`).join('\n')
+    : '- (none)'
+  const prompt = `You are merging browser tab categories. Some categories appear rarely and should be absorbed into a common broader category.
+
+Frequent categories (keep these or use as merge targets):
+${frequentSection}
+
+Rare categories to merge (each has 1-2 tabs):
+${rare.map((category) => `- ${category}`).join('\n')}
+
+For each rare category, assign it to the most semantically appropriate frequent category.
+If no frequent category fits, create a new broad label (but avoid "Other").
+Reply ONLY with a JSON object mapping each rare category to its target.
+
+Example: {"Steam Games": "Gaming", "Search Engine Docs": "Developer Tools"}`
+
+  const provider = settings.tasks.chat.provider
+  const useJsonOutput = provider !== 'gemini-nano'
+  const raw = await chatComplete(
+    'You output strict JSON only.',
+    prompt,
+    settings,
+    400,
+    useJsonOutput
+      ? {
+        responseFormat: 'json',
+        metricKey: 'classifier-group-rare',
+        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
+        ...(provider === 'webllm' ? { disableThinking: true } : {}),
+      }
+      : {},
+  )
+
+  let mergeMap: Record<string, string> = {}
+  try {
+    mergeMap = JSON.parse(extractJson(raw)) as Record<string, string>
+  } catch {
+    console.warn('[classifier] groupRareCategories parse failed, skipping')
+    return []
+  }
+
+  const updates: { url: string; category: string }[] = []
+  for (const item of normalizedItems) {
+    const targetRaw = mergeMap[item.category]
+    const target = typeof targetRaw === 'string' ? targetRaw.trim().slice(0, 40) : ''
+    if (!target || target === item.category) continue
+    updates.push({ url: item.url, category: target })
+  }
+  if (updates.length === 0) return []
+
+  await Promise.all(updates.map(async (update) => {
+    const existing = await getCached(prefix, update.url)
+    if (!existing) return
+    await setCached(prefix, update.url, {
+      ...existing,
+      category: update.category,
+      processedAt: Date.now(),
+    })
+  }))
+
+  return updates
+}
+
 /** Re-classifies items in categories that have too many members. */
 export async function splitLargeClusters(
   items: { url: string; title: string; domain: string; category: string }[],
@@ -466,6 +581,7 @@ export async function splitLargeClusters(
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  embeddings?: Map<string, number[]>,
 ): Promise<void> {
   const groups = new Map<string, { url: string; title: string; domain: string }[]>()
   for (const item of items) {
@@ -477,6 +593,32 @@ export async function splitLargeClusters(
 
   for (const [parentCategory, members] of groups) {
     if (members.length <= SPLIT_THRESHOLD) continue
+
+    const membersWithEmbeddings = embeddings
+      ? members
+          .map((member) => ({ ...member, embedding: embeddings.get(member.url) }))
+          .filter((member): member is { url: string; title: string; domain: string; embedding: number[] } => Boolean(member.embedding))
+      : []
+
+    if (membersWithEmbeddings.length >= 3) {
+      const subK = Math.max(2, Math.min(8, Math.ceil(members.length / 5)))
+      const subClusters = kMeans(
+        membersWithEmbeddings.map((member) => ({ url: member.url, embedding: member.embedding })),
+        subK,
+      )
+      await classifyByClusters(
+        membersWithEmbeddings,
+        subClusters,
+        prefix,
+        settings,
+        (updates) => {
+          onProgress(updates.map((update) => ({ url: update.url, category: update.category })))
+        },
+        domainMap,
+      )
+      continue
+    }
+
     const provider = settings.tasks.chat.provider
     const useJsonOutput = provider !== 'gemini-nano'
     const systemPrompt = useJsonOutput ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
@@ -491,7 +633,7 @@ export async function splitLargeClusters(
     const BATCH = 5
     for (let i = 0; i < members.length; i += BATCH) {
       const batch = members.slice(i, i + BATCH)
-      const updates: { url: string; category: string }[] = []
+      const updates: { url: string; category: string; parentCategory?: string }[] = []
 
       for (const item of batch) {
         try {
@@ -511,8 +653,14 @@ export async function splitLargeClusters(
           const category = useJsonOutput
             ? (parseCategoryFromRaw(raw) || parentCategory)
             : normalizeCategoryLabel(raw, parentCategory)
-          await setCached(prefix, item.url, { category, processedAt: Date.now() })
-          updates.push({ url: item.url, category })
+          const existing = await getCached(prefix, item.url)
+          await setCached(prefix, item.url, {
+            ...existing,
+            category,
+            parentCategory,
+            processedAt: Date.now(),
+          })
+          updates.push({ url: item.url, category, parentCategory })
         } catch (err) {
           console.warn(`[split] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -604,7 +752,7 @@ export async function classifyByClusters(
   clusters: ClusterResult[],
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
-  onProgress: (updates: { url: string; category: string; clusterId: number }[]) => void,
+  onProgress: (updates: { url: string; category: string; parentCategory?: string; clusterId: number }[]) => void,
   domainMap?: Map<string, DomainInfo>,
 ): Promise<Map<number, string>> {
   const byUrl = new Map(items.map((item) => [item.url, item]))
@@ -658,18 +806,19 @@ export async function classifyByClusters(
 
     names.set(cluster.clusterId, name)
 
-    const updates: { url: string; category: string; clusterId: number }[] = []
+    const updates: { url: string; category: string; parentCategory?: string; clusterId: number }[] = []
     for (const url of cluster.members) {
       const existing = await getCached(prefix, url)
       await setCached(prefix, url, {
         category,
+        parentCategory: category,
         clusterId: cluster.clusterId,
         processedAt: Date.now(),
         tags: existing?.tags,
         embedding: existing?.embedding,
         intent: existing?.intent,
       })
-      updates.push({ url, category, clusterId: cluster.clusterId })
+      updates.push({ url, category, parentCategory: category, clusterId: cluster.clusterId })
     }
     if (updates.length > 0) onProgress(updates)
   }

@@ -226,6 +226,8 @@ export async function classifyIntent(
         const existing = await getCached(prefix, item.url)
         await setCached(prefix, item.url, {
           category: existing?.category ?? 'Other',
+          parentCategory: existing?.parentCategory,
+          clusterId: existing?.clusterId,
           processedAt: Date.now(),
           tags: existing?.tags,
           embedding: existing?.embedding,

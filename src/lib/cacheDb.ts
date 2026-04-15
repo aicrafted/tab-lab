@@ -13,6 +13,7 @@ const DB_VERSION = 2
 /** One cached entry per URL. */
 export interface CacheEntry {
   category: string
+  parentCategory?: string
   clusterId?: number
   processedAt: number
   tags?: string[]

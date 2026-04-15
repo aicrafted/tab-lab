@@ -14,6 +14,7 @@ export interface BookmarkItem {
   visitCount?: number      // total visits from chrome.history
   // enriched by LLM
   category?: string
+  parentCategory?: string
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
   staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
@@ -42,6 +43,7 @@ export interface TabItem {
   visitCount?: number      // total visits from chrome.history
   // enriched by LLM
   category?: string
+  parentCategory?: string
   tags?: string[]          // AI-generated topical tags
   intent?: PageIntent      // how the user uses this page
   staticIntent?: PageIntent // determined by URL extension, never overwritten by AI
@@ -91,6 +93,7 @@ export type KnownPlatform =
 
 export interface CacheEntry {
   category: string
+  parentCategory?: string
   clusterId?: number
   processedAt: number
   tags?: string[]          // AI-generated tags

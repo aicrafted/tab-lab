@@ -1,5 +1,5 @@
 import { getAllBookmarks } from './bookmarks'
-import { loadCachedCategories, loadCachedIntents, loadCachedTags } from './classifier'
+import { loadCachedCategoryData, loadCachedIntents, loadCachedTags } from './classifier'
 import { crossLink } from './crosslink'
 import { detectPlatform, intentFromPlatform } from './platform-detection'
 import { detectStaticIntent } from './static-intent'
@@ -44,16 +44,26 @@ export async function loadHydratedData(): Promise<HydratedData> {
   }
 
   const [tabCache, bmCache] = await Promise.all([
-    loadCachedCategories(linked.tabs, 'tab'),
-    loadCachedCategories(linked.bookmarks, 'bm'),
+    loadCachedCategoryData(linked.tabs, 'tab'),
+    loadCachedCategoryData(linked.bookmarks, 'bm'),
   ])
   const bookmarksWithCategories = linked.bookmarks.map((bookmark) => {
-    const category = bmCache.get(bookmark.url)
-    return category ? { ...bookmark, category } : bookmark
+    const cached = bmCache.get(bookmark.url)
+    if (!cached) return bookmark
+    return {
+      ...bookmark,
+      category: cached.category,
+      ...(cached.parentCategory ? { parentCategory: cached.parentCategory } : {}),
+    }
   })
   const tabsWithCategories = linked.tabs.map((tab) => {
-    const category = tabCache.get(tab.url)
-    return category ? { ...tab, category } : tab
+    const cached = tabCache.get(tab.url)
+    if (!cached) return tab
+    return {
+      ...tab,
+      category: cached.category,
+      ...(cached.parentCategory ? { parentCategory: cached.parentCategory } : {}),
+    }
   })
 
   const [tabTagCache, bmTagCache] = await Promise.all([

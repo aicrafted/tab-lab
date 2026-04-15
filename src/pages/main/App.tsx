@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
 import { LlmSettingsPanel } from '@/components/LlmSettings'
-import { FacetSidebar } from '@/components/FacetSidebar'
+import { FacetSidebar, type CategoryGroupFacet } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -53,6 +53,29 @@ import { ShelfView } from '@/components/views/ShelfView'
 import { OverlapExplorerView } from '@/components/views/OverlapExplorerView'
 import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
+
+function parseCategoryFacetTokens(values: string[]): {
+  parentTokens: Set<string>
+  childTokens: Set<string>
+} {
+  const parentTokens = new Set<string>()
+  const childTokens = new Set<string>()
+  for (const value of values) {
+    if (value.startsWith('parent:')) {
+      const parent = value.slice('parent:'.length).trim()
+      if (parent) parentTokens.add(parent)
+      continue
+    }
+    if (value.startsWith('child:')) {
+      const child = value.slice('child:'.length).trim()
+      if (child) childTokens.add(child)
+      continue
+    }
+    const legacyValue = value.trim()
+    if (legacyValue) childTokens.add(legacyValue)
+  }
+  return { parentTokens, childTokens }
+}
 
 const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
@@ -423,15 +446,29 @@ export function App() {
       .sort((a, b) => b.count - a.count)
   }, [sourceScopedBookmarks, sourceScopedTabs])
 
-  const categoriesFacet = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const t of sourceScopedTabs) {
-      if (t.category) counts.set(t.category, (counts.get(t.category) ?? 0) + 1)
+  const categoriesFacet = useMemo<CategoryGroupFacet[]>(() => {
+    const groups = new Map<string, Map<string, number>>()
+    const append = (category: string | undefined, parentCategory: string | undefined) => {
+      const child = category?.trim()
+      if (!child) return
+      const parent = parentCategory?.trim() || child
+      const children = groups.get(parent) ?? new Map<string, number>()
+      children.set(child, (children.get(child) ?? 0) + 1)
+      groups.set(parent, children)
     }
-    for (const b of sourceScopedBookmarks) {
-      if (b.category) counts.set(b.category, (counts.get(b.category) ?? 0) + 1)
-    }
-    return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
+
+    for (const item of sourceScopedTabs) append(item.category, item.parentCategory)
+    for (const item of sourceScopedBookmarks) append(item.category, item.parentCategory)
+
+    return Array.from(groups.entries())
+      .map(([parent, childrenMap]) => {
+        const children = Array.from(childrenMap.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        const totalCount = children.reduce((sum, child) => sum + child.count, 0)
+        return { parent, children, totalCount }
+      })
+      .sort((a, b) => b.totalCount - a.totalCount || a.parent.localeCompare(b.parent))
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
   const intentFacet = useMemo(() => {
@@ -469,7 +506,13 @@ export function App() {
     if (facetMode === 'platform') {
       return sourceScopedBookmarks.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
-    return sourceScopedBookmarks.filter((item) => item.category != null && activeFacets.includes(item.category))
+    const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+    return sourceScopedBookmarks.filter((item) => {
+      const child = item.category?.trim()
+      if (!child) return false
+      const parent = item.parentCategory?.trim() || child
+      return childTokens.has(child) || parentTokens.has(parent)
+    })
   }, [sourceScopedBookmarks, activeFacets, facetMode])
 
   const filteredTabs = useMemo(() => {
@@ -483,7 +526,13 @@ export function App() {
     if (facetMode === 'platform') {
       return sourceScopedTabs.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
-    return sourceScopedTabs.filter((item) => item.category != null && activeFacets.includes(item.category))
+    const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+    return sourceScopedTabs.filter((item) => {
+      const child = item.category?.trim()
+      if (!child) return false
+      const parent = item.parentCategory?.trim() || child
+      return childTokens.has(child) || parentTokens.has(parent)
+    })
   }, [sourceScopedTabs, activeFacets, facetMode])
 
   const handleViewChange = useCallback((view: ViewId) => {

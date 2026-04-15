@@ -8,6 +8,7 @@ export interface UrlUpdate {
 
 export interface CategoryUpdate extends UrlUpdate {
   category: string
+  parentCategory?: string
 }
 
 export interface TagsUpdate extends UrlUpdate {
@@ -56,11 +57,15 @@ export function applyUpdatesByUrl<T extends { url: string; staticIntent?: PageIn
   })
 }
 
-export function applyCategoryUpdates<T extends { url: string; category?: string; staticIntent?: PageIntent; platform?: KnownPlatform }>(
+export function applyCategoryUpdates<T extends { url: string; category?: string; parentCategory?: string; staticIntent?: PageIntent; platform?: KnownPlatform }>(
   items: T[],
   updates: CategoryUpdate[],
 ): T[] {
-  return applyUpdatesByUrl(items, updates, (item, update) => ({ ...item, category: update.category }))
+  return applyUpdatesByUrl(items, updates, (item, update) => ({
+    ...item,
+    category: update.category,
+    ...(update.parentCategory !== undefined ? { parentCategory: update.parentCategory } : {}),
+  }))
 }
 
 export function applyTagsUpdates<T extends { url: string; tags?: string[]; staticIntent?: PageIntent; platform?: KnownPlatform }>(

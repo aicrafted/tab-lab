@@ -2,9 +2,9 @@ import { useCallback } from 'react'
 import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/apply-updates'
 import { kMeans, type ClusterResult } from '@/lib/cluster'
 import { saveClusterNames } from '@/lib/cluster-names'
-import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
+import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, groupRareCategories, normalizeCategoryLabels, splitLargeClusters, type LlmStatus } from '@/lib/classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork } from '@/lib/domain-enricher'
-import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, reprojectAllEmbeddings } from '@/lib/embedder'
+import { clearEmbeddingCache, fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, reprojectAllEmbeddings } from '@/lib/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '@/lib/intent'
 import { detectPlatform } from '@/lib/platform-detection'
 import { clearAllAICache, getCached, setCached } from '@/lib/storage'
@@ -287,7 +287,7 @@ export function useAiPipelines({
         const to = mergeMap[from] ?? from
         if (to === from) continue
         tabUpdates.push({ url, category: to })
-        cacheWrites.push(setCached('tab', url, { ...entry, category: to, processedAt: Date.now() }))
+        cacheWrites.push(setCached('tab', url, { ...entry, category: to, parentCategory: to, processedAt: Date.now() }))
       }
 
       for (const { url, entry } of bookmarkEntries) {
@@ -296,12 +296,34 @@ export function useAiPipelines({
         const to = mergeMap[from] ?? from
         if (to === from) continue
         bookmarkUpdates.push({ url, category: to })
-        cacheWrites.push(setCached('bm', url, { ...entry, category: to, processedAt: Date.now() }))
+        cacheWrites.push(setCached('bm', url, { ...entry, category: to, parentCategory: to, processedAt: Date.now() }))
       }
 
       await Promise.all(cacheWrites)
       if (tabUpdates.length > 0) applyTabCategoryBatch(tabUpdates)
       if (bookmarkUpdates.length > 0) applyBookmarkCategoryBatch(bookmarkUpdates)
+
+      const tabCategoryItems = tabEntries
+        .map(({ url, entry }) => {
+          const from = entry?.category
+          if (!from) return null
+          return { url, category: mergeMap[from] ?? from }
+        })
+        .filter((item): item is { url: string; category: string } => Boolean(item))
+      const bookmarkCategoryItems = bookmarkEntries
+        .map(({ url, entry }) => {
+          const from = entry?.category
+          if (!from) return null
+          return { url, category: mergeMap[from] ?? from }
+        })
+        .filter((item): item is { url: string; category: string } => Boolean(item))
+
+      const [rareTabUpdates, rareBookmarkUpdates] = await Promise.all([
+        groupRareCategories(tabCategoryItems, 'tab', llmSettings),
+        groupRareCategories(bookmarkCategoryItems, 'bm', llmSettings),
+      ])
+      if (rareTabUpdates.length > 0) applyTabCategoryBatch(rareTabUpdates)
+      if (rareBookmarkUpdates.length > 0) applyBookmarkCategoryBatch(rareBookmarkUpdates)
     } catch (err) {
       console.warn('[llm] post-classification category normalization skipped', err)
     }
@@ -644,6 +666,7 @@ export function useAiPipelines({
         await setCached(prefix, item.url, {
           ...existing,
           category: '',
+          parentCategory: undefined,
           clusterId: undefined,
           processedAt: Date.now(),
         })
@@ -910,6 +933,7 @@ export function useAiPipelines({
         prev.map(t => ({
           ...t,
           category: t.category ? mergeMap[t.category] ?? t.category : t.category,
+          parentCategory: t.category ? mergeMap[t.category] ?? t.category : t.parentCategory,
         })),
       )
 
@@ -921,7 +945,7 @@ export function useAiPipelines({
           .filter(([from, to]) => from !== to)
           .flatMap(([from, to]) =>
             tabs.filter(t => t.category === from).map(t =>
-              setCached('tab', t.url, { category: to, processedAt: Date.now() }),
+              setCached('tab', t.url, { category: to, parentCategory: to, processedAt: Date.now() }),
             ),
           ),
       )
@@ -943,6 +967,7 @@ export function useAiPipelines({
     try {
       const allDomains = [...new Set(tabs.map((item) => item.domain).filter(Boolean))]
       const domainMap = await enrichDomains(allDomains, llmSettings)
+      const embeddings = await loadCachedEmbeddings()
       const categoryCounts = new Map<string, number>()
       for (const t of tabs) {
         if (t.category) categoryCounts.set(t.category, (categoryCounts.get(t.category) ?? 0) + 1)
@@ -965,7 +990,17 @@ export function useAiPipelines({
           applyTabCategoryBatch(updates)
         },
         domainMap,
+        embeddings,
       )
+      const tabCategoryItems = (await Promise.all(
+        tabs.map(async (tab) => {
+          const entry = await getCached('tab', tab.url)
+          const category = entry?.category?.trim()
+          return category ? { url: tab.url, category } : null
+        }),
+      )).filter((item): item is { url: string; category: string } => Boolean(item))
+      const rareUpdates = await groupRareCategories(tabCategoryItems, 'tab', llmSettings)
+      if (rareUpdates.length > 0) applyTabCategoryBatch(rareUpdates)
       console.groupEnd()
     } catch (err) {
       console.error('[Pass 3] Failed:', err)
@@ -1038,8 +1073,8 @@ export function useAiPipelines({
   const handleReclassify = useCallback(async () => {
     if (!confirm('Re-classify all pages? This clears only cached categories and cluster assignments.')) return
     await clearCategoryCache()
-    setTabs((prev) => prev.map((item) => ({ ...item, category: undefined, clusterId: undefined })))
-    setBookmarks((prev) => prev.map((item) => ({ ...item, category: undefined, clusterId: undefined })))
+      setTabs((prev) => prev.map((item) => ({ ...item, category: undefined, parentCategory: undefined, clusterId: undefined })))
+      setBookmarks((prev) => prev.map((item) => ({ ...item, category: undefined, parentCategory: undefined, clusterId: undefined })))
     setClusterNames(new Map())
     await saveClusterNames(new Map())
     await handleClassify()
