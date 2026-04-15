@@ -1,0 +1,647 @@
+{
+"google.com": {
+"category": "Web Search",
+"description": "Global search engine and web discovery platform",
+"platform": "reference"
+},
+"youtube.com": {
+"category": "Video Streaming",
+"description": "Video hosting, streaming, and creator platform",
+"platform": "video"
+},
+"facebook.com": {
+"category": "Social Network",
+"description": "Social networking platform for posts and communities",
+"platform": "social"
+},
+"mail.google.com": {
+"category": "Email Service",
+"description": "Gmail web interface for email communication",
+"platform": "email"
+},
+"m.facebook.com": {
+"category": "Social Network",
+"description": "Mobile web version of Facebook social platform",
+"platform": "social"
+},
+"instagram.com": {
+"category": "Social Media",
+"description": "Photo and short video social sharing platform",
+"platform": "social"
+},
+"docs.google.com": {
+"category": "Office Suite",
+"description": "Online documents, spreadsheets, and collaborative editing tools",
+"platform": "tool"
+},
+"chatgpt.com": {
+"category": "AI Assistant",
+"description": "Conversational AI assistant and multimodal productivity tool",
+"platform": "ai"
+},
+"twitter.com": {
+"category": "Social Media",
+"description": "Microblogging platform for posts and real-time discussion",
+"platform": "social"
+},
+"m.youtube.com": {
+"category": "Video Streaming",
+"description": "Mobile web version of YouTube video platform",
+"platform": "video"
+},
+"x.com": {
+"category": "Social Media",
+"description": "Rebranded X social network for real-time posts",
+"platform": "social"
+},
+"whatsapp.com": {
+"category": "Messaging Platform",
+"description": "Messaging and calling platform with cross-device support",
+"platform": "social"
+},
+"baidu.com": {
+"category": "Web Search",
+"description": "Major Chinese search engine and web portal",
+"platform": "reference"
+},
+"wikipedia.org": {
+"category": "Online Encyclopedia",
+"description": "Free collaborative encyclopedia with broad topic coverage",
+"platform": "reference"
+},
+"accounts.google.com": {
+"category": "Account Portal",
+"description": "Google account authentication and identity management portal",
+"platform": "tool"
+},
+"reddit.com": {
+"category": "Discussion Forum",
+"description": "Community discussion platform with topic-based forums",
+"platform": "social"
+},
+"web.whatsapp.com": {
+"category": "Messaging Platform",
+"description": "Web client for WhatsApp messaging and calls",
+"platform": "social"
+},
+"bing.com": {
+"category": "Web Search",
+"description": "Microsoft search engine for web, images, and news",
+"platform": "reference"
+},
+"yahoo.com": {
+"category": "Web Portal",
+"description": "News, search, mail, and portal services",
+"platform": "news"
+},
+"yahoo.co.jp": {
+"category": "Web Portal",
+"description": "Japanese portal for search, news, and services",
+"platform": "news"
+},
+"yandex.ru": {
+"category": "Web Search",
+"description": "Russian search engine and web services portal",
+"platform": "reference"
+},
+"tiktok.com": {
+"category": "Short Video",
+"description": "Short-form video creation and social discovery platform",
+"platform": "video"
+},
+"amazon.com": {
+"category": "Marketplace",
+"description": "Global online marketplace for products and services",
+"platform": "shopping"
+},
+"googleadservices.com": {
+"category": "Ad Services",
+"description": "Google advertising click tracking and campaign routing",
+"platform": "tool"
+},
+"drive.google.com": {
+"category": "Cloud Storage",
+"description": "Cloud file storage and document collaboration service",
+"platform": "cloud"
+},
+"m.wikipedia.org": {
+"category": "Online Encyclopedia",
+"description": "Mobile web version of Wikipedia encyclopedia",
+"platform": "reference"
+},
+"mobile.twitter.com": {
+"category": "Social Media",
+"description": "Mobile web interface for X social network",
+"platform": "social"
+},
+"netflix.com": {
+"category": "Video Streaming",
+"description": "Subscription streaming service for movies and shows",
+"platform": "video"
+},
+"microsoftonline.com": {
+"category": "Identity Platform",
+"description": "Microsoft cloud identity and enterprise login service",
+"platform": "cloud"
+},
+"login.microsoftonline.com": {
+"category": "Identity Platform",
+"description": "Microsoft Entra login endpoint for cloud services",
+"platform": "cloud"
+},
+"docomo.ne.jp": {
+"category": "Telecom Portal",
+"description": "NTT Docomo customer portal and mobile services",
+"platform": "tool"
+},
+"live.com": {
+"category": "Email Portal",
+"description": "Microsoft consumer portal for Outlook and services",
+"platform": "email"
+},
+"linkedin.com": {
+"category": "Professional Network",
+"description": "Professional social network for careers and hiring",
+"platform": "social"
+},
+"t.co": {
+"category": "Link Shortener",
+"description": "X link shortener and redirect tracking service",
+"platform": "tool"
+},
+"openai.com": {
+"category": "AI Lab",
+"description": "AI research company and product platform",
+"platform": "ai"
+},
+"chat.openai.com": {
+"category": "AI Assistant",
+"description": "Legacy ChatGPT web app for AI conversations",
+"platform": "ai"
+},
+"temu.com": {
+"category": "Marketplace",
+"description": "Discount shopping marketplace for consumer goods",
+"platform": "shopping"
+},
+"dzen.ru": {
+"category": "Content Platform",
+"description": "Russian content feed, blogging, and news platform",
+"platform": "blog"
+},
+"gemini.google.com": {
+"category": "AI Assistant",
+"description": "Google Gemini conversational AI assistant platform",
+"platform": "ai"
+},
+"office.com": {
+"category": "Office Suite",
+"description": "Microsoft 365 portal for apps and documents",
+"platform": "tool"
+},
+"naver.com": {
+"category": "Web Portal",
+"description": "Korean search portal with news and services",
+"platform": "reference"
+},
+"support.google.com": {
+"category": "Help Center",
+"description": "Official Google support articles and troubleshooting docs",
+"platform": "docs"
+},
+"search.yahoo.co.jp": {
+"category": "Web Search",
+"description": "Yahoo Japan search engine results portal",
+"platform": "reference"
+},
+"outlook.live.com": {
+"category": "Email Service",
+"description": "Outlook webmail for personal Microsoft accounts",
+"platform": "email"
+},
+"pinterest.com": {
+"category": "Visual Discovery",
+"description": "Image bookmarking and visual inspiration platform",
+"platform": "social"
+},
+"outlook.office.com": {
+"category": "Email Service",
+"description": "Outlook webmail for Microsoft 365 users",
+"platform": "email"
+},
+"bilibili.com": {
+"category": "Video Community",
+"description": "Chinese video, streaming, and creator community platform",
+"platform": "video"
+},
+"mail.yahoo.com": {
+"category": "Email Service",
+"description": "Yahoo Mail web interface for email access",
+"platform": "email"
+},
+"bit.ly": {
+"category": "Link Shortener",
+"description": "URL shortening and link analytics platform",
+"platform": "tool"
+},
+"microsoft.com": {
+"category": "Technology Vendor",
+"description": "Microsoft products, downloads, and corporate information portal",
+"platform": "cloud"
+},
+"calendar.google.com": {
+"category": "Calendar Tool",
+"description": "Online calendar scheduling and event management service",
+"platform": "tool"
+},
+"twitch.tv": {
+"category": "Live Streaming",
+"description": "Live streaming platform for gaming and creators",
+"platform": "video"
+},
+"vk.com": {
+"category": "Social Network",
+"description": "Russian social network for messaging and media",
+"platform": "social"
+},
+"max.com": {
+"category": "Video Streaming",
+"description": "Warner Bros streaming service for movies and series",
+"platform": "video"
+},
+"news.yahoo.co.jp": {
+"category": "News Portal",
+"description": "Yahoo Japan news aggregation and publishing platform",
+"platform": "news"
+},
+"samsung.com": {
+"category": "Technology Brand",
+"description": "Samsung product site, support, and services portal",
+"platform": "tool"
+},
+"mail.ru": {
+"category": "Email Portal",
+"description": "Russian portal for email, news, and services",
+"platform": "email"
+},
+"weather.com": {
+"category": "Weather Service",
+"description": "Weather forecasts, radar maps, and climate updates",
+"platform": "reference"
+},
+"en.wikipedia.org": {
+"category": "Online Encyclopedia",
+"description": "English-language Wikipedia encyclopedia and reference source",
+"platform": "reference"
+},
+"play.google.com": {
+"category": "App Store",
+"description": "Android app marketplace for apps and games",
+"platform": "shopping"
+},
+"discord.com": {
+"category": "Community Chat",
+"description": "Voice, text, and community chat platform",
+"platform": "social"
+},
+"quora.com": {
+"category": "Q&A Platform",
+"description": "Question-and-answer community for knowledge sharing",
+"platform": "qa"
+},
+"fandom.com": {
+"category": "Fan Wiki",
+"description": "Community-created wikis for entertainment and gaming",
+"platform": "reference"
+},
+"globo.com": {
+"category": "Media Portal",
+"description": "Brazilian media portal with news and entertainment",
+"platform": "news"
+},
+"t.me": {
+"category": "Messaging Links",
+"description": "Telegram short links for chats and channels",
+"platform": "social"
+},
+"roblox.com": {
+"category": "Gaming Platform",
+"description": "User-generated games platform and virtual worlds",
+"platform": "games"
+},
+"duckduckgo.com": {
+"category": "Web Search",
+"description": "Privacy-focused search engine with minimal tracking",
+"platform": "reference"
+},
+"aliexpress.com": {
+"category": "Marketplace",
+"description": "Global ecommerce marketplace for low-cost products",
+"platform": "shopping"
+},
+"zoom.us": {
+"category": "Video Meetings",
+"description": "Video conferencing and online meetings platform",
+"platform": "tool"
+},
+"ebay.com": {
+"category": "Marketplace",
+"description": "Auction and fixed-price online shopping marketplace",
+"platform": "shopping"
+},
+"translate.google.com": {
+"category": "Translation Tool",
+"description": "Machine translation service for text and websites",
+"platform": "tool"
+},
+"cnn.com": {
+"category": "News Media",
+"description": "Global news coverage, politics, and live updates",
+"platform": "news"
+},
+"qq.com": {
+"category": "Web Portal",
+"description": "Tencent portal with news, messaging, and services",
+"platform": "social"
+},
+"nytimes.com": {
+"category": "News Media",
+"description": "Major newspaper with news and analysis",
+"platform": "news"
+},
+"msn.com": {
+"category": "News Portal",
+"description": "Microsoft portal for news, content, and services",
+"platform": "news"
+},
+"bbc.co.uk": {
+"category": "News Media",
+"description": "BBC news, radio, and public media services",
+"platform": "news"
+},
+"ya.ru": {
+"category": "Web Search",
+"description": "Short Yandex domain for search and portal",
+"platform": "reference"
+},
+"booking.com": {
+"category": "Travel Booking",
+"description": "Hotel and travel booking marketplace platform",
+"platform": "shopping"
+},
+"walmart.com": {
+"category": "Retail Store",
+"description": "Large retailer ecommerce platform for consumer goods",
+"platform": "shopping"
+},
+"deepseek.com": {
+"category": "AI Platform",
+"description": "AI model company and chatbot platform",
+"platform": "ai"
+},
+"indeed.com": {
+"category": "Job Search",
+"description": "Job listings, hiring, and recruiting platform",
+"platform": "tool"
+},
+"espn.com": {
+"category": "Sports Media",
+"description": "Sports news, scores, analysis, and live coverage",
+"platform": "news"
+},
+"spotify.com": {
+"category": "Music Streaming",
+"description": "Music and podcast streaming subscription platform",
+"platform": "music"
+},
+"apple.com": {
+"category": "Technology Brand",
+"description": "Apple products, services, support, and ecosystem portal",
+"platform": "tool"
+},
+"accuweather.com": {
+"category": "Weather Service",
+"description": "Weather forecasts, radar, alerts, and maps",
+"platform": "reference"
+},
+"paypal.com": {
+"category": "Payments Platform",
+"description": "Online payments, checkout, and money transfer service",
+"platform": "finance"
+},
+"imdb.com": {
+"category": "Entertainment Database",
+"description": "Movie, TV, cast, and ratings reference database",
+"platform": "reference"
+},
+"classroom.google.com": {
+"category": "Learning Platform",
+"description": "Classroom management and assignments for education",
+"platform": "education"
+},
+"bbc.com": {
+"category": "News Media",
+"description": "BBC global news, features, and media content",
+"platform": "news"
+},
+"etsy.com": {
+"category": "Handmade Marketplace",
+"description": "Marketplace for handmade, vintage, and craft goods",
+"platform": "shopping"
+},
+"github.com": {
+"category": "Code Hosting",
+"description": "Git repository hosting and collaborative development platform",
+"platform": "code"
+},
+"zhihu.com": {
+"category": "Q&A Community",
+"description": "Chinese question-and-answer and knowledge sharing platform",
+"platform": "qa"
+},
+"telegram.org": {
+"category": "Messaging Platform",
+"description": "Telegram messaging app homepage and download portal",
+"platform": "social"
+},
+"brave.com": {
+"category": "Browser Platform",
+"description": "Privacy browser, search, and web tools platform",
+"platform": "tool"
+},
+"web.telegram.org": {
+"category": "Messaging Platform",
+"description": "Web client for Telegram chats and channels",
+"platform": "social"
+},
+"rutube.ru": {
+"category": "Video Platform",
+"description": "Russian video hosting and streaming platform",
+"platform": "video"
+},
+"pixiv.net": {
+"category": "Art Community",
+"description": "Artwork sharing and creator community platform",
+"platform": "social"
+},
+"office365.com": {
+"category": "Cloud Workspace",
+"description": "Microsoft 365 cloud apps and productivity services",
+"platform": "cloud"
+},
+"outlook.office365.com": {
+"category": "Email Service",
+"description": "Outlook webmail for enterprise Microsoft 365 accounts",
+"platform": "email"
+},
+"wildberries.ru": {
+"category": "Marketplace",
+"description": "Large ecommerce marketplace for fashion and goods",
+"platform": "shopping"
+},
+"shein.com": {
+"category": "Fashion Retail",
+"description": "Fast-fashion ecommerce store for apparel and accessories",
+"platform": "shopping"
+},
+"disneyplus.com": {
+"category": "Video Streaming",
+"description": "Streaming service for Disney, Marvel, and Star Wars",
+"platform": "video"
+},
+"news.google.com": {
+"category": "News Aggregator",
+"description": "Google news aggregation and personalized headlines platform",
+"platform": "news"
+},
+"music.youtube.com": {
+"category": "Music Streaming",
+"description": "YouTube Music streaming service for songs and playlists",
+"platform": "music"
+},
+"adobe.com": {
+"category": "Creative Software",
+"description": "Creative cloud apps, tools, and enterprise solutions",
+"platform": "tool"
+},
+"avito.ru": {
+"category": "Classifieds Marketplace",
+"description": "Russian classifieds marketplace for goods and services",
+"platform": "shopping"
+},
+"mail.yandex.ru": {
+"category": "Email Service",
+"description": "Yandex Mail web interface for email access",
+"platform": "email"
+},
+"line.me": {
+"category": "Messaging Platform",
+"description": "Messaging app ecosystem with chat and services",
+"platform": "social"
+},
+"messenger.com": {
+"category": "Messaging Platform",
+"description": "Facebook Messenger web app for chat and calls",
+"platform": "social"
+},
+"marca.com": {
+"category": "Sports News",
+"description": "Sports news outlet focused on football and events",
+"platform": "news"
+},
+"flipkart.com": {
+"category": "Marketplace",
+"description": "Indian ecommerce marketplace for products and electronics",
+"platform": "shopping"
+},
+"aol.com": {
+"category": "Web Portal",
+"description": "Legacy portal for news, mail, and content",
+"platform": "news"
+},
+"scribd.com": {
+"category": "Document Library",
+"description": "Digital documents, ebooks, and subscription reading platform",
+"platform": "reference"
+},
+"target.com": {
+"category": "Retail Store",
+"description": "Retail ecommerce platform for household and consumer goods",
+"platform": "shopping"
+},
+"shop.app": {
+"category": "Shopping Assistant",
+"description": "Order tracking and ecommerce checkout companion app",
+"platform": "shopping"
+},
+"ilovepdf.com": {
+"category": "PDF Tools",
+"description": "Online PDF conversion, merge, and editing tools",
+"platform": "tool"
+},
+"wordpress.com": {
+"category": "Blog Platform",
+"description": "Hosted blogging and website publishing platform",
+"platform": "blog"
+},
+"primevideo.com": {
+"category": "Video Streaming",
+"description": "Amazon streaming service for films and series",
+"platform": "video"
+},
+"grok.com": {
+"category": "AI Assistant",
+"description": "xAI conversational assistant and model access portal",
+"platform": "ai"
+},
+"deepl.com": {
+"category": "Translation Tool",
+"description": "High-quality machine translation and writing assistant service",
+"platform": "tool"
+},
+"maps.google.com": {
+"category": "Maps Service",
+"description": "Maps, navigation, places, and route planning platform",
+"platform": "tool"
+},
+"threads.com": {
+"category": "Social Media",
+"description": "Meta microblogging social network for threaded posts",
+"platform": "social"
+},
+"tradingview.com": {
+"category": "Market Charts",
+"description": "Financial charts, analysis tools, and trading ideas",
+"platform": "finance"
+},
+"finance.yahoo.com": {
+"category": "Financial News",
+"description": "Market data, quotes, and financial news portal",
+"platform": "finance"
+},
+"steampowered.com": {
+"category": "Game Platform",
+"description": "PC game storefront, launcher, and community platform",
+"platform": "games"
+},
+"mail.aol.com": {
+"category": "Email Service",
+"description": "AOL Mail web interface for email access",
+"platform": "email"
+},
+"support.microsoft.com": {
+"category": "Help Center",
+"description": "Official Microsoft documentation and troubleshooting articles",
+"platform": "docs"
+},
+"dailymotion.com": {
+"category": "Video Platform",
+"description": "Video hosting and streaming platform for creators",
+"platform": "video"
+},
+"shopify.com": {
+"category": "Commerce Platform",
+"description": "Ecommerce storefront platform for merchants and brands",
+"platform": "tool"
+}
+}

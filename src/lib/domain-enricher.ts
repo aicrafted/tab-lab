@@ -2,6 +2,7 @@ import { chatComplete } from './llm'
 import { domainEnricherLog } from './logger'
 import { enrichDomain } from './prompts'
 import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
+import { getPrefilledDomain } from './domain-prefill'
 
 const DB_NAME = 'tabmind-domains'
 const DB_VERSION = 1
@@ -82,11 +83,40 @@ export function getDomainInfo(
   cache: Map<string, DomainInfo>,
 ): DomainInfo | undefined {
   const normalized = normalizeDomain(domain)
+
+  // 1. Check Prefill (Layer 0)
+  const prefilled = getPrefilledDomain(normalized)
+  if (prefilled) {
+    return {
+      domain: normalized,
+      known: true,
+      category: prefilled.category,
+      description: prefilled.description,
+      platform: prefilled.platform,
+      fetchedAt: 0,
+    }
+  }
+
+  // 2. Check Match in Cache
   const exact = cache.get(normalized)
   if (exact?.known) return exact
 
   const parent = getParentDomain(normalized)
   if (parent) {
+    // 3. Check Parent in Prefill
+    const parentPrefilled = getPrefilledDomain(parent)
+    if (parentPrefilled) {
+      return {
+        domain: parent,
+        known: true,
+        category: parentPrefilled.category,
+        description: parentPrefilled.description,
+        platform: parentPrefilled.platform,
+        fetchedAt: 0,
+      }
+    }
+
+    // 4. Check Parent in Cache
     const parentInfo = cache.get(parent)
     if (parentInfo?.known) return parentInfo
   }
@@ -328,6 +358,9 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
   const toQuery = new Set<string>()
 
   for (const domain of uniqueDomains) {
+    // Skip if prefilled
+    if (getPrefilledDomain(domain)) continue
+
     const cached = cache.get(domain)
     if (!cached || (!cached.known && !isUnknownStillFresh(cached, now))) {
       toQuery.add(domain)
@@ -336,11 +369,18 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
 
   const toQueryParents = new Set<string>()
   for (const domain of uniqueDomains) {
+    // Skip if domain itself is prefilled
+    if (getPrefilledDomain(domain)) continue
+
     const cached = cache.get(domain)
     if (cached?.known) continue
 
     const parent = getParentDomain(domain)
     if (!parent) continue
+
+    // Skip if parent is prefilled
+    if (getPrefilledDomain(parent)) continue
+
     if (toQuery.has(parent)) continue
 
     const parentCached = cache.get(parent)
@@ -367,6 +407,19 @@ export async function enrichDomains(
     const now = Date.now()
 
     for (const domain of uniqueDomains) {
+      const prefilled = getPrefilledDomain(domain)
+      if (prefilled) {
+        result.set(domain, {
+          domain,
+          known: true,
+          category: prefilled.category,
+          description: prefilled.description,
+          platform: prefilled.platform,
+          fetchedAt: 0,
+        })
+        continue
+      }
+
       const cached = cache.get(domain)
       if (!cached) {
         toQuery.push(domain)
@@ -399,6 +452,19 @@ export async function enrichDomains(
       const toQueryParents: string[] = []
 
       for (const parent of uniqueParents) {
+        const prefilled = getPrefilledDomain(parent)
+        if (prefilled) {
+          result.set(parent, {
+            domain: parent,
+            known: true,
+            category: prefilled.category,
+            description: prefilled.description,
+            platform: prefilled.platform,
+            fetchedAt: 0,
+          })
+          continue
+        }
+
         const cached = parentCache.get(parent)
         if (cached && (cached.known || isUnknownStillFresh(cached, parentNow))) {
           result.set(parent, cached)
