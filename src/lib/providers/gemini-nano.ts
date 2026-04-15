@@ -16,8 +16,8 @@ export class GeminiNanoProvider extends LlmProvider {
     return undefined
   }
 
-  getClassificationMethod(settings: LlmSettings): ClassificationMethod {
-    return settings.providers.geminiNano.classificationMethod
+  getClassificationMethod(_settings: LlmSettings): ClassificationMethod {
+    return 'llm'
   }
 
   /** 

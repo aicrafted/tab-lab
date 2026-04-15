@@ -182,16 +182,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     }
   }, [browserMl.embeddingModel])
 
-  const handleSaveGeminiNanoClassification = (method: ClassificationMethod) => {
-    onSaveSettings({
-      ...llmSettings,
-      providers: {
-        ...llmSettings.providers,
-        geminiNano: { ...llmSettings.providers.geminiNano, classificationMethod: method },
-      },
-    })
-  }
-
   const handleSave = useCallback(() => {
     onSaveSettings({
       ...llmSettings,
@@ -498,21 +488,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
           <div className="space-y-4 pt-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Diagnostics</h3>
             <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                <Select 
-                  value={llmSettings.providers.geminiNano.classificationMethod} 
-                  onValueChange={(v) => handleSaveGeminiNanoClassification(v as ClassificationMethod)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                    <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="flex items-start gap-4">
                 <div className={`shrink-0 p-2 rounded-lg ${
                   geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : 
@@ -578,8 +553,13 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     </span>
                   </p>
                   {geminiInfo.caps?.message && (
-                    <p className="text-[9px] font-medium uppercase text-destructive mt-1">
-                      Error: <span className="text-foreground">{geminiInfo.caps.message}</span>
+                    <p className={`text-[9px] font-medium uppercase mt-1 ${
+                      geminiStatus === 'ready' || geminiStatus === 'after-download' 
+                        ? 'text-muted-foreground' 
+                        : 'text-destructive'
+                    }`}>
+                      {geminiStatus === 'ready' || geminiStatus === 'after-download' ? 'Status' : 'Error'}: {' '}
+                      <span className="text-foreground">{geminiInfo.caps.message}</span>
                     </p>
                   )}
               </div>
