@@ -5,6 +5,7 @@ import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from './types'
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 
 const VALID_PLATFORMS = new Set<string>(KNOWN_PLATFORMS)
+const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 
 type KnownPlatform = DomainInfo['platform']
 
@@ -95,7 +96,7 @@ const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you c
 - "domain": exact domain string from the input (required, copy exactly with full TLD/subdomain; do not shorten or rewrite)
 - "category": short label (1-4 words, Title Case) describing the site's main purpose (required)
 - "description": 3-7 words describing what the site is (required)
-- "platform": one of [social, video, code, registry, qa, blog, docs, shopping, news, ai, tool, sandbox, cloud, music, finance, ci, games, education, email, reference] — pick the best match; omit only if none fits
+- "platform": one of [${KNOWN_PLATFORMS_TEXT}] — pick the best match; omit only if none fits
 
 Skip only: IP addresses, localhost, clearly private/internal hostnames.
 Include everything else you know — companies, brands, shops, media, tools from any country.

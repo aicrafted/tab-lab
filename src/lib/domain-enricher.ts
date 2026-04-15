@@ -1,7 +1,7 @@
 import { chatComplete } from './llm'
 import { domainEnricherLog } from './logger'
 import { enrichDomain } from './prompts'
-import type { KnownPlatform, LlmSettings } from './types'
+import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
 
 const DB_NAME = 'tabmind-domains'
 const DB_VERSION = 1
@@ -43,10 +43,7 @@ const DOMAIN_BATCH_RESPONSE_SCHEMA = {
         description: { type: 'string' },
         platform: {
           type: 'string',
-          enum: [
-            'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
-            'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
-          ],
+          enum: [...KNOWN_PLATFORMS],
         },
       },
       required: ['domain', 'category', 'description'],
