@@ -460,11 +460,12 @@ ${labels.map((label) => `- ${label}`).join('\n')}
 
 Reply with JSON only, no explanation.`
 
+  const maxTokens = Math.min(4000, labels.length * 50 + 300)
   const raw = await chatComplete(
     'You output strict JSON only.',
     prompt,
     settings,
-    300,
+    maxTokens,
     settings.tasks.chat.provider !== 'gemini-nano'
       ? {
         responseFormat: 'json',
@@ -491,75 +492,102 @@ export async function groupRareCategories(
   items: { url: string; category: string }[],
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
+  maxPasses = 3,
 ): Promise<{ url: string; category: string }[]> {
-  const normalizedItems = items
+  let current = items
     .map((item) => ({ url: item.url, category: item.category.trim() }))
     .filter((item) => item.category.length > 0)
-  if (normalizedItems.length === 0) return []
+  if (current.length === 0) return []
 
-  const counts = new Map<string, number>()
-  for (const item of normalizedItems) {
-    counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
+  const allUpdates = new Map<string, string>() // url → final category
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const counts = new Map<string, number>()
+    for (const item of current) {
+      counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
+    }
+
+    const frequent = [...counts.entries()]
+      .filter(([, count]) => count >= RARE_THRESHOLD)
+      .map(([category]) => category)
+    const rare = [...counts.entries()]
+      .filter(([, count]) => count < RARE_THRESHOLD)
+      .map(([category]) => category)
+
+    if (rare.length === 0) {
+      console.log(`[classifier] groupRareCategories: no rare categories after pass ${pass}, stopping`)
+      break
+    }
+
+    console.log(`[classifier] groupRareCategories pass ${pass + 1}: ${rare.length} rare, ${frequent.length} frequent`)
+
+    const allCategories = [
+      ...frequent.map((c) => `${c} (${counts.get(c)} tabs)`),
+      ...rare.map((c) => `${c} (${counts.get(c)} tab${(counts.get(c) ?? 1) > 1 ? 's' : ''})`),
+    ]
+    const prompt = `You are consolidating browser tab categories. Map each RARE category to its best target.
+
+All categories (rare = 1-2 tabs, others are stable):
+${allCategories.map((c) => `- ${c}`).join('\n')}
+
+Rare categories to reassign:
+${rare.map((c) => `- ${c}`).join('\n')}
+
+Rules:
+- Map each rare category to a frequent category if semantically fitting
+- If two rare categories describe the same topic, map both to one shared label
+- Prefer existing category names over inventing new ones
+- Avoid vague labels like "Other", "Miscellaneous", "General"
+- Reply ONLY with a JSON object: rare category → target category name
+
+Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"}`
+
+    const provider = settings.tasks.chat.provider
+    const useJsonOutput = provider !== 'gemini-nano'
+    const maxTokens = Math.min(4000, rare.length * 50 + 300)
+    const raw = await chatComplete(
+      'You output strict JSON only.',
+      prompt,
+      settings,
+      maxTokens,
+      useJsonOutput
+        ? {
+          responseFormat: 'json',
+          metricKey: 'classifier-group-rare',
+          jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
+          ...(provider === 'webllm' ? { disableThinking: true } : {}),
+        }
+        : {},
+    )
+
+    let mergeMap: Record<string, string> = {}
+    try {
+      mergeMap = JSON.parse(extractJson(raw)) as Record<string, string>
+    } catch {
+      console.warn(`[classifier] groupRareCategories pass ${pass + 1} parse failed, stopping`)
+      break
+    }
+
+    // Apply mapping to current items, track changes
+    let changed = false
+    current = current.map((item) => {
+      const targetRaw = mergeMap[item.category]
+      const target = typeof targetRaw === 'string' ? targetRaw.trim().slice(0, 40) : ''
+      if (!target || target === item.category) return item
+      changed = true
+      allUpdates.set(item.url, target)
+      return { url: item.url, category: target }
+    })
+
+    if (!changed) {
+      console.log(`[classifier] groupRareCategories: no changes in pass ${pass + 1}, stopping`)
+      break
+    }
   }
 
-  const frequent = [...counts.entries()]
-    .filter(([, count]) => count >= RARE_THRESHOLD)
-    .map(([category]) => category)
-  const rare = [...counts.entries()]
-    .filter(([, count]) => count < RARE_THRESHOLD)
-    .map(([category]) => category)
-  if (rare.length === 0) return []
+  if (allUpdates.size === 0) return []
 
-  const frequentSection = frequent.length > 0
-    ? frequent.map((category) => `- ${category} (${counts.get(category)} tabs)`).join('\n')
-    : '- (none)'
-  const prompt = `You are merging browser tab categories. Some categories appear rarely and should be absorbed into a common broader category.
-
-Frequent categories (keep these or use as merge targets):
-${frequentSection}
-
-Rare categories to merge (each has 1-2 tabs):
-${rare.map((category) => `- ${category}`).join('\n')}
-
-For each rare category, assign it to the most semantically appropriate frequent category.
-If no frequent category fits, create a new broad label (but avoid "Other").
-Reply ONLY with a JSON object mapping each rare category to its target.
-
-Example: {"Steam Games": "Gaming", "Search Engine Docs": "Developer Tools"}`
-
-  const provider = settings.tasks.chat.provider
-  const useJsonOutput = provider !== 'gemini-nano'
-  const raw = await chatComplete(
-    'You output strict JSON only.',
-    prompt,
-    settings,
-    400,
-    useJsonOutput
-      ? {
-        responseFormat: 'json',
-        metricKey: 'classifier-group-rare',
-        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
-        ...(provider === 'webllm' ? { disableThinking: true } : {}),
-      }
-      : {},
-  )
-
-  let mergeMap: Record<string, string> = {}
-  try {
-    mergeMap = JSON.parse(extractJson(raw)) as Record<string, string>
-  } catch {
-    console.warn('[classifier] groupRareCategories parse failed, skipping')
-    return []
-  }
-
-  const updates: { url: string; category: string }[] = []
-  for (const item of normalizedItems) {
-    const targetRaw = mergeMap[item.category]
-    const target = typeof targetRaw === 'string' ? targetRaw.trim().slice(0, 40) : ''
-    if (!target || target === item.category) continue
-    updates.push({ url: item.url, category: target })
-  }
-  if (updates.length === 0) return []
+  const updates = [...allUpdates.entries()].map(([url, category]) => ({ url, category }))
 
   await Promise.all(updates.map(async (update) => {
     const existing = await getCached(prefix, update.url)

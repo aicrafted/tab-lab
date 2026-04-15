@@ -447,29 +447,63 @@ export function App() {
   }, [sourceScopedBookmarks, sourceScopedTabs])
 
   const categoriesFacet = useMemo<CategoryGroupFacet[]>(() => {
-    const groups = new Map<string, Map<string, number>>()
+    const rawGroups = new Map<string, Map<string, number>>()
+    const globalChildCounts = new Map<string, number>()
     const append = (category: string | undefined, parentCategory: string | undefined) => {
       const child = category?.trim()
       if (!child) return
       const parent = parentCategory?.trim() || child
-      const children = groups.get(parent) ?? new Map<string, number>()
+      const children = rawGroups.get(parent) ?? new Map<string, number>()
       children.set(child, (children.get(child) ?? 0) + 1)
-      groups.set(parent, children)
+      rawGroups.set(parent, children)
+      globalChildCounts.set(child, (globalChildCounts.get(child) ?? 0) + 1)
     }
 
     for (const item of sourceScopedTabs) append(item.category, item.parentCategory)
     for (const item of sourceScopedBookmarks) append(item.category, item.parentCategory)
 
+    const groups = new Map<string, Map<string, number>>()
+    for (const [rawParent, childrenMap] of rawGroups.entries()) {
+      const candidateNames = new Set<string>([rawParent, ...Array.from(childrenMap.keys())])
+      let chosenParent = rawParent
+      let bestCount = globalChildCounts.get(rawParent) ?? 0
+      for (const name of candidateNames) {
+        const count = globalChildCounts.get(name) ?? 0
+        if (count > bestCount) {
+          bestCount = count
+          chosenParent = name
+        }
+      }
+      const targetChildren = groups.get(chosenParent) ?? new Map<string, number>()
+      for (const [name, count] of childrenMap.entries()) {
+        targetChildren.set(name, (targetChildren.get(name) ?? 0) + count)
+      }
+      groups.set(chosenParent, targetChildren)
+    }
+
     return Array.from(groups.entries())
       .map(([parent, childrenMap]) => {
         const children = Array.from(childrenMap.entries())
-          .map(([name, count]) => ({ name, count }))
+          .map(([name, localCount]) => ({
+            name,
+            count: globalChildCounts.get(name) ?? localCount,
+          }))
           .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-        const totalCount = children.reduce((sum, child) => sum + child.count, 0)
+        const aggregateNames = new Set<string>([parent, ...Array.from(childrenMap.keys())])
+        const totalCount = Array.from(aggregateNames)
+          .reduce((sum, name) => sum + (globalChildCounts.get(name) ?? 0), 0)
         return { parent, children, totalCount }
       })
       .sort((a, b) => b.totalCount - a.totalCount || a.parent.localeCompare(b.parent))
   }, [sourceScopedTabs, sourceScopedBookmarks])
+
+  const parentCategoryFilterMap = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const group of categoriesFacet) {
+      map.set(group.parent, new Set([group.parent, ...group.children.map((child) => child.name)]))
+    }
+    return map
+  }, [categoriesFacet])
 
   const intentFacet = useMemo(() => {
     const counts = new Map<string, number>()
@@ -507,13 +541,21 @@ export function App() {
       return sourceScopedBookmarks.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
     const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+    const categoriesFromParents = new Set<string>()
+    for (const parent of parentTokens) {
+      const names = parentCategoryFilterMap.get(parent)
+      if (!names) {
+        categoriesFromParents.add(parent)
+        continue
+      }
+      for (const name of names) categoriesFromParents.add(name)
+    }
     return sourceScopedBookmarks.filter((item) => {
       const child = item.category?.trim()
       if (!child) return false
-      const parent = item.parentCategory?.trim() || child
-      return childTokens.has(child) || parentTokens.has(parent)
+      return childTokens.has(child) || categoriesFromParents.has(child)
     })
-  }, [sourceScopedBookmarks, activeFacets, facetMode])
+  }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap])
 
   const filteredTabs = useMemo(() => {
     if (activeFacets.length === 0) return sourceScopedTabs
@@ -527,13 +569,21 @@ export function App() {
       return sourceScopedTabs.filter((item) => item.platform != null && activeFacets.includes(item.platform))
     }
     const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+    const categoriesFromParents = new Set<string>()
+    for (const parent of parentTokens) {
+      const names = parentCategoryFilterMap.get(parent)
+      if (!names) {
+        categoriesFromParents.add(parent)
+        continue
+      }
+      for (const name of names) categoriesFromParents.add(name)
+    }
     return sourceScopedTabs.filter((item) => {
       const child = item.category?.trim()
       if (!child) return false
-      const parent = item.parentCategory?.trim() || child
-      return childTokens.has(child) || parentTokens.has(parent)
+      return childTokens.has(child) || categoriesFromParents.has(child)
     })
-  }, [sourceScopedTabs, activeFacets, facetMode])
+  }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap])
 
   const handleViewChange = useCallback((view: ViewId) => {
     setActiveView(view)
@@ -684,9 +734,12 @@ export function App() {
           activeMode={facetMode}
           activeValues={activeFacets}
           onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}
-          onToggle={(v) => setActiveFacets(prev =>
-            prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v],
-          )}
+          onToggle={(v) => setActiveFacets((prev) => {
+            if (facetMode === 'categories') {
+              return prev.includes(v) ? [] : [v]
+            }
+            return prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+          })}
           onClear={() => setActiveFacets([])}
           width={sidebarWidth}
         />
