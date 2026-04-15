@@ -135,7 +135,9 @@ export function DataTable<TData, TValue>({
                 {hg.headers.map(header => (
                   (() => {
                     const isFavicon = header.column.id === 'favicon'
-                    const isTitleOrTags = header.column.id === 'title' || header.column.id === 'tags'
+                    const isTitle = header.column.id === 'title'
+                    const isTags = header.column.id === 'tags'
+                    const isTitleOrTags = isTitle || isTags
                     return (
                   <TableHead
                     key={header.id}
@@ -143,7 +145,8 @@ export function DataTable<TData, TValue>({
                     className={cn(
                       header.column.getCanSort() && 'cursor-pointer select-none',
                       isFavicon && 'w-8 min-w-8 px-2',
-                      isTitleOrTags && 'w-1/2 max-w-0',
+                      isTitle && 'w-1/2 min-w-[250px] max-w-0',
+                      isTags && 'w-1/2 max-w-0',
                       !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
                     )}
                   >
@@ -177,13 +180,16 @@ export function DataTable<TData, TValue>({
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map(cell => {
                     const isFavicon = cell.column.id === 'favicon'
-                    const isTitleOrTags = cell.column.id === 'title' || cell.column.id === 'tags'
+                    const isTitle = cell.column.id === 'title'
+                    const isTags = cell.column.id === 'tags'
+                    const isTitleOrTags = isTitle || isTags
                     return (
                     <TableCell
                       key={cell.id}
                       className={cn(
                         isFavicon && 'w-8 min-w-8 px-2',
-                        isTitleOrTags && 'w-1/2 max-w-0',
+                        isTitle && 'w-1/2 min-w-[250px] max-w-0',
+                        isTags && 'w-1/2 max-w-0',
                         !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
                       )}
                     >
