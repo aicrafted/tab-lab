@@ -17,6 +17,10 @@ export class BrowserMlProvider extends LlmProvider {
   getClassificationMethod(settings: LlmSettings): ClassificationMethod {
     return settings.providers.browserMl.classificationMethod
   }
+  
+  getTemperature(settings: LlmSettings): number {
+    return settings.providers.browserMl.temperature
+  }
 
   async chat(messages: ChatMessage[], settings: LlmSettings, options?: ChatOptions): Promise<string> {
     const model = this.getChatModel(settings)
@@ -27,7 +31,8 @@ export class BrowserMlProvider extends LlmProvider {
 
     return webllmChat(systemPrompt, userMessage, model, options?.maxTokens, {
       responseFormat: (options as any).responseFormat,
-      jsonSchema: (options as any).jsonSchema
+      jsonSchema: (options as any).jsonSchema,
+      temperature: options?.temperature ?? settings.providers.browserMl.temperature
     })
   }
 

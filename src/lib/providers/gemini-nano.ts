@@ -19,6 +19,10 @@ export class GeminiNanoProvider extends LlmProvider {
   getClassificationMethod(_settings: LlmSettings): ClassificationMethod {
     return 'llm'
   }
+  
+  getTemperature(settings: LlmSettings): number {
+    return settings.providers.geminiNano.temperature
+  }
 
   /** 
    * Finds the Prompt API factory in various places (browser specs changed multiple times).
@@ -54,10 +58,9 @@ export class GeminiNanoProvider extends LlmProvider {
     if (options?.signal) createOptions.signal = options.signal
 
     // Spec says: must specify both topK and temperature, or neither
-    if (options?.temperature !== undefined) {
-      createOptions.temperature = options.temperature
-      createOptions.topK = 3
-    }
+    // To ensure consistency, we now ALWAYS pass both, using values from settings by default.
+    createOptions.temperature = options?.temperature ?? _settings.providers.geminiNano.temperature
+    createOptions.topK = options?.topK ?? 3
 
     console.debug('[gemini-nano] creating session with options:', {
       ...createOptions,

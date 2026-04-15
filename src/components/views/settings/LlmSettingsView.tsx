@@ -50,6 +50,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const [browserMl, setBrowserMl] = useState(llmSettings.providers.browserMl)
   const [lmstudio, setLmstudio] = useState(llmSettings.providers.lmstudio)
   const [openrouter, setOpenrouter] = useState(llmSettings.providers.openrouter)
+  const [geminiNano, setGeminiNano] = useState(llmSettings.providers.geminiNano)
 
   // Task Assignments
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
@@ -137,7 +138,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     try {
       const list = await fetchLmStudioModels({
         ...llmSettings,
-        providers: { browserMl, lmstudio, openrouter, geminiNano: llmSettings.providers.geminiNano }
+        providers: { browserMl, lmstudio, openrouter, geminiNano }
       })
       setModels(list)
     } catch (err) {
@@ -185,13 +186,13 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const handleSave = useCallback(() => {
     onSaveSettings({
       ...llmSettings,
-      providers: { browserMl, lmstudio, openrouter, geminiNano: llmSettings.providers.geminiNano },
+      providers: { browserMl, lmstudio, openrouter, geminiNano },
       tasks: {
         chat: { provider: chatProvider },
         embedding: { provider: embeddingProvider },
       },
     })
-  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter])
+  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano])
 
   return (
     <div className="max-w-4xl space-y-10 py-4">
@@ -267,20 +268,34 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 </Button>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                <Select 
-                  value={browserMl.classificationMethod} 
-                  onValueChange={(v) => setBrowserMl({ ...browserMl, classificationMethod: v as ClassificationMethod })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                    <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex gap-4 pt-1">
+                <div className="space-y-1.5 flex-1">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
+                  <Select 
+                    value={browserMl.classificationMethod} 
+                    onValueChange={(v) => setBrowserMl({ ...browserMl, classificationMethod: v as ClassificationMethod })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
+                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 w-24">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={browserMl.temperature}
+                    onChange={(e) => setBrowserMl({ ...browserMl, temperature: parseFloat(e.target.value) || 0 })}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -348,20 +363,34 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   </Select>
                 </div>
               </div>
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                <Select 
-                  value={lmstudio.classificationMethod} 
-                  onValueChange={(v) => setLmstudio({ ...lmstudio, classificationMethod: v as ClassificationMethod })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                    <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex gap-4 pt-1">
+                <div className="space-y-1.5 flex-1">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
+                  <Select 
+                    value={lmstudio.classificationMethod} 
+                    onValueChange={(v) => setLmstudio({ ...lmstudio, classificationMethod: v as ClassificationMethod })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
+                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 w-24">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={lmstudio.temperature}
+                    onChange={(e) => setLmstudio({ ...lmstudio, temperature: parseFloat(e.target.value) || 0 })}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -412,20 +441,34 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   </Select>
                 </div>
               </div>
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                <Select 
-                  value={openrouter.classificationMethod} 
-                  onValueChange={(v) => setOpenrouter({ ...openrouter, classificationMethod: v as ClassificationMethod })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                    <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex gap-4 pt-1">
+                <div className="space-y-1.5 flex-1">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
+                  <Select 
+                    value={openrouter.classificationMethod} 
+                    onValueChange={(v) => setOpenrouter({ ...openrouter, classificationMethod: v as ClassificationMethod })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
+                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 w-24">
+                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={openrouter.temperature}
+                    onChange={(e) => setOpenrouter({ ...openrouter, temperature: parseFloat(e.target.value) || 0 })}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -486,6 +529,22 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
           </div>
 
           <div className="space-y-4 pt-4">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Configuration</h3>
+            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+              <div className="space-y-1.5 w-24">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={geminiNano.temperature}
+                  onChange={(e) => setGeminiNano({ ...geminiNano, temperature: parseFloat(e.target.value) || 0 })}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Diagnostics</h3>
             <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
               <div className="flex items-start gap-4">

@@ -13,6 +13,7 @@ export interface WebllmChatOptions {
     schema: Record<string, unknown>
     strict?: boolean
   }
+  temperature?: number
 }
 
 interface ChatMessage {
@@ -89,7 +90,7 @@ export async function webllmChat(
       { role: 'user', content: userContent },
     ],
     max_tokens: maxTokens,
-    temperature: 0.1,
+    temperature: options.temperature ?? 0.1,
     ...(options.disableThinking
       ? { extra_body: { enable_thinking: false } }
       : {}),

@@ -113,8 +113,12 @@ export async function chatComplete(
   const provider = settings.tasks.chat.provider
   const callId = ++llmCallSeq
   const startedAt = Date.now()
-
-  const model = provider === 'gemini-nano' ? 'gemini-nano' : (settings.providers as any)[provider]?.chatModel ?? ''
+  const chatProviderInstance = getChatProvider(provider)
+  const model = chatProviderInstance.getChatModel(settings) ?? provider
+  
+  // Resolve effective params for logging
+  const effectiveTemperature = options.temperature ?? chatProviderInstance.getTemperature(settings)
+  const effectiveTopK = options.topK ?? (provider === 'gemini-nano' ? 3 : undefined)
 
   if (ENABLE_LLM_CALL_DEBUG) {
     llmLog.info('llm-call start', {
@@ -123,8 +127,8 @@ export async function chatComplete(
       metricKey,
       model,
       maxTokens,
-      temperature: options.temperature,
-      topK: options.topK,
+      temperature: effectiveTemperature,
+      ...(effectiveTopK !== undefined ? { topK: effectiveTopK } : {}),
       responseFormat: options.responseFormat ?? 'text',
       systemPromptLength: systemPrompt.length,
       userMessageLength: cleanMessage.length,

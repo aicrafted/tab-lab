@@ -90,7 +90,7 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max flex-col gap-0 pb-2">
-        <div className="flex items-center gap-1 pt-1 px-1">
+        <div className="flex items-center gap-1">
           {VIEW_GROUPS.map((group) => {
             const isActive = group.id === activeGroup.id
             const isSettingsGroup = group.id === 'settings'
@@ -104,10 +104,10 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
                   title={group.hint}
                   onClick={() => onChange(group.views[0])}
                   className={cn(
-                    'whitespace-nowrap rounded-t-md rounded-b-none border-b px-2.5 py-1 text-base font-semibold transition-colors',
+                    'whitespace-nowrap rounded-t-md rounded-b-none border-b px-2.5 py-1 text-base transition-colors',
                     isActive
-                      ? 'border-primary/50 bg-primary/20 text-primary ring-1 ring-primary/35'
-                      : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',
+                      ? 'border-primary/50 text-primary font-semibold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
                     isSettingsGroup && 'ml-2',
                   )}
                 >

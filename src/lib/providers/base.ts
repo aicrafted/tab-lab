@@ -42,6 +42,9 @@ export abstract class LlmProvider {
   /** Returns the preferred classification method (LLM vs NLI) from settings */
   abstract getClassificationMethod(settings: LlmSettings): ClassificationMethod
 
+  /** Returns the temperature for this provider from settings */
+  abstract getTemperature(settings: LlmSettings): number
+
   abstract chat(
     messages: ChatMessage[],
     settings: LlmSettings,
