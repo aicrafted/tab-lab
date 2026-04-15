@@ -1,23 +1,10 @@
 import { extractJson } from './llm'
 import type { DomainInfo } from './domain-enricher'
-import type { PageIntent } from './types'
+import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from './types'
 
-const VALID_INTENTS: PageIntent[] = [
-  'article',
-  'reference',
-  'tool',
-  'service',
-  'transactional',
-  'video',
-  'social',
-  'repository',
-  'other',
-]
+const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 
-const VALID_PLATFORMS = new Set([
-  'social', 'video', 'code', 'registry', 'qa', 'blog', 'docs', 'shopping', 'news', 'ai',
-  'tool', 'sandbox', 'cloud', 'music', 'finance', 'ci', 'games', 'education', 'email', 'reference',
-])
+const VALID_PLATFORMS = new Set<string>(KNOWN_PLATFORMS)
 
 type KnownPlatform = DomainInfo['platform']
 

@@ -5,21 +5,10 @@ import { detectPlatform, intentFromPlatform } from './platform-detection'
 import { classifyIntent as classifyIntentContract } from './prompts'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
-import type { LlmSettings, PageIntent } from './types'
-import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
+import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
-const VALID_INTENTS: PageIntent[] = [
-  'article',
-  'reference',
-  'tool',
-  'service',
-  'transactional',
-  'video',
-  'social',
-  'repository',
-  'other',
-]
+const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 const intentParseMetrics = {
   strict: 0,
   fallback: 0,
@@ -45,25 +34,6 @@ const INTENT_RESPONSE_SCHEMA = {
   },
   strict: false,
 } as const
-// Rich descriptors for NLI intent classification.
-// Keywords matching what page titles/domains of that intent look like.
-const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
-  article:       'blog post tutorial guide news article essay how-to read story opinion',
-  reference:     'documentation API reference docs cheatsheet specification manual MDN readthedocs',
-  tool:          'dashboard editor app generator converter calculator online tool SaaS platform',
-  service:       'pricing signup login register account settings product landing page',
-  transactional: 'order confirmation booking receipt invoice tracking ticket payment',
-  video:         'YouTube watch video stream episode channel playlist Vimeo Twitch',
-  social:        'Reddit thread discussion Hacker News Twitter forum comments community',
-  repository:    'GitHub GitLab repository source code npm package crates.io releases',
-  document:      'PDF document spreadsheet Word Excel presentation file download',
-  image:         'image photo picture PNG JPG SVG gallery wallpaper',
-  audio:         'audio MP3 podcast sound music track recording',
-  archive:       'archive ZIP download release DMG installer package',
-  data:          'JSON XML data export database SQL dataset structured',
-  code:          'source file script configuration YAML TOML CSS JavaScript TypeScript',
-  other:         'miscellaneous page',
-}
 
 let intentLabelEmbeddingsPromise: Promise<Map<PageIntent, number[]>> | null = null
 
