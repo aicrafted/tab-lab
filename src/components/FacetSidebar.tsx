@@ -155,30 +155,36 @@ export function FacetSidebar({
         </div>
       </div>
 
-      <div className="flex shrink-0 border-b border-border">
-        {(['domains', 'categories', 'intent', 'platform', 'tags'] as const).map(mode => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => onModeChange(mode)}
-            className={cn(
-              'flex-1 py-2 text-xs font-medium transition-colors',
-              activeMode === mode
-                ? 'border-b-2 border-primary text-primary'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {mode === 'domains'
-              ? 'Domains'
-              : mode === 'categories'
-                ? 'Categories'
-                : mode === 'intent'
-                  ? 'Intent'
-                  : mode === 'platform'
-                    ? 'Platform'
-                    : 'Tags'}
-          </button>
-        ))}
+      <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
+        <div className="flex items-center justify-center">
+          {(['domains', 'categories', 'intent', 'platform', 'tags'] as const).map((mode, index, all) => (
+            <div key={mode} className="flex items-center">
+              <button
+                type="button"
+                onClick={() => onModeChange(mode)}
+                className={cn(
+                  'border-b-2 border-transparent px-1 pt-1 pb-1  font-medium leading-none transition-colors',
+                  activeMode === mode
+                    ? 'border-primary text-primary'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {mode === 'domains'
+                  ? 'Domains'
+                  : mode === 'categories'
+                    ? 'Categories'
+                    : mode === 'intent'
+                      ? 'Intent'
+                      : mode === 'platform'
+                        ? 'Platform'
+                        : 'Tags'}
+              </button>
+              {index < all.length - 1 && (
+                <span className="mx-0.5 text-[10px] leading-none text-muted-foreground/45">·</span>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -195,6 +201,12 @@ export function FacetSidebar({
         ) : activeMode === 'categories' ? (
           <GroupedCategoryList
             groups={categories}
+            activeValues={activeValues}
+            onToggle={onToggle}
+          />
+        ) : activeMode === 'tags' ? (
+          <CompactTagList
+            items={tags}
             activeValues={activeValues}
             onToggle={onToggle}
           />
@@ -223,6 +235,43 @@ export function FacetSidebar({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function CompactTagList({
+  items,
+  activeValues,
+  onToggle,
+}: {
+  items: FacetItem[]
+  activeValues: string[]
+  onToggle: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-x-2 gap-y-2 p-3">
+      {items.map((item) => {
+        const active = activeValues.includes(item.value)
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onToggle(item.value)}
+            className={cn(
+              'inline-flex max-w-full items-start gap-0.5 rounded px-1 py-0.5 text-[12px] leading-none transition-colors',
+              active
+                ? 'bg-card text-primary'
+                : 'bg-transparent text-muted-foreground hover:text-foreground',
+            )}
+            title={`${item.value} (${item.count})`}
+          >
+            <span className="truncate">{item.value}</span>
+            <sup className={cn('tabular-nums text-[10px] leading-none', active ? 'text-primary/80' : 'text-muted-foreground/70')}>
+              {item.count}
+            </sup>
+          </button>
+        )
+      })}
     </div>
   )
 }

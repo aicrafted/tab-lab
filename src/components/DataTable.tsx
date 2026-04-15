@@ -133,14 +133,18 @@ export function DataTable<TData, TValue>({
             {table.getHeaderGroups().map(hg => (
               <TableRow key={hg.id} className="hover:bg-transparent">
                 {hg.headers.map(header => (
+                  (() => {
+                    const isFavicon = header.column.id === 'favicon'
+                    const isTitleOrTags = header.column.id === 'title' || header.column.id === 'tags'
+                    return (
                   <TableHead
                     key={header.id}
                     onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                     className={cn(
                       header.column.getCanSort() && 'cursor-pointer select-none',
-                      header.column.id === 'favicon' && 'w-8 min-w-8 px-2',
-                      header.column.id === 'title' && 'w-full max-w-0',
-                      header.column.id !== 'title' && header.column.id !== 'favicon' && 'whitespace-nowrap',
+                      isFavicon && 'w-8 min-w-8 px-2',
+                      isTitleOrTags && 'w-1/2 max-w-0',
+                      !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
                     )}
                   >
                     {header.isPlaceholder ? null : (
@@ -155,6 +159,8 @@ export function DataTable<TData, TValue>({
                       </span>
                     )}
                   </TableHead>
+                    )
+                  })()
                 ))}
               </TableRow>
             ))}
@@ -169,18 +175,22 @@ export function DataTable<TData, TValue>({
             ) : table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map(row => (
                 <TableRow key={row.id}>
-                  {row.getVisibleCells().map(cell => (
+                  {row.getVisibleCells().map(cell => {
+                    const isFavicon = cell.column.id === 'favicon'
+                    const isTitleOrTags = cell.column.id === 'title' || cell.column.id === 'tags'
+                    return (
                     <TableCell
                       key={cell.id}
                       className={cn(
-                        cell.column.id === 'favicon' && 'w-8 min-w-8 px-2',
-                        cell.column.id === 'title' && 'w-full max-w-0',
-                        cell.column.id !== 'title' && cell.column.id !== 'favicon' && 'whitespace-nowrap',
+                        isFavicon && 'w-8 min-w-8 px-2',
+                        isTitleOrTags && 'w-1/2 max-w-0',
+                        !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
                       )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
-                  ))}
+                    )
+                  })}
                 </TableRow>
               ))
             ) : (

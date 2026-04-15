@@ -160,7 +160,7 @@ export function App() {
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
   const [, startFilterTransition] = useTransition()
-  const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
+  const { width: sidebarWidth, startDrag } = useResizable(280, 280, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
   const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
 
