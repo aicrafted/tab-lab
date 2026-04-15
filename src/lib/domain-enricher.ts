@@ -357,8 +357,8 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
   const now = Date.now()
   const toQuery = new Set<string>()
 
+  // 1. Identify unresolved domains
   for (const domain of uniqueDomains) {
-    // Skip if prefilled
     if (getPrefilledDomain(domain)) continue
 
     const cached = cache.get(domain)
@@ -367,29 +367,20 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
     }
   }
 
-  const toQueryParents = new Set<string>()
-  for (const domain of uniqueDomains) {
-    // Skip if domain itself is prefilled
-    if (getPrefilledDomain(domain)) continue
-
-    const cached = cache.get(domain)
-    if (cached?.known) continue
-
+  // 2. Proactively add parents of unresolved domains
+  for (const domain of toQuery) {
     const parent = getParentDomain(domain)
-    if (!parent) continue
+    if (!parent || toQuery.has(parent)) continue
 
-    // Skip if parent is prefilled
     if (getPrefilledDomain(parent)) continue
-
-    if (toQuery.has(parent)) continue
 
     const parentCached = cache.get(parent)
     if (!parentCached || (!parentCached.known && !isUnknownStillFresh(parentCached, now))) {
-      toQueryParents.add(parent)
+      toQuery.add(parent)
     }
   }
 
-  return toQuery.size + toQueryParents.size
+  return toQuery.size
 }
 
 export async function enrichDomains(
@@ -403,7 +394,7 @@ export async function enrichDomains(
 
     const cache = await loadCachedDomains()
     const result = new Map<string, DomainInfo>()
-    const toQuery: string[] = []
+    const toQuery = new Set<string>()
     const now = Date.now()
 
     for (const domain of uniqueDomains) {
@@ -421,37 +412,19 @@ export async function enrichDomains(
       }
 
       const cached = cache.get(domain)
-      if (!cached) {
-        toQuery.push(domain)
-        continue
-      }
-
-      if (cached.known || isUnknownStillFresh(cached, now)) {
+      if (cached && (cached.known || isUnknownStillFresh(cached, now))) {
         result.set(domain, cached)
       } else {
-        toQuery.push(domain)
+        toQuery.add(domain)
       }
     }
 
-    if (toQuery.length > 0 && canUseDomainEnrichmentLlm(settings)) {
-      await queryDomainsIntoResult(toQuery, settings, result, onProgress)
-    }
+    // 2. Proactively gather parents for unresolved domains
+    if (toQuery.size > 0) {
+      for (const domain of toQuery) {
+        const parent = getParentDomain(domain)
+        if (!parent || toQuery.has(parent) || result.has(parent)) continue
 
-    const parentDomains: string[] = []
-    for (const domain of uniqueDomains) {
-      const info = result.get(domain)
-      if (info?.known) continue
-      const parent = getParentDomain(domain)
-      if (parent && !result.has(parent)) parentDomains.push(parent)
-    }
-
-    if (parentDomains.length > 0 && canUseDomainEnrichmentLlm(settings)) {
-      const uniqueParents = [...new Set(parentDomains)]
-      const parentCache = await loadCachedDomains()
-      const parentNow = Date.now()
-      const toQueryParents: string[] = []
-
-      for (const parent of uniqueParents) {
         const prefilled = getPrefilledDomain(parent)
         if (prefilled) {
           result.set(parent, {
@@ -465,17 +438,17 @@ export async function enrichDomains(
           continue
         }
 
-        const cached = parentCache.get(parent)
-        if (cached && (cached.known || isUnknownStillFresh(cached, parentNow))) {
+        const cached = cache.get(parent)
+        if (cached && (cached.known || isUnknownStillFresh(cached, now))) {
           result.set(parent, cached)
         } else {
-          toQueryParents.push(parent)
+          toQuery.add(parent)
         }
       }
+    }
 
-      if (toQueryParents.length > 0) {
-        await queryDomainsIntoResult(toQueryParents, settings, result, onProgress)
-      }
+    if (toQuery.size > 0 && canUseDomainEnrichmentLlm(settings)) {
+      await queryDomainsIntoResult([...toQuery], settings, result, onProgress)
     }
 
     return result

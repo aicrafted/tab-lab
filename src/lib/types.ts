@@ -58,15 +58,14 @@ export const PAGE_INTENTS = [
   'tool',          // SaaS, dashboard, web app — used interactively
   'service',       // product page, signup, settings — functional, occasional
   'transactional', // order, booking, tracking — time-limited, discard after
-  'video',         // YouTube, Vimeo, Loom — primarily video
-  'social',        // Reddit, HN, Twitter — conversational
   'repository',    // GitHub/GitLab repo, npm package — code asset
   'document',      // static file docs: pdf/doc/xls/csv/txt/md/...
   'image',         // static image files
   'audio',         // static audio files
+  'video',         // static video files,YouTube, Vimeo, Loom — primarily video
   'archive',       // archives and disk images
-  'data',          // structured data and database files
-  'code',          // source/config files
+  'data',          // structured data/configs and database files
+  'code',          // source code files
   'other',         // catch-all
 ] as const
 
@@ -75,20 +74,19 @@ export type PageIntent = typeof PAGE_INTENTS[number]
 // Rich descriptors used for NLI intent classification.
 // Keys must cover all PageIntent values.
 export const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
-  article: 'blog post tutorial guide news article essay how-to read story opinion',
+  article: 'Reddit thread discussion blog post tutorial guide news article essay how-to read story opinion',
   reference: 'documentation API reference docs cheatsheet specification manual MDN readthedocs',
   tool: 'dashboard editor app generator converter calculator online tool SaaS platform',
   service: 'pricing signup login register account settings product landing page',
   transactional: 'order confirmation booking receipt invoice tracking ticket payment',
-  video: 'YouTube watch video stream episode channel playlist Vimeo Twitch',
-  social: 'Reddit thread discussion Hacker News Twitter forum comments community',
   repository: 'GitHub GitLab repository source code npm package crates.io releases',
   document: 'PDF document spreadsheet Word Excel presentation file download',
   image: 'image photo picture PNG JPG SVG gallery wallpaper',
   audio: 'audio MP3 podcast sound music track recording',
+  video: 'video YouTube watch video stream episode channel playlist Vimeo Twitch',
   archive: 'archive ZIP download release DMG installer package',
-  data: 'JSON XML data export database SQL dataset structured',
-  code: 'source file script configuration YAML TOML CSS JavaScript TypeScript',
+  data: 'JSON XML YAML TOML data export database SQL dataset structured',
+  code: 'source file script configuration CSS JavaScript TypeScript',
   other: 'miscellaneous page',
 }
 

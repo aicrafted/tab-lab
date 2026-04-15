@@ -114,10 +114,20 @@
 "description": "Global online marketplace for products and services",
 "platform": "shopping"
 },
+"aws.amazon.com": {
+"category": "Cloud Computing",
+"description": "Amazon Web Services platform and cloud resources",
+"platform": "cloud"
+},
 "googleadservices.com": {
 "category": "Ad Services",
 "description": "Google advertising click tracking and campaign routing",
 "platform": "tool"
+},
+"cloud.google.com": {
+"category": "Cloud Platform",
+"description": "Google Cloud Console for managing cloud infrastructure",
+"platform": "cloud"
 },
 "drive.google.com": {
 "category": "Cloud Storage",

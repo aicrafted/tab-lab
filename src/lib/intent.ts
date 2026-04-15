@@ -97,7 +97,7 @@ export async function classifyIntent(
     items.map(async (item) => {
       const staticIntent = item.staticIntent
         ?? detectStaticIntent(item.url)
-        ?? intentFromPlatform(detectPlatform(item.domain, domainMap))
+        ?? intentFromPlatform(detectPlatform(item.domain, domainMap), item.url)
       if (staticIntent) return
       const entry = await getCached(prefix, item.url)
       if (entry?.intent) cached.push({ url: item.url, intent: entry.intent })

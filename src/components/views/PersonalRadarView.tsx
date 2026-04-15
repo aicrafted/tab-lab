@@ -27,7 +27,6 @@ const INTENT_TO_AXIS: Partial<Record<PageIntent, AxisName>> = {
   code: 'Work',
   data: 'Work',
   service: 'Tools',
-  social: 'Social',
   video: 'Entertainment',
   image: 'Entertainment',
   audio: 'Entertainment',

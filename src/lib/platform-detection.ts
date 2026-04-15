@@ -3,7 +3,7 @@ import type { KnownPlatform, PageIntent } from './types'
 import type { DomainInfo } from './domain-enricher'
 
 export const PLATFORM_TO_INTENT: Partial<Record<KnownPlatform, PageIntent>> = {
-  social: 'social',
+  social: 'article',
   video: 'video',
   music: 'video',
   code: 'repository',
@@ -14,6 +14,8 @@ export const PLATFORM_TO_INTENT: Partial<Record<KnownPlatform, PageIntent>> = {
   email: 'tool',
   education: 'article',
   reference: 'reference',
+  qa: 'article',
+  blog: 'article',
 }
 
 function normalizeDomain(domain: string): string {
@@ -60,7 +62,35 @@ export function detectPlatformFromUrl(
   }
 }
 
-export function intentFromPlatform(platform: KnownPlatform | undefined): PageIntent | undefined {
+function looksLikeSpecificItem(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname.toLowerCase()
+
+    // 1. Common content identifiers in query
+    if (parsed.searchParams.has('id') || parsed.searchParams.has('item')) return true
+
+    // 2. Common path segments for specific content
+    const contentSegments = ['/post/', '/posts/', '/comments/', '/status/', '/p/', '/item/', '/questions/', '/permalink/', '/course/', '/lecture/']
+    if (contentSegments.some((seg) => path.includes(seg))) return true
+
+    // 3. Path contains a numeric ID segment (e.g., /123/ or ends with /123)
+    if (/\/\d+(\/|$)/.test(path)) return true
+
+    return false
+  } catch {
+    return false
+  }
+}
+
+export function intentFromPlatform(platform: KnownPlatform | undefined, url?: string): PageIntent | undefined {
   if (!platform) return undefined
-  return PLATFORM_TO_INTENT[platform]
+  const base = PLATFORM_TO_INTENT[platform]
+
+  // Heuristic: for content-heavy platforms, lists/feeds are not 'article'
+  if (url && (platform === 'social' || platform === 'qa' || platform === 'blog' || platform === 'education')) {
+    if (!looksLikeSpecificItem(url)) return 'other'
+  }
+
+  return base
 }

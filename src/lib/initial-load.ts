@@ -30,7 +30,7 @@ export async function loadHydratedData(): Promise<HydratedData> {
       return {
         ...bookmark,
         platform,
-        staticIntent: detectStaticIntent(bookmark.url) ?? intentFromPlatform(platform),
+        staticIntent: detectStaticIntent(bookmark.url) ?? intentFromPlatform(platform, bookmark.url),
       }
     }),
     tabs: linkedRaw.tabs.map((tab) => {
@@ -38,7 +38,7 @@ export async function loadHydratedData(): Promise<HydratedData> {
       return {
         ...tab,
         platform,
-        staticIntent: detectStaticIntent(tab.url) ?? intentFromPlatform(platform),
+        staticIntent: detectStaticIntent(tab.url) ?? intentFromPlatform(platform, tab.url),
       }
     }),
   }

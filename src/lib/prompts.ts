@@ -60,28 +60,26 @@ Example output: {"tags": ["rust", "async", "performance"]}`
 const CLASSIFY_INTENT_SYSTEM_TEXT = `You classify web pages by their intent — how the user is meant to use them.
 
 Choose ONE label from:
-- article       : blog post, tutorial, news article, essay — meant to be read linearly, has a clear ending
+- article       : blog post, tutorial, news article, essay, Reddit thread, forum discussion — meant to be read linearly
 - reference     : documentation, API reference, man page, cheatsheet, specification — consulted repeatedly
 - tool          : web app, dashboard, SaaS product, online editor, IDE — used interactively
 - service       : product landing page, signup/login page, account settings, pricing — functional but not a tool
 - transactional : order confirmation, booking, ticket, tracking page, invoice, support ticket — time-sensitive, discard after done
 - video         : YouTube, Vimeo, Twitch, podcast page — primary content is video/audio
-- social        : Reddit thread, Hacker News, Twitter/X post, forum thread, comment section
 - repository    : GitHub/GitLab repo, npm/crates.io/PyPI package page
 - other         : anything that doesn't fit clearly
 
 Reply with the single label only. No explanation.`
 const CLASSIFY_INTENT_SYSTEM_JSON = `You classify web pages by their intent. Output a JSON object with a single "intent" key.
 
-Valid values: "article", "reference", "tool", "service", "transactional", "video", "social", "repository", "other"
+Valid values: "article", "reference", "tool", "service", "transactional", "video", "repository", "other"
 
-- article: blog post, tutorial, news - read linearly
+- article: blog post, tutorial, news, Reddit/forum discussion - read linearly
 - reference: docs, API, cheatsheet - consulted repeatedly
 - tool: web app, SaaS, dashboard - used interactively
 - service: product page, signup, settings - functional
 - transactional: order, booking, tracking - time-sensitive
 - video: YouTube, Vimeo, Twitch - primary content is video
-- social: Reddit, HN, Twitter, forum - conversational
 - repository: GitHub, npm, crates.io - code asset
 - other: anything else
 

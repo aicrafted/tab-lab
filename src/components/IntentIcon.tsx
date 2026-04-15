@@ -26,7 +26,6 @@ const ICON_BY_INTENT: Record<PageIntent, LucideIcon> = {
   service: Globe,
   transactional: Ticket,
   video: Clapperboard,
-  social: MessageCircle,
   repository: Package,
   document: File,
   image: ImageIcon,

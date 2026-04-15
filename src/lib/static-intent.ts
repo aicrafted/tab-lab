@@ -45,9 +45,12 @@ const STATIC_INTENT_BY_EXTENSION: Record<string, PageIntent> = {
   dmg: 'archive',
   iso: 'archive',
   json: 'data',
-  xml: 'data',
   parquet: 'data',
   sql: 'data',
+  xml: 'data',
+  yaml: 'data',
+  yml: 'data',
+  toml: 'data',
   db: 'data',
   sqlite: 'data',
   js: 'code',
@@ -59,10 +62,6 @@ const STATIC_INTENT_BY_EXTENSION: Record<string, PageIntent> = {
   cpp: 'code',
   c: 'code',
   css: 'code',
-  html: 'code',
-  yaml: 'code',
-  yml: 'code',
-  toml: 'code',
 }
 
 export function detectStaticIntent(url: string): PageIntent | undefined {
