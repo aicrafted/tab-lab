@@ -1,42 +1,13 @@
-import { chatComplete, extractJson } from './llm'
+import { chatComplete } from './llm'
 import { cosineSimilarity } from './embedder'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { detectPlatform, intentFromPlatform } from './platform-detection'
+import { classifyIntentPrompt } from './prompts'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
 import { webgpuEmbed } from './webgpu-provider'
-
-const INTENT_PROMPT = `You classify web pages by their intent — how the user is meant to use them.
-
-Choose ONE label from:
-- article       : blog post, tutorial, news article, essay — meant to be read linearly, has a clear ending
-- reference     : documentation, API reference, man page, cheatsheet, specification — consulted repeatedly
-- tool          : web app, dashboard, SaaS product, online editor, IDE — used interactively
-- service       : product landing page, signup/login page, account settings, pricing — functional but not a tool
-- transactional : order confirmation, booking, ticket, tracking page, invoice, support ticket — time-sensitive, discard after done
-- video         : YouTube, Vimeo, Twitch, podcast page — primary content is video/audio
-- social        : Reddit thread, Hacker News, Twitter/X post, forum thread, comment section
-- repository    : GitHub/GitLab repo, npm/crates.io/PyPI package page
-- other         : anything that doesn't fit clearly
-
-Reply with the single label only. No explanation.`
-const INTENT_PROMPT_JSON = `You classify web pages by their intent. Output a JSON object with a single "intent" key.
-
-Valid values: "article", "reference", "tool", "service", "transactional", "video", "social", "repository", "other"
-
-- article: blog post, tutorial, news - read linearly
-- reference: docs, API, cheatsheet - consulted repeatedly
-- tool: web app, SaaS, dashboard - used interactively
-- service: product page, signup, settings - functional
-- transactional: order, booking, tracking - time-sensitive
-- video: YouTube, Vimeo, Twitch - primary content is video
-- social: Reddit, HN, Twitter, forum - conversational
-- repository: GitHub, npm, crates.io - code asset
-- other: anything else
-
-Example output: {"intent": "reference"}`
 
 const VALID_INTENTS: PageIntent[] = [
   'article',
@@ -140,25 +111,6 @@ async function classifyIntentNLI(item: { url: string; title: string; domain: str
   return bestIntent
 }
 
-function parseIntent(raw: string): PageIntent {
-  const normalized = raw.trim().toLowerCase()
-  return VALID_INTENTS.find((intent) => normalized.includes(intent)) ?? 'other'
-}
-
-function parseIntentJson(raw: string): PageIntent {
-  try {
-    const parsed = JSON.parse(extractJson(raw)) as { intent?: unknown }
-    if (typeof parsed.intent === 'string') {
-      const value = VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
-      trackIntentParse(true)
-      return value
-    }
-  } catch {
-  }
-  trackIntentParse(false)
-  return parseIntent(raw)
-}
-
 export type IntentUpdate = { url: string; intent: PageIntent }
 
 export async function classifyIntent(
@@ -194,8 +146,9 @@ export async function classifyIntent(
   }
 
   const provider = settings.tasks.chat.provider
-  const useJsonOutput = provider !== 'gemini-nano'
-  const prompt = useJsonOutput ? INTENT_PROMPT_JSON : INTENT_PROMPT
+  const format = provider !== 'gemini-nano' ? 'json' : 'text'
+  const useJsonOutput = format === 'json'
+  const prompt = classifyIntentPrompt.system(format)
   const options = useJsonOutput
     ? {
       responseFormat: 'json' as const,
@@ -218,10 +171,16 @@ export async function classifyIntent(
         } else {
           const path = urlPathSnippet(item.url)
           const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
-          const siteLine = domainDesc ? `\nSite: ${domainDesc}` : ''
-          const userMsg = `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
+          const siteLine = domainDesc ? `Site: ${domainDesc}` : undefined
+          const userMsg = classifyIntentPrompt.user({ title: item.title, domain: item.domain, path, siteLine })
           const raw = await chatComplete(prompt, userMsg, settings, 15, options)
-          intent = useJsonOutput ? parseIntentJson(raw) : parseIntent(raw)
+          if (useJsonOutput) {
+            const parsed = classifyIntentPrompt.parseResponseDetailed(raw, format)
+            trackIntentParse(parsed.strict)
+            intent = parsed.intent
+          } else {
+            intent = classifyIntentPrompt.parseResponse(raw, format)
+          }
         }
         const existing = await getCached(prefix, item.url)
         await setCached(prefix, item.url, {

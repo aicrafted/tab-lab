@@ -1,28 +1,14 @@
-import { chatComplete, extractJson } from './llm'
+import { chatComplete } from './llm'
 import { cosineSimilarity } from './embedder'
 import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { classifierLog } from './logger'
+import { classifyCluster, classifyItem, groupRareCategoriesPrompt, normalizeCategories } from './prompts'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
 import { webgpuEmbed } from './webgpu-provider'
 
-const SYSTEM_PROMPT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case) that best describes the content. Avoid using "Other" unless the page is truly ambiguous. Reply with the category label only — no explanation, no punctuation.`
-const SYSTEM_PROMPT_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case) that best describes the content.
-Avoid using "Other" unless the page is truly ambiguous.
-
-Example output: {"category": "Development"}`
-const CLUSTER_SYSTEM_PROMPT = `You classify clusters of browser pages.
-Given 2-3 representative pages from one cluster, return strict JSON:
-{"category":"<broad category>","name":"<specific short cluster name>"}
-
-Rules:
-- category should be a broad, human-friendly label (2-4 words, Title Case) that best describes the cluster
-- name must be short (2-5 words), specific, and not generic
-- prefer concrete names like "Rust async runtime" over generic "Development"
-- avoid using "Other" unless the samples are truly ambiguous
-- output JSON only`
 const classifierParseMetrics = {
   strict: 0,
   fallback: 0,
@@ -107,100 +93,6 @@ const CATEGORY_MERGE_MAP_SCHEMA = {
   },
   strict: false,
 } as const
-
-function extractJsonObject(text: string): string {
-  // Always look for { ... }, never [ ... ] — our responses are always objects
-  const start = text.indexOf('{')
-  if (start === -1) return ''
-  let depth = 0
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === '{') depth++
-    else if (text[i] === '}') {
-      depth--
-      if (depth === 0) return text.slice(start, i + 1)
-    }
-  }
-  return ''
-}
-
-function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
-  const text = raw
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/<\|[^|>]*\|>/g, ' ')
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/[{}[\]`"]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!text) return fallback
-  const firstPhrase = text.split(/[;|]/)[0]?.trim() || text
-  const candidate = firstPhrase.slice(0, 40).trim()
-  if (!candidate) return fallback
-  if (/^(analysis|final|assistant|user|system|channel)$/i.test(candidate)) return fallback
-  if (/^-?\d+(\.\d+)?$/.test(candidate)) return fallback  // raw number from model, not a category
-  return candidate
-}
-
-function isInvalidCategoryLabel(label: string): boolean {
-  const text = label.trim()
-  if (!text) return true
-  if (/<\|[^|>]*\|>/.test(text)) return true
-  if (/^(analysis|final|assistant|user|system|channel)$/i.test(text)) return true
-  if (/^-?\d+(\.\d+)?$/.test(text)) return true  // model returned a raw number instead of a label
-  return false
-}
-
-function parseCategoryFromRaw(raw: string): string {
-  const fromJson = parseCategoryJson(raw)
-  if (fromJson !== 'Other') {
-    trackClassifierParse(true)
-    return fromJson
-  }
-  trackClassifierParse(false)
-  return normalizeCategoryLabel(raw)
-}
-
-function parseCategoryJson(raw: string): string {
-  try {
-    const jsonStr = extractJsonObject(raw) || extractJson(raw)
-    const parsed = JSON.parse(jsonStr) as { category?: unknown }
-    if (typeof parsed.category === 'string' && parsed.category.trim()) {
-      return normalizeCategoryLabel(parsed.category)
-    }
-    if (parsed.category !== undefined && typeof parsed.category !== 'string') {
-      classifierLog.warn('parseCategoryJson category is not string', {
-        categoryType: typeof parsed.category,
-        categoryValue: parsed.category,
-      })
-    }
-  } catch (err) {
-    classifierLog.warn('parseCategoryJson failed', {
-      err: err instanceof Error ? err.message : String(err),
-      raw: raw.slice(0, 100),
-    })
-  }
-  return 'Other'
-}
-
-function parseClusterJson(raw: string): { category: string; name: string } {
-  try {
-    const jsonStr = extractJsonObject(raw) || extractJson(raw)
-    if (!jsonStr) throw new Error('no JSON object found')
-    const parsed = JSON.parse(jsonStr) as { category?: unknown; name?: unknown }
-    const category = typeof parsed.category === 'string' && parsed.category.trim()
-      ? normalizeCategoryLabel(parsed.category)
-      : 'Other'
-    const name = typeof parsed.name === 'string' && parsed.name.trim()
-      ? parsed.name.trim().slice(0, 60)
-      : category
-    return { category, name }
-  } catch (err) {
-    classifierLog.warn('parseClusterJson failed', {
-      err: err instanceof Error ? err.message : String(err),
-      raw: raw.slice(0, 120),
-    })
-    return { category: 'Other', name: 'Other' }
-  }
-}
 
 export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing' | 'error'
 export const SPLIT_THRESHOLD = 15
@@ -367,7 +259,7 @@ export async function classifyItems(
     items.map(async (item) => {
       const entry = await getCached(prefix, item.url)
       const cachedCategory = entry?.category?.trim()
-      if (cachedCategory && !isInvalidCategoryLabel(cachedCategory)) {
+      if (cachedCategory && !classifyItem.isInvalidResponse(cachedCategory)) {
         cached.push({ url: item.url, category: cachedCategory })
       } else {
         uncached.push(item)
@@ -387,8 +279,9 @@ export async function classifyItems(
 
   const provider = settings.tasks.chat.provider
   const tracker = createProgressTracker('classifyItems', uncached.length, { provider })
-  const useJsonOutput = provider !== 'gemini-nano'
-  const systemPrompt = useJsonOutput ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
+  const format = provider !== 'gemini-nano' ? 'json' : 'text'
+  const useJsonOutput = format === 'json'
+  const systemPrompt = classifyItem.system(format)
   const options = useJsonOutput
     ? {
       responseFormat: 'json' as const,
@@ -412,9 +305,15 @@ export async function classifyItems(
         } else {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
-          const userMsg = `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
+          const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, options)
-          category = useJsonOutput ? parseCategoryFromRaw(raw) : normalizeCategoryLabel(raw)
+          if (useJsonOutput) {
+            const parsed = classifyItem.parseResponseDetailed(raw)
+            trackClassifierParse(parsed.strict)
+            category = parsed.category
+          } else {
+            category = classifyItem.parseResponse(raw)
+          }
         }
         const existing = await getCached(prefix, item.url)
         await setCached(prefix, item.url, {
@@ -450,7 +349,7 @@ export async function loadCachedCategories(
     items.map(async (item) => {
       const entry = await getCached(prefix, item.url)
       const cachedCategory = entry?.category?.trim()
-      if (cachedCategory && !isInvalidCategoryLabel(cachedCategory)) {
+      if (cachedCategory && !classifyItem.isInvalidResponse(cachedCategory)) {
         map.set(item.url, cachedCategory)
       }
     }),
@@ -468,7 +367,7 @@ export async function loadCachedCategoryData(
     items.map(async (item) => {
       const entry = await getCached(prefix, item.url)
       const cachedCategory = entry?.category?.trim()
-      if (!cachedCategory || isInvalidCategoryLabel(cachedCategory)) return
+      if (!cachedCategory || classifyItem.isInvalidResponse(cachedCategory)) return
       const parentCategory = entry?.parentCategory?.trim()
       map.set(item.url, {
         category: cachedCategory,
@@ -517,22 +416,11 @@ export async function normalizeCategoryLabels(
   if (labels.length <= 1) return Object.fromEntries(labels.map((label) => [label, label]))
   const tracker = createProgressTracker('normalizeCategoryLabels', labels.length)
 
-  const prompt = `You are a category deduplicator. I will give you a list of category labels from browser tabs. Your job is to aggressively merge semantically similar or overlapping labels into a single canonical name. Be generous with merges — if two labels describe roughly the same topic, merge them.
-
-Rules:
-- Merge synonyms, near-duplicates, and subsets (e.g. "Tech" → "Technology", "Software Development" → "Development")
-- Prefer short, widely understood names
-- Keep distinct only if they describe genuinely different topics
-- Reply ONLY with a JSON object mapping each input label to its canonical name. All input labels must appear as keys.
-
-Labels:
-${labels.map((label) => `- ${label}`).join('\n')}
-
-Reply with JSON only, no explanation.`
+  const prompt = normalizeCategories.user(labels)
 
   const maxTokens = Math.min(4000, labels.length * 50 + 300)
   const raw = await chatComplete(
-    'You output strict JSON only.',
+    normalizeCategories.system(),
     prompt,
     settings,
     maxTokens,
@@ -547,10 +435,7 @@ Reply with JSON only, no explanation.`
   )
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, string>
-    for (const label of labels) {
-      if (!(label in parsed)) parsed[label] = label
-    }
+    const parsed = normalizeCategories.parseResponse(raw, labels)
     tracker.tick(labels.length)
     tracker.finish()
     return parsed
@@ -598,32 +483,16 @@ export async function groupRareCategories(
 
     classifierLog.info('groupRareCategories pass', { pass: pass + 1, rare: rare.length, frequent: frequent.length })
 
-    const allCategories = [
-      ...frequent.map((c) => `${c} (${counts.get(c)} tabs)`),
-      ...rare.map((c) => `${c} (${counts.get(c)} tab${(counts.get(c) ?? 1) > 1 ? 's' : ''})`),
-    ]
-    const prompt = `You are consolidating browser tab categories. Map each RARE category to its best target.
-
-All categories (rare = 1-2 tabs, others are stable):
-${allCategories.map((c) => `- ${c}`).join('\n')}
-
-Rare categories to reassign:
-${rare.map((c) => `- ${c}`).join('\n')}
-
-Rules:
-- Map each rare category to a frequent category if semantically fitting
-- If two rare categories describe the same topic, map both to one shared label
-- Prefer existing category names over inventing new ones
-- Avoid vague labels like "Other", "Miscellaneous", "General"
-- Reply ONLY with a JSON object: rare category → target category name
-
-Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"}`
+    const prompt = groupRareCategoriesPrompt.user({
+      frequent: frequent.map((label) => ({ label, count: counts.get(label) ?? 0 })),
+      rare: rare.map((label) => ({ label, count: counts.get(label) ?? 0 })),
+    })
 
     const provider = settings.tasks.chat.provider
     const useJsonOutput = provider !== 'gemini-nano'
     const maxTokens = Math.min(4000, rare.length * 50 + 300)
     const raw = await chatComplete(
-      'You output strict JSON only.',
+      groupRareCategoriesPrompt.system(),
       prompt,
       settings,
       maxTokens,
@@ -639,7 +508,7 @@ Example: {"Steam Games": "Gaming", "Software Deployment": "Software Development"
 
     let mergeMap: Record<string, string> = {}
     try {
-      mergeMap = JSON.parse(extractJson(raw)) as Record<string, string>
+      mergeMap = groupRareCategoriesPrompt.parseResponse(raw)
     } catch (err) {
       classifierLog.warn('groupRareCategories parse failed; stopping', {
         pass: pass + 1,
@@ -741,8 +610,9 @@ export async function splitLargeClusters(
     }
 
     const provider = settings.tasks.chat.provider
-    const useJsonOutput = provider !== 'gemini-nano'
-    const systemPrompt = useJsonOutput ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT
+    const format = provider !== 'gemini-nano' ? 'json' : 'text'
+    const useJsonOutput = format === 'json'
+    const systemPrompt = classifyItem.system(format)
     const options = useJsonOutput
       ? {
         responseFormat: 'json' as const,
@@ -760,10 +630,13 @@ export async function splitLargeClusters(
         try {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
-          const pathPart = path ? `\nPath: ${path}` : ''
-          const userMsg = useJsonOutput
-            ? `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${pathPart}\nParent: ${parentCategory}\nAssign a more specific sub-category.`
-            : `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${pathPart}\nCurrent category: ${parentCategory}\nAssign a more specific sub-category (2-4 words, Title Case). Reply with the label only.`
+          const userMsg = classifyItem.user({
+            title: item.title,
+            domain: item.domain,
+            path,
+            siteLine,
+            parentCategory,
+          })
           const raw = await chatComplete(
             systemPrompt,
             userMsg,
@@ -772,8 +645,8 @@ export async function splitLargeClusters(
             options,
           )
           const category = useJsonOutput
-            ? (parseCategoryFromRaw(raw) || parentCategory)
-            : normalizeCategoryLabel(raw, parentCategory)
+            ? (classifyItem.parseResponse(raw, parentCategory) || parentCategory)
+            : classifyItem.parseResponse(raw, parentCategory)
           const existing = await getCached(prefix, item.url)
           await setCached(prefix, item.url, {
             ...existing,
@@ -909,16 +782,15 @@ export async function classifyByClusters(
       category = await classifyClusterNli(cluster.centroid, nliModel)
       name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
     } else {
-      const samples = representativeItems.map((item) => {
-        const path = urlPathSnippet(item.url)
-        const siteLine = domainSiteLine(item.domain, domainMap)
-        return `Title: ${item.title}\nDomain: ${item.domain}${siteLine}${path ? `\nPath: ${path}` : ''}`
-      }).join('\n---\n')
       const provider = settings.tasks.chat.provider
       const useJsonOutput = provider !== 'gemini-nano'
       const raw = await chatComplete(
-        CLUSTER_SYSTEM_PROMPT,
-        samples,
+        classifyCluster.system(),
+        classifyCluster.user(representativeItems.map((item) => {
+          const path = urlPathSnippet(item.url)
+          const siteLine = domainSiteLine(item.domain, domainMap)
+          return classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
+        })),
         settings,
         200,
         useJsonOutput
@@ -930,10 +802,10 @@ export async function classifyByClusters(
           }
           : {},
       )
-      const parsed = parseClusterJson(raw)
+      const parsed = classifyCluster.parseResponse(raw)
       category = parsed.category || 'Other'
       if (category === 'Other') {
-        category = normalizeCategoryLabel(raw, 'Other')
+        category = classifyItem.parseResponse(raw, 'Other')
       }
       name = parsed.name || category
     }
