@@ -4,9 +4,6 @@ import type { LlmSettings, ClassificationMethod } from '../types'
 export class GeminiNanoProvider extends LlmProvider {
   readonly id = 'gemini-nano'
 
-  override get supportsDomainEnrichment() {
-    return false
-  }
 
   getChatModel(_settings: LlmSettings) {
     return 'gemini-nano'

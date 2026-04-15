@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe } from 'lucide-react'
+import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -400,6 +400,13 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             <div className="flex items-center gap-3">
               <Globe className="h-4 w-4 text-primary" />
               <p className="text-sm font-semibold uppercase">OpenRouter (Cloud)</p>
+            </div>
+
+            <div className="rounded-lg border border-amber-500/10 bg-amber-500/5 p-3 flex gap-2.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] leading-relaxed text-muted-foreground italic">
+                <strong className="text-amber-500 not-italic">WARNING!</strong> Using a cloud provider means tab and bookmarks metadata (titles, URLs) will be sent to external servers for processing.
+              </p>
             </div>
             
             <div className="space-y-3">
