@@ -3,7 +3,7 @@ import { cosineSimilarity } from './embedder'
 import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { classifierLog } from './logger'
-import { classifyCluster, classifyItem, groupRareCategoriesPrompt, normalizeCategories } from './prompts'
+import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
 import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
@@ -483,7 +483,7 @@ export async function groupRareCategories(
 
     classifierLog.info('groupRareCategories pass', { pass: pass + 1, rare: rare.length, frequent: frequent.length })
 
-    const prompt = groupRareCategoriesPrompt.user({
+    const prompt = groupRareCategoriesContract.user({
       frequent: frequent.map((label) => ({ label, count: counts.get(label) ?? 0 })),
       rare: rare.map((label) => ({ label, count: counts.get(label) ?? 0 })),
     })
@@ -492,7 +492,7 @@ export async function groupRareCategories(
     const useJsonOutput = provider !== 'gemini-nano'
     const maxTokens = Math.min(4000, rare.length * 50 + 300)
     const raw = await chatComplete(
-      groupRareCategoriesPrompt.system(),
+      groupRareCategoriesContract.system(),
       prompt,
       settings,
       maxTokens,
@@ -508,7 +508,7 @@ export async function groupRareCategories(
 
     let mergeMap: Record<string, string> = {}
     try {
-      mergeMap = groupRareCategoriesPrompt.parseResponse(raw)
+      mergeMap = groupRareCategoriesContract.parseResponse(raw)
     } catch (err) {
       classifierLog.warn('groupRareCategories parse failed; stopping', {
         pass: pass + 1,

@@ -173,18 +173,6 @@ function chunkDomains(domains: string[], size: number): string[][] {
   return chunks
 }
 
-function parseDomainResponse(raw: string, sentDomains: Set<string>, fetchedAt: number): DomainInfo[] {
-  const parsed = enrichDomain.parseResponse(raw, sentDomains, fetchedAt)
-  if (parsed.strict) {
-    trackDomainParse('strict')
-  } else if (parsed.heuristic) {
-    trackDomainParse('heuristic')
-  } else {
-    trackDomainParse('fail')
-  }
-  return parsed.rows
-}
-
 async function classifyDomainBatch(domains: string[], settings: LlmSettings): Promise<DomainInfo[]> {
   return classifyDomainBatchWithRetry(domains, settings, 0)
 }
@@ -225,7 +213,15 @@ async function classifyDomainBatchWithRetry(
       ? { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA }
       : {},
   )
-  const parsed = parseDomainResponse(raw, new Set(domains), fetchedAt)
+  const parsedDetailed = enrichDomain.parseResponseDetailed(raw, new Set(domains), fetchedAt)
+  if (parsedDetailed.strict) {
+    trackDomainParse('strict')
+  } else if (parsedDetailed.heuristic) {
+    trackDomainParse('heuristic')
+  } else {
+    trackDomainParse('fail')
+  }
+  const parsed = parsedDetailed.rows
   const truncated = looksTruncatedResponse(raw)
   const unmatchedStructured = parsed.length === 0 && looksStructuredButUnmatched(raw)
   if (parsed.length === 0 && raw.trim()) {

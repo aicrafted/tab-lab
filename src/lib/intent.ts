@@ -2,7 +2,7 @@ import { chatComplete } from './llm'
 import { cosineSimilarity } from './embedder'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { detectPlatform, intentFromPlatform } from './platform-detection'
-import { classifyIntentPrompt } from './prompts'
+import { classifyIntent as classifyIntentContract } from './prompts'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
 import type { LlmSettings, PageIntent } from './types'
@@ -148,7 +148,7 @@ export async function classifyIntent(
   const provider = settings.tasks.chat.provider
   const format = provider !== 'gemini-nano' ? 'json' : 'text'
   const useJsonOutput = format === 'json'
-  const prompt = classifyIntentPrompt.system(format)
+  const prompt = classifyIntentContract.system(format)
   const options = useJsonOutput
     ? {
       responseFormat: 'json' as const,
@@ -172,14 +172,14 @@ export async function classifyIntent(
           const path = urlPathSnippet(item.url)
           const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
           const siteLine = domainDesc ? `Site: ${domainDesc}` : undefined
-          const userMsg = classifyIntentPrompt.user({ title: item.title, domain: item.domain, path, siteLine })
+          const userMsg = classifyIntentContract.user({ title: item.title, domain: item.domain, path, siteLine })
           const raw = await chatComplete(prompt, userMsg, settings, 15, options)
           if (useJsonOutput) {
-            const parsed = classifyIntentPrompt.parseResponseDetailed(raw, format)
+            const parsed = classifyIntentContract.parseResponseDetailed(raw, format)
             trackIntentParse(parsed.strict)
             intent = parsed.intent
           } else {
-            intent = classifyIntentPrompt.parseResponse(raw, format)
+            intent = classifyIntentContract.parseResponse(raw, format)
           }
         }
         const existing = await getCached(prefix, item.url)

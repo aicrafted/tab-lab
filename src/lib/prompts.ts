@@ -393,7 +393,7 @@ ${NORMALIZE_CATEGORIES_USER_SUFFIX}`
   },
 }
 
-export const groupRareCategoriesPrompt = {
+export const groupRareCategories = {
   system(): string {
     return GROUP_RARE_CATEGORIES_SYSTEM
   },
@@ -444,7 +444,7 @@ export const tagItem = {
   },
 }
 
-export const classifyIntentPrompt = {
+export const classifyIntent = {
   system(format: 'text' | 'json'): string {
     return format === 'json' ? CLASSIFY_INTENT_SYSTEM_JSON : CLASSIFY_INTENT_SYSTEM_TEXT
   },
@@ -477,7 +477,11 @@ export const enrichDomain = {
 ${domains.join('\n')}`
   },
 
-  parseResponse(raw: string, sentDomains: Set<string>, fetchedAt: number): { rows: DomainInfo[]; strict: boolean; heuristic: boolean } {
+  parseResponse(raw: string, sentDomains: Set<string>, fetchedAt: number): DomainInfo[] {
+    return enrichDomain.parseResponseDetailed(raw, sentDomains, fetchedAt).rows
+  },
+
+  parseResponseDetailed(raw: string, sentDomains: Set<string>, fetchedAt: number): { rows: DomainInfo[]; strict: boolean; heuristic: boolean } {
     try {
       const jsonText = extractJson(raw)
       const parsed = parseJsonLenient(jsonText)
