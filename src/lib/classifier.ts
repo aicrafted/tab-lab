@@ -94,7 +94,8 @@ const CATEGORY_MERGE_MAP_SCHEMA = {
   strict: false,
 } as const
 
-export type LlmStatus = 'checking' | 'ready' | 'after-download' | 'unavailable' | 'classifying' | 'normalizing' | 'error'
+export type LlmAvailability = 'checking' | 'ready' | 'after-download' | 'unavailable'
+export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 const RARE_THRESHOLD = 3
 const CATEGORY_CANDIDATES = [
@@ -205,7 +206,7 @@ async function classifyItemNLI(
   return bestLabel
 }
 
-export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmStatus> {
+export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmAvailability> {
   const provider = settings?.tasks.chat.provider ?? 'gemini-nano'
   if (provider === 'webllm') {
     return settings?.tasks.chat.model ? 'ready' : 'unavailable'

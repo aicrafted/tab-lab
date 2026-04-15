@@ -65,6 +65,14 @@ type LlmMetric = {
 }
 
 const llmMetrics = new Map<string, LlmMetric>()
+const ENABLE_LLM_CALL_DEBUG = true
+const LLM_LOG_PREVIEW_MAX = 4000
+let llmCallSeq = 0
+
+function toPreview(text: string): string {
+  if (text.length <= LLM_LOG_PREVIEW_MAX) return text
+  return `${text.slice(0, LLM_LOG_PREVIEW_MAX)}... <truncated ${text.length - LLM_LOG_PREVIEW_MAX} chars>`
+}
 
 function trackLlmMetric(
   key: string,
@@ -116,109 +124,155 @@ export async function chatComplete(
 ): Promise<string> {
   const cleanMessage = sanitizeForLlm(userMessage)
   const metricKey = options.metricKey ?? 'default'
+  const provider = settings.tasks.chat.provider
+  const callId = ++llmCallSeq
+  const startedAt = Date.now()
+
+  if (ENABLE_LLM_CALL_DEBUG) {
+    llmLog.info('llm-call start', {
+      callId,
+      provider,
+      metricKey,
+      model: settings.tasks.chat.model,
+      maxTokens,
+      responseFormat: options.responseFormat ?? 'text',
+      systemPromptLength: systemPrompt.length,
+      userMessageLength: cleanMessage.length,
+      systemPromptPreview: toPreview(systemPrompt),
+      userMessagePreview: toPreview(cleanMessage),
+    })
+  }
+
   trackLlmMetric(metricKey, (metric) => {
     metric.calls += 1
     if (options.responseFormat === 'json') metric.structuredRequested += 1
   })
-  const provider = settings.tasks.chat.provider
-  switch (provider) {
-    case 'gemini-nano': {
-      if (!window.ai?.languageModel) throw new Error('Gemini Nano unavailable')
-      const session = await window.ai.languageModel.create({ systemPrompt })
-      try {
-        return (await session.prompt(cleanMessage)).trim()
-      } finally {
-        session.destroy()
-      }
-    }
-    case 'webllm':
-      return webllmChat(systemPrompt, cleanMessage, settings.tasks.chat.model, maxTokens, options)
-    case 'openrouter':
-    case 'lmstudio':
-    default: {
-      const baseUrl = provider === 'openrouter'
-        ? 'https://openrouter.ai/api/v1'
-        : settings.providers.lmstudio.baseUrl
-      const apiKey = provider === 'openrouter'
-        ? settings.providers.openrouter.apiKey
-        : settings.providers.lmstudio.apiKey
-      const model = settings.tasks.chat.model
-
-      const defaultJsonSchema = {
-        name: 'response',
-        schema: {
-          type: 'object',
-          additionalProperties: true,
-        },
-        strict: false,
-      } as const
-
-      const buildBody = (useStructuredJson: boolean): string => JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: cleanMessage },
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.1,
-        ...(provider === 'lmstudio' && useStructuredJson
-          ? {
-            response_format: {
-              type: 'json_schema',
-              json_schema: options.jsonSchema ?? defaultJsonSchema,
-            },
-          }
-          : {}),
-      })
-
-      const request = async (useStructuredJson: boolean): Promise<Response> => {
-        const body = buildBody(useStructuredJson)
-        const r = await fetch(`${baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-            ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
-          },
-          body,
-          signal: AbortSignal.timeout(30_000),
-        })
-        if (!r.ok) {
-          const errorText = await r.text().catch((err) => {
-            llmLog.warn('failed to read http error response body', {
-              err: err instanceof Error ? err.message : String(err),
-            })
-            return ''
-          })
-          throw new Error(`Chat API ${r.status}${errorText ? `: ${errorText}` : ''}`)
-        }
-        return r
-      }
-
-      const wantsStructuredJson = options.responseFormat === 'json'
-      const res = await withHttpRetry(async () => {
+  try {
+    let response = ''
+    switch (provider) {
+      case 'gemini-nano': {
+        if (!window.ai?.languageModel) throw new Error('Gemini Nano unavailable')
+        const session = await window.ai.languageModel.create({ systemPrompt })
         try {
-          return await request(wantsStructuredJson)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          const responseFormatIssue = /response_format|json_schema|json_object/i.test(message)
-          if (provider === 'lmstudio' && wantsStructuredJson && responseFormatIssue) {
-            llmLog.warn('structured response rejected; retrying without response_format', {
-              message,
-            })
-            trackLlmMetric(metricKey, (metric) => {
-              metric.structuredFallback += 1
-            })
-            return request(false)
-          }
-          trackLlmMetric(metricKey, (metric) => {
-            metric.failures += 1
-          })
-          throw err
+          response = (await session.prompt(cleanMessage)).trim()
+        } finally {
+          session.destroy()
         }
-      })
-      const json = (await res.json()) as { choices: { message: { content: string } }[] }
-      return json.choices[0]?.message.content?.trim() ?? ''
+        break
+      }
+      case 'webllm':
+        response = await webllmChat(systemPrompt, cleanMessage, settings.tasks.chat.model, maxTokens, options)
+        break
+      case 'openrouter':
+      case 'lmstudio':
+      default: {
+        const baseUrl = provider === 'openrouter'
+          ? 'https://openrouter.ai/api/v1'
+          : settings.providers.lmstudio.baseUrl
+        const apiKey = provider === 'openrouter'
+          ? settings.providers.openrouter.apiKey
+          : settings.providers.lmstudio.apiKey
+        const model = settings.tasks.chat.model
+
+        const defaultJsonSchema = {
+          name: 'response',
+          schema: {
+            type: 'object',
+            additionalProperties: true,
+          },
+          strict: false,
+        } as const
+
+        const buildBody = (useStructuredJson: boolean): string => JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: cleanMessage },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.1,
+          ...(provider === 'lmstudio' && useStructuredJson
+            ? {
+              response_format: {
+                type: 'json_schema',
+                json_schema: options.jsonSchema ?? defaultJsonSchema,
+              },
+            }
+            : {}),
+        })
+
+        const request = async (useStructuredJson: boolean): Promise<Response> => {
+          const body = buildBody(useStructuredJson)
+          const r = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+              ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
+            },
+            body,
+            signal: AbortSignal.timeout(30_000),
+          })
+          if (!r.ok) {
+            const errorText = await r.text().catch((err) => {
+              llmLog.warn('failed to read http error response body', {
+                err: err instanceof Error ? err.message : String(err),
+              })
+              return ''
+            })
+            throw new Error(`Chat API ${r.status}${errorText ? `: ${errorText}` : ''}`)
+          }
+          return r
+        }
+
+        const wantsStructuredJson = options.responseFormat === 'json'
+        const res = await withHttpRetry(async () => {
+          try {
+            return await request(wantsStructuredJson)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            const responseFormatIssue = /response_format|json_schema|json_object/i.test(message)
+            if (provider === 'lmstudio' && wantsStructuredJson && responseFormatIssue) {
+              llmLog.warn('structured response rejected; retrying without response_format', {
+                message,
+              })
+              trackLlmMetric(metricKey, (metric) => {
+                metric.structuredFallback += 1
+              })
+              return request(false)
+            }
+            trackLlmMetric(metricKey, (metric) => {
+              metric.failures += 1
+            })
+            throw err
+          }
+        })
+        const json = (await res.json()) as { choices: { message: { content: string } }[] }
+        response = json.choices[0]?.message.content?.trim() ?? ''
+        break
+      }
     }
+    if (ENABLE_LLM_CALL_DEBUG) {
+      llmLog.info('llm-call done', {
+        callId,
+        provider,
+        metricKey,
+        elapsedMs: Date.now() - startedAt,
+        responseLength: response.length,
+        responsePreview: toPreview(response),
+      })
+    }
+    return response
+  } catch (err) {
+    if (ENABLE_LLM_CALL_DEBUG) {
+      llmLog.error('llm-call failed', {
+        callId,
+        provider,
+        metricKey,
+        elapsedMs: Date.now() - startedAt,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    throw err
   }
 }

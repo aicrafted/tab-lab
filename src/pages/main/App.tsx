@@ -11,7 +11,7 @@ import {
   getBookmarkFolderOptions,
   type BookmarkFolderOption,
 } from '@/lib/bookmarks'
-import { checkLlmAvailability, type LlmStatus } from '@/lib/classifier'
+import { checkLlmAvailability, type LlmAvailability } from '@/lib/classifier'
 import { loadCached2D } from '@/lib/embedder'
 import { loadHydratedData } from '@/lib/initial-load'
 import { loadClusterNames } from '@/lib/cluster-names'
@@ -25,7 +25,7 @@ import {
 } from '@/lib/storage'
 import { useResizable } from '@/hooks/useResizable'
 import { useAiPipelines } from '@/hooks/useAiPipelines'
-import type { PipelineTaskProgress } from '@/hooks/useAiPipelines'
+import { useOrchestratorTasks } from '@/hooks/useOrchestratorTasks'
 import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
@@ -146,8 +146,8 @@ export function App() {
   const [tabs, setTabs] = useState<TabItem[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
-  const [llmStatus, setLlmStatus] = useState<LlmStatus>('checking')
-  const [llmError, setLlmError] = useState<string | undefined>(undefined)
+  const [llmAvailability, setLlmAvailability] = useState<LlmAvailability>('checking')
+  const [, setLlmError] = useState<string | undefined>(undefined)
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -156,9 +156,8 @@ export function App() {
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
-  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent' | 'platform'>('domains')
+  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent' | 'platform' | 'tags'>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
-  const [activeTasks, setActiveTasks] = useState<Record<string, PipelineTaskProgress>>({})
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
   const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(220, 220, 400)
@@ -202,13 +201,13 @@ export function App() {
   useEffect(() => {
     if (!settingsHydrated) return
     let active = true
-    setLlmStatus('checking')
+    setLlmAvailability('checking')
     void checkLlmAvailability(llmSettings).then((status) => {
       if (!active) return
-      setLlmStatus(status)
+      setLlmAvailability(status)
     }).catch(() => {
       if (!active) return
-      setLlmStatus('unavailable')
+      setLlmAvailability('unavailable')
     })
     return () => { active = false }
   }, [llmSettings, settingsHydrated])
@@ -234,6 +233,7 @@ export function App() {
   }
 
   const {
+    orchestrator,
     runAutoAiPipeline,
     runEmbeddingPass,
     handleClearCache,
@@ -254,23 +254,13 @@ export function App() {
     llmSettings,
     setBookmarks,
     setTabs,
-    setLlmStatus,
     setLlmError,
     setClusterNames,
     setProjectedPoints,
     reload,
-    onTaskProgress: (update) => {
-      setActiveTasks((prev) => {
-        if (update.status === 'running') {
-          return { ...prev, [update.id]: update }
-        }
-        if (!(update.id in prev)) return prev
-        const next = { ...prev }
-        delete next[update.id]
-        return next
-      })
-    },
   })
+
+  const { activeTasks, lastError } = useOrchestratorTasks(orchestrator)
 
   const aiActionItems: AiActionItem[] = [
     { key: 'domains', label: 'Domains', icon: Database, title: 'Save domain knowledge (site descriptions) to cache', onClick: handleRunDomainKnowledge },
@@ -289,7 +279,7 @@ export function App() {
   ]
 
   const footerTaskStatus = useMemo(() => {
-    const running = Object.values(activeTasks)
+    const running = activeTasks
       .filter((task) => task.status === 'running')
       .sort((a, b) => a.label.localeCompare(b.label))
 
@@ -298,13 +288,6 @@ export function App() {
       .map((task) => `${task.label}: ${task.done}/${task.total} ${formatProgressPercent(task.percent)}%`)
       .join(' · ')
   }, [activeTasks])
-
-  useEffect(() => {
-    if (llmStatus === 'ready' || llmStatus === 'unavailable') {
-      setActiveTasks({})
-      setLlmError(undefined)
-    }
-  }, [llmStatus])
 
   async function doLoad() {
     const [hydrated, folderOptions, storedClusterNames] = await Promise.all([
@@ -534,6 +517,25 @@ export function App() {
     return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
+  const tagsFacet = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of sourceScopedTabs) {
+      for (const tag of t.tags ?? []) {
+        const value = tag.trim()
+        if (!value) continue
+        counts.set(value, (counts.get(value) ?? 0) + 1)
+      }
+    }
+    for (const b of sourceScopedBookmarks) {
+      for (const tag of b.tags ?? []) {
+        const value = tag.trim()
+        if (!value) continue
+        counts.set(value, (counts.get(value) ?? 0) + 1)
+      }
+    }
+    return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+  }, [sourceScopedTabs, sourceScopedBookmarks])
+
   const filteredBookmarks = useMemo(() => {
     if (activeFacets.length === 0) return sourceScopedBookmarks
     if (facetMode === 'domains') {
@@ -544,6 +546,12 @@ export function App() {
     }
     if (facetMode === 'platform') {
       return sourceScopedBookmarks.filter((item) => item.platform != null && activeFacets.includes(item.platform))
+    }
+    if (facetMode === 'tags') {
+      return sourceScopedBookmarks.filter((item) => {
+        const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
+        return tags.some((tag) => activeFacets.includes(tag))
+      })
     }
     const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
     const categoriesFromParents = new Set<string>()
@@ -572,6 +580,12 @@ export function App() {
     }
     if (facetMode === 'platform') {
       return sourceScopedTabs.filter((item) => item.platform != null && activeFacets.includes(item.platform))
+    }
+    if (facetMode === 'tags') {
+      return sourceScopedTabs.filter((item) => {
+        const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
+        return tags.some((tag) => activeFacets.includes(tag))
+      })
     }
     const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
     const categoriesFromParents = new Set<string>()
@@ -677,17 +691,17 @@ export function App() {
             </DropdownMenu>
             <span className="text-border">·</span>
             <span className="flex items-center gap-1">
-              {llmStatus === 'error' && (
-                <span className="flex items-center gap-1 text-destructive" title={llmError}>
+              {lastError && (
+                <span className="flex items-center gap-1 text-destructive" title={lastError}>
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
                   LLM: error
                 </span>
               )}
-              {llmStatus === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
-              {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
-              {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
-              {llmStatus === 'ready' && <span className="text-primary">LLM: ready</span>}
-              {(llmStatus === 'classifying' || llmStatus === 'normalizing') && (
+              {llmAvailability === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
+              {llmAvailability === 'checking' && <span className="opacity-40">LLM: checking…</span>}
+              {llmAvailability === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
+              {activeTasks.length === 0 && llmAvailability === 'ready' && <span className="text-primary">LLM: ready</span>}
+              {activeTasks.length > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -695,7 +709,7 @@ export function App() {
                   className="h-6 px-2 text-[11px] text-accent hover:text-destructive"
                   title="Stop current AI pipeline"
                 >
-                  {llmStatus === 'classifying' ? 'LLM: classifying… Stop' : 'LLM: normalizing… Stop'}
+                  {activeTasks.length > 0 ? `${activeTasks[0].label}: ${Math.round(activeTasks[0].percent)}% Stop` : 'LLM: running… Stop'}
                 </Button>
               )}
             </span>
@@ -745,6 +759,7 @@ export function App() {
           categories={categoriesFacet}
           intents={intentFacet}
           platforms={platformFacet}
+          tags={tagsFacet}
           activeMode={facetMode}
           activeValues={activeFacets}
           onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}

@@ -258,6 +258,9 @@ async function queryDomainsIntoResult(
         const batchIndex = nextBatchIndex
         nextBatchIndex += 1
         const batch = batches[batchIndex]
+        const batchSize = batch.length
+        const upfrontProgress = batchSize > 0 ? 1 : 0
+        if (upfrontProgress > 0) onProgress?.(upfrontProgress)
         try {
           const knownItems = await classifyDomainBatch(batch, settings)
           const knownByDomain = new Map(knownItems.map((item) => [item.domain, item]))
@@ -277,14 +280,14 @@ async function queryDomainsIntoResult(
           }
 
           await putDomainRows(rowsToStore)
-          onProgress?.(batch.length)
+          onProgress?.(Math.max(0, batchSize - upfrontProgress))
         } catch (err) {
           domainEnricherLog.error('domain enrichment batch failed', {
             err: err instanceof Error ? err.message : String(err),
             batchIndex,
-            batchSize: batch.length,
+            batchSize,
           })
-          onProgress?.(batch.length)
+          onProgress?.(Math.max(0, batchSize - upfrontProgress))
         }
       }
     }),

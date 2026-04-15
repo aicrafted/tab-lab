@@ -43,9 +43,10 @@ interface FacetSidebarProps {
   categories: CategoryGroupFacet[]
   intents: FacetItem[]
   platforms: FacetItem[]
-  activeMode: 'domains' | 'categories' | 'intent' | 'platform'
+  tags: FacetItem[]
+  activeMode: 'domains' | 'categories' | 'intent' | 'platform' | 'tags'
   activeValues: string[]
-  onModeChange: (mode: 'domains' | 'categories' | 'intent' | 'platform') => void
+  onModeChange: (mode: 'domains' | 'categories' | 'intent' | 'platform' | 'tags') => void
   onToggle: (value: string) => void
   onClear: () => void
   width: number
@@ -63,6 +64,7 @@ export function FacetSidebar({
   categories,
   intents,
   platforms,
+  tags,
   activeMode,
   activeValues,
   onModeChange,
@@ -73,15 +75,19 @@ export function FacetSidebar({
   const items = activeMode === 'domains'
     ? domains
     : activeMode === 'intent'
-        ? intents
-        : platforms
+      ? intents
+      : activeMode === 'platform'
+        ? platforms
+        : tags
   const showEmpty = activeMode === 'categories'
     ? categories.length === 0
     : activeMode === 'intent'
       ? intents.length === 0
       : activeMode === 'platform'
         ? platforms.length === 0
-        : false
+        : activeMode === 'tags'
+          ? tags.length === 0
+          : false
   const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
   const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
@@ -150,7 +156,7 @@ export function FacetSidebar({
       </div>
 
       <div className="flex shrink-0 border-b border-border">
-        {(['domains', 'categories', 'intent', 'platform'] as const).map(mode => (
+        {(['domains', 'categories', 'intent', 'platform', 'tags'] as const).map(mode => (
           <button
             key={mode}
             type="button"
@@ -168,7 +174,9 @@ export function FacetSidebar({
                 ? 'Categories'
                 : mode === 'intent'
                   ? 'Intent'
-                  : 'Platform'}
+                  : mode === 'platform'
+                    ? 'Platform'
+                    : 'Tags'}
           </button>
         ))}
       </div>
@@ -180,6 +188,8 @@ export function FacetSidebar({
               ? 'No intents yet'
               : activeMode === 'platform'
                 ? 'No platforms yet'
+                : activeMode === 'tags'
+                  ? 'No tags yet'
                 : 'No categories yet'}
           </p>
         ) : activeMode === 'categories' ? (

@@ -2,7 +2,8 @@ import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type Lu
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { formatAge } from '@/lib/utils'
-import type { LlmStatus } from '@/lib/classifier'
+import type { LlmAvailability } from '@/lib/classifier'
+import type { TaskState } from '@/lib/pipeline-orchestrator'
 
 interface StatusBarAiActions {
   onClearCache?: () => Promise<void>
@@ -24,8 +25,11 @@ interface StatusBarProps {
   loading: boolean
   lastUpdated: number | null
   onReload: () => void
-  llmStatus: LlmStatus
-  llmError?: string
+  llmAvailability: LlmAvailability
+  tasks: TaskState[]
+  pipelineRunning: boolean
+  lastError?: string
+  onStopPipeline?: () => void
   onSettingsClick: () => void
   ai?: StatusBarAiActions
 }
@@ -36,8 +40,11 @@ export function StatusBar({
   loading,
   lastUpdated,
   onReload,
-  llmStatus,
-  llmError,
+  llmAvailability,
+  tasks,
+  pipelineRunning,
+  lastError,
+  onStopPipeline,
   onSettingsClick,
   ai,
 }: StatusBarProps) {
@@ -123,6 +130,10 @@ export function StatusBar({
     } : null,
   ].filter((item): item is AiActionItem => item !== null)
   const hasAi = aiActionItems.length > 0
+  const activeTasks = tasks
+    .filter((task) => task.status === 'running' || task.status === 'pending')
+    .sort((a, b) => a.label.localeCompare(b.label))
+
   return (
     <div className="flex items-center gap-4 rounded-md border border-border bg-card px-4 py-2 text-sm text-muted-foreground">
       <span>
@@ -176,18 +187,26 @@ export function StatusBar({
       )}
 
       <span className="ml-auto flex items-center gap-2 text-xs">
-        {llmStatus === 'error' && (
-          <span className="flex items-center gap-1 text-destructive" title={llmError}>
+        {lastError && (
+          <span className="flex items-center gap-1 text-destructive" title={lastError}>
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
             LLM: error
           </span>
         )}
-        {llmStatus === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
-        {llmStatus === 'checking' && <span className="opacity-40">LLM: checking…</span>}
-        {llmStatus === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
-        {llmStatus === 'ready' && <span className="text-primary">LLM: ready</span>}
-        {llmStatus === 'classifying' && <span className="text-accent">LLM: classifying…</span>}
-        {llmStatus === 'normalizing' && <span className="text-accent">LLM: normalizing…</span>}
+        {llmAvailability === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
+        {llmAvailability === 'checking' && <span className="opacity-40">LLM: checking…</span>}
+        {llmAvailability === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
+        {!pipelineRunning && llmAvailability === 'ready' && <span className="text-primary">LLM: ready</span>}
+        {pipelineRunning && activeTasks.length > 0 && (
+          <span className="text-accent" title={`${activeTasks[0].done}/${activeTasks[0].total}`}>
+            {activeTasks[0].label}: {Math.round(activeTasks[0].percent)}%
+          </span>
+        )}
+        {pipelineRunning && onStopPipeline && (
+          <Button variant="ghost" size="sm" onClick={onStopPipeline} className="h-6 px-2 text-[11px]" title="Stop current pipeline">
+            Stop
+          </Button>
+        )}
       </span>
 
       <Button
