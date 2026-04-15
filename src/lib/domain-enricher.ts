@@ -1,5 +1,6 @@
 import { chatComplete } from './llm'
 import { domainEnricherLog } from './logger'
+import { getChatProvider } from './providers/factory'
 import { enrichDomain } from './prompts'
 import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
 import { getPrefilledDomain } from './domain-prefill'
@@ -124,16 +125,11 @@ export function getDomainInfo(
 }
 
 function canUseDomainEnrichmentLlm(settings: LlmSettings): boolean {
-  const provider = settings.tasks.chat.provider
-  if (provider === 'gemini-nano') return false
-  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
-  if (provider === 'lmstudio') {
-    return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
-  }
-  if (provider === 'openrouter') {
-    return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
-  }
-  return false
+  const providerId = settings.tasks.chat.provider
+  try {
+    const provider = getChatProvider(providerId)
+    return provider.supportsDomainEnrichment && Boolean(provider.getChatModel(settings))
+  } catch { return false }
 }
 
 function isUnknownStillFresh(info: DomainInfo, now = Date.now()): boolean {

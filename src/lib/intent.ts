@@ -1,12 +1,12 @@
 import { chatComplete } from './llm'
+import { getEmbeddingProvider } from './providers/factory'
 import { cosineSimilarity } from './embedder'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { detectPlatform, intentFromPlatform } from './platform-detection'
 import { classifyIntent as classifyIntentContract } from './prompts'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from './storage'
-import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from './types'
-import { webgpuEmbed } from './webgpu-provider'
+import { DEFAULT_LLM_SETTINGS, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from './types'
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 const intentParseMetrics = {
@@ -37,18 +37,22 @@ const INTENT_RESPONSE_SCHEMA = {
 
 let intentLabelEmbeddingsPromise: Promise<Map<PageIntent, number[]>> | null = null
 
-async function getIntentLabelEmbeddings(model: string): Promise<Map<PageIntent, number[]>> {
+async function getIntentLabelEmbeddings(settings: LlmSettings): Promise<Map<PageIntent, number[]>> {
+  const providerId = settings.tasks.embedding.provider
+  const provider = getEmbeddingProvider(providerId)
+  const model = provider.getEmbeddingModel(settings) || 'default'
+
   if (!intentLabelEmbeddingsPromise) {
     intentLabelEmbeddingsPromise = Promise.resolve(new Map())
   }
   const existing = await intentLabelEmbeddingsPromise
-  if (existing.size > 0 && model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) return existing
+  if (existing.size > 0 && model === 'default') return existing
 
   const map = new Map<PageIntent, number[]>()
   for (const intent of VALID_INTENTS) {
-    map.set(intent, await webgpuEmbed(INTENT_DESCRIPTORS[intent] ?? intent, model))
+    map.set(intent, await provider.embed(INTENT_DESCRIPTORS[intent] ?? intent, settings))
   }
-  if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
+  if (model === 'default') {
     intentLabelEmbeddingsPromise = Promise.resolve(map)
   }
   return map
@@ -63,10 +67,12 @@ function urlPathSnippet(url: string): string {
   }
 }
 
-async function classifyIntentNLI(item: { url: string; title: string; domain: string }, model: string): Promise<PageIntent> {
+async function classifyIntentNLI(item: { url: string; title: string; domain: string }, settings: LlmSettings): Promise<PageIntent> {
+  const providerId = settings.tasks.embedding.provider
+  const provider = getEmbeddingProvider(providerId)
   const path = urlPathSnippet(item.url)
-  const query = await webgpuEmbed([item.title, item.domain, path].filter(Boolean).join(' '), model)
-  const labels = await getIntentLabelEmbeddings(model)
+  const query = await provider.embed([item.title, item.domain, path].filter(Boolean).join(' '), settings)
+  const labels = await getIntentLabelEmbeddings(settings)
   let bestIntent: PageIntent = 'other'
   let bestScore = -Infinity
 
@@ -110,7 +116,6 @@ export async function classifyIntent(
 
   const useNli = settings.providers.browserMl.classificationMethod === 'nli'
     && settings.tasks.embedding.provider === 'browser-ml'
-  const nliModel = settings.providers.browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
   if (settings.providers.browserMl.classificationMethod === 'nli' && !useNli) {
     console.warn('[intent] NLI method requires embedding provider "browser-ml"; falling back to LLM intent classification')
   }
@@ -137,7 +142,7 @@ export async function classifyIntent(
       try {
         let intent: PageIntent = 'other'
         if (useNli) {
-          intent = await classifyIntentNLI(item, nliModel)
+          intent = await classifyIntentNLI(item, settings)
         } else {
           const path = urlPathSnippet(item.url)
           const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined

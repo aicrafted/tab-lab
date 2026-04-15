@@ -1,4 +1,4 @@
-import { webllmChat } from './webllm-provider'
+import { getChatProvider } from './providers/factory'
 import { llmLog } from './logger'
 import type { LlmSettings } from './types'
 
@@ -47,14 +47,17 @@ export function extractJson(text: string): string {
 }
 
 export interface ChatOptions {
+  maxTokens?: number
+  temperature?: number
+  signal?: AbortSignal
   responseFormat?: 'json'
-  disableThinking?: boolean
-  metricKey?: string
   jsonSchema?: {
     name: string
     schema: Record<string, unknown>
     strict?: boolean
   }
+  metricKey?: string
+  disableThinking?: boolean
 }
 
 type LlmMetric = {
@@ -96,24 +99,6 @@ function trackLlmMetric(
   }
 }
 
-// Retry helper with exponential backoff for HTTP requests
-async function withHttpRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      if (attempt === maxRetries - 1) throw err
-      const delay = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
-      llmLog.warn('http retry scheduled', {
-        attempt: attempt + 1,
-        delayMs: delay,
-        err: err instanceof Error ? err.message : String(err),
-      })
-      await new Promise(r => setTimeout(r, delay))
-    }
-  }
-  throw new Error('unreachable')
-}
 
 export async function chatComplete(
   systemPrompt: string,
@@ -150,113 +135,19 @@ export async function chatComplete(
     if (options.responseFormat === 'json') metric.structuredRequested += 1
   })
   try {
-    let response = ''
-    switch (provider) {
-      case 'gemini-nano': {
-        const win = window as any
-        const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
-        if (!LanguageModel) throw new Error('Gemini Nano (Prompt API) unavailable')
-        
-        const session = await LanguageModel.create({ systemPrompt, expectedOutputLanguage: 'en' })
-        try {
-          response = (await session.prompt(cleanMessage)).trim()
-        } finally {
-          session.destroy()
-        }
-        break
+    const chatProvider = getChatProvider(provider)
+    const response = await chatProvider.chat(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: cleanMessage },
+      ],
+      settings,
+      {
+        maxTokens,
+        signal: options.signal,
+        ...options,
       }
-      case 'browser-ml':
-        response = await webllmChat(systemPrompt, cleanMessage, model, maxTokens, options)
-        break
-      case 'openrouter':
-      case 'lmstudio':
-      default: {
-        const baseUrl = provider === 'openrouter'
-          ? 'https://openrouter.ai/api/v1'
-          : settings.providers.lmstudio.baseUrl
-        const apiKey = provider === 'openrouter'
-          ? settings.providers.openrouter.apiKey
-          : settings.providers.lmstudio.apiKey
-        // model was already resolved at line 131
-
-        const defaultJsonSchema = {
-          name: 'response',
-          schema: {
-            type: 'object',
-            additionalProperties: true,
-          },
-          strict: false,
-        } as const
-
-        const buildBody = (useStructuredJson: boolean): string => JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: cleanMessage },
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.1,
-          ...(provider === 'lmstudio' && useStructuredJson
-            ? {
-              response_format: {
-                type: 'json_schema',
-                json_schema: options.jsonSchema ?? defaultJsonSchema,
-              },
-            }
-            : {}),
-        })
-
-        const request = async (useStructuredJson: boolean): Promise<Response> => {
-          const body = buildBody(useStructuredJson)
-          const r = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-              ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://github.com/aicrafted/tab-lab' } : {}),
-            },
-            body,
-            signal: AbortSignal.timeout(30_000),
-          })
-          if (!r.ok) {
-            const errorText = await r.text().catch((err) => {
-              llmLog.warn('failed to read http error response body', {
-                err: err instanceof Error ? err.message : String(err),
-              })
-              return ''
-            })
-            throw new Error(`Chat API ${r.status}${errorText ? `: ${errorText}` : ''}`)
-          }
-          return r
-        }
-
-        const wantsStructuredJson = options.responseFormat === 'json'
-        const res = await withHttpRetry(async () => {
-          try {
-            return await request(wantsStructuredJson)
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err)
-            const responseFormatIssue = /response_format|json_schema|json_object/i.test(message)
-            if (provider === 'lmstudio' && wantsStructuredJson && responseFormatIssue) {
-              llmLog.warn('structured response rejected; retrying without response_format', {
-                message,
-              })
-              trackLlmMetric(metricKey, (metric) => {
-                metric.structuredFallback += 1
-              })
-              return request(false)
-            }
-            trackLlmMetric(metricKey, (metric) => {
-              metric.failures += 1
-            })
-            throw err
-          }
-        })
-        const json = (await res.json()) as { choices: { message: { content: string } }[] }
-        response = json.choices[0]?.message.content?.trim() ?? ''
-        break
-      }
-    }
+    )
     if (ENABLE_LLM_CALL_DEBUG) {
       llmLog.info('llm-call done', {
         callId,

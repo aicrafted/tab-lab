@@ -1,4 +1,5 @@
 import { chatComplete } from './llm'
+import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { cosineSimilarity } from './embedder'
 import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
@@ -6,8 +7,7 @@ import { classifierLog } from './logger'
 import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
 import { getCached, setCached } from './storage'
 import type { BookmarkItem, LlmSettings, TabItem } from './types'
-import { DEFAULT_LLM_SETTINGS, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL } from './types'
-import { webgpuEmbed } from './webgpu-provider'
+import { DEFAULT_LLM_SETTINGS } from './types'
 
 const classifierParseMetrics = {
   strict: 0,
@@ -141,19 +141,24 @@ const CATEGORY_DESCRIPTORS: Record<string, string> = {
 
 let categoryLabelEmbeddingsPromise: Promise<Map<string, number[]>> | null = null
 
-async function getCategoryLabelEmbeddings(model: string): Promise<Map<string, number[]>> {
+async function getCategoryLabelEmbeddings(settings: LlmSettings): Promise<Map<string, number[]>> {
+  const providerId = settings.tasks.embedding.provider
+  const provider = getEmbeddingProvider(providerId)
+  const model = provider.getEmbeddingModel(settings) || 'default'
+
   if (!categoryLabelEmbeddingsPromise) {
     categoryLabelEmbeddingsPromise = Promise.resolve(new Map())
   }
   const existing = await categoryLabelEmbeddingsPromise
-  if (existing.size > 0 && model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) return existing
+  // Cache check can be smarter but for now we'll keep it simple
+  if (existing.size > 0 && model === 'default') return existing
 
   const map = new Map<string, number[]>()
   for (const label of CATEGORY_CANDIDATES) {
     const descriptor = CATEGORY_DESCRIPTORS[label] ?? label
-    map.set(label, await webgpuEmbed(descriptor, model))
+    map.set(label, await provider.embed(descriptor, settings))
   }
-  if (model === DEFAULT_TRANSFORMERS_EMBEDDING_MODEL) {
+  if (model === 'default') {
     categoryLabelEmbeddingsPromise = Promise.resolve(map)
   }
   return map
@@ -184,14 +189,17 @@ function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | und
 
 async function classifyItemNLI(
   item: ClassifiedItem,
-  model: string,
+  settings: LlmSettings,
   domainMap?: Map<string, DomainInfo>,
 ): Promise<string> {
+  const providerId = settings.tasks.embedding.provider
+  const provider = getEmbeddingProvider(providerId)
+  
   const path = urlPathSnippet(item.url)
   const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
   const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
-  const queryEmbedding = await webgpuEmbed(text, model)
-  const labelEmbeddings = await getCategoryLabelEmbeddings(model)
+  const queryEmbedding = await provider.embed(text, settings)
+  const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
   let bestLabel = 'Other'
   let bestScore = -Infinity
 
@@ -207,46 +215,18 @@ async function classifyItemNLI(
 }
 
 export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmAvailability> {
-  const provider = settings?.tasks.chat.provider ?? 'gemini-nano'
-  if (provider === 'browser-ml') {
-    return settings?.providers.browserMl.chatModel ? 'ready' : 'unavailable'
-  }
-  if (provider === 'lmstudio') {
-    return settings?.providers.lmstudio.baseUrl && settings?.providers.lmstudio.chatModel ? 'ready' : 'unavailable'
-  }
-  if (provider === 'openrouter') {
-    return settings?.providers.openrouter.apiKey && settings?.providers.openrouter.chatModel ? 'ready' : 'unavailable'
-  }
+  if (!settings) return 'unavailable'
+  const providerId = settings.tasks.chat.provider
   try {
-    const win = window as any
-    const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
+    const provider = getChatProvider(providerId)
+    const status = await provider.checkStatus(settings)
     
-    const apis = []
-    if (win.ai) apis.push('window.ai')
-    if (win.ai?.languageModel) apis.push('ai.languageModel')
-    if (win.ai?.assistant) apis.push('ai.assistant')
-    if (win.LanguageModel) apis.push('LanguageModel (global)')
-    if (win.Summarizer) apis.push('Summarizer (global)')
-    if (win.ai?.summarizer) apis.push('ai.summarizer')
-
-    if (!LanguageModel) {
-      classifierLog.debug('Gemini Nano: No Prompt API detected', { available: apis })
-      return 'unavailable'
-    }
-
-    const caps = await LanguageModel.capabilities?.() || await LanguageModel.availability?.()
-    classifierLog.debug('Gemini Nano capabilities/availability', caps)
-    
-    // Support both old 'capabilities' and new 'availability' response
-    const availability = typeof caps === 'string' ? caps : caps?.available || caps
-    
-    if (availability === 'no' || availability === 'unavailable') return 'unavailable'
-    if (availability === 'after-download' || availability === 'downloading') return 'after-download'
-    if (availability === 'ready' || availability === 'available') return 'ready'
-    
+    if (status.status === 'ready') return 'ready'
+    if (status.status === 'loading') return 'after-download'
     return 'unavailable'
   } catch (err) {
-    classifierLog.warn('failed to check Gemini Nano availability', {
+    classifierLog.warn('failed to check LLM availability via provider', {
+      provider: providerId,
       err: err instanceof Error ? err.message : String(err),
     })
     return 'unavailable'
@@ -298,7 +278,6 @@ export async function classifyItems(
   const browserMl = settings.providers.browserMl
 
   const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
-  const nliModel = browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
   
   const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProvider })
   const format = chatProvider !== 'gemini-nano' ? 'json' : 'text'
@@ -323,7 +302,7 @@ export async function classifyItems(
       try {
         let category = 'Other'
         if (useNli) {
-          category = await classifyItemNLI(item, nliModel, domainMap)
+          category = await classifyItemNLI(item, settings, domainMap)
         } else {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
@@ -754,9 +733,9 @@ function inferClusterNameFromRepresentative(title: string, category: string): st
 
 async function classifyClusterNli(
   centroid: number[],
-  model: string,
+  settings: LlmSettings
 ): Promise<string> {
-  const labelEmbeddings = await getCategoryLabelEmbeddings(model)
+  const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
   let bestLabel = 'Other'
   let bestScore = -Infinity
   for (const [label, embedding] of labelEmbeddings.entries()) {
@@ -784,7 +763,6 @@ export async function classifyByClusters(
   const embedProvider = settings.tasks.embedding.provider
   const browserMl = settings.providers.browserMl
   const useNli = embedProvider === 'browser-ml' && browserMl.classificationMethod === 'nli'
-  const nliModel = browserMl.embeddingModel || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL
 
   for (const cluster of clusters) {
     const representativeItems = cluster.representatives
@@ -800,7 +778,7 @@ export async function classifyByClusters(
     let name = 'Other'
 
     if (useNli) {
-      category = await classifyClusterNli(cluster.centroid, nliModel)
+      category = await classifyClusterNli(cluster.centroid, settings)
       name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
     } else {
       const provider = settings.tasks.chat.provider

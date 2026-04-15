@@ -5,6 +5,7 @@ import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, re
 import { aiPipelineLog } from './logger'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from './intent'
 import { detectPlatform } from './platform-detection'
+import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { getCached, setCached } from './storage'
 import { tagWithGeminiNano, tagWithLmStudio } from './tagger'
 import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from './types'
@@ -79,29 +80,27 @@ interface RunContext {
 const BOOKMARK_CLUSTER_OFFSET = 10_000
 
 function hasChatProviderConfig(settings: LlmSettings): boolean {
-  const provider = settings.tasks.chat.provider
-  if (provider === 'gemini-nano') return true
-  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
-  return false
+  const providerId = settings.tasks.chat.provider
+  try {
+    const provider = getChatProvider(providerId)
+    return Boolean(provider.getChatModel(settings))
+  } catch { return false }
 }
 
 function hasDomainKnowledgeProviderConfig(settings: LlmSettings): boolean {
-  const provider = settings.tasks.chat.provider
-  if (provider === 'gemini-nano') return false
-  if (provider === 'browser-ml') return Boolean(settings.providers.browserMl.chatModel)
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.chatModel)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.chatModel)
-  return false
+  const providerId = settings.tasks.chat.provider
+  try {
+    const provider = getChatProvider(providerId)
+    return provider.supportsDomainEnrichment && Boolean(provider.getChatModel(settings))
+  } catch { return false }
 }
 
 function hasEmbeddingProviderConfig(settings: LlmSettings): boolean {
-  const provider = settings.tasks.embedding.provider
-  if (provider === 'browser-ml') return true
-  if (provider === 'lmstudio') return Boolean(settings.providers.lmstudio.baseUrl && settings.providers.lmstudio.embeddingModel)
-  if (provider === 'openrouter') return Boolean(settings.providers.openrouter.apiKey && settings.providers.openrouter.embeddingModel)
-  return false
+  const providerId = settings.tasks.embedding.provider
+  try {
+    const provider = getEmbeddingProvider(providerId)
+    return Boolean(provider.getEmbeddingModel(settings))
+  } catch { return false }
 }
 
 export class PipelineOrchestrator {
