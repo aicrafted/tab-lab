@@ -218,11 +218,34 @@ export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmA
     return settings?.providers.openrouter.apiKey && settings?.tasks.chat.model ? 'ready' : 'unavailable'
   }
   try {
-    if (!window.ai?.languageModel) return 'unavailable'
-    const caps = await window.ai.languageModel.capabilities()
-    if (caps.available === 'no') return 'unavailable'
-    if (caps.available === 'after-download') return 'after-download'
-    return 'ready'
+    const win = window as any
+    const ai = win.ai
+    const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
+    
+    const apis = []
+    if (win.ai) apis.push('window.ai')
+    if (win.ai?.languageModel) apis.push('ai.languageModel')
+    if (win.ai?.assistant) apis.push('ai.assistant')
+    if (win.LanguageModel) apis.push('LanguageModel (global)')
+    if (win.Summarizer) apis.push('Summarizer (global)')
+    if (win.ai?.summarizer) apis.push('ai.summarizer')
+
+    if (!LanguageModel) {
+      classifierLog.debug('Gemini Nano: No Prompt API detected', { available: apis })
+      return 'unavailable'
+    }
+
+    const caps = await LanguageModel.capabilities?.() || await LanguageModel.availability?.()
+    classifierLog.debug('Gemini Nano capabilities/availability', caps)
+    
+    // Support both old 'capabilities' and new 'availability' response
+    const availability = typeof caps === 'string' ? caps : caps?.available || caps
+    
+    if (availability === 'no' || availability === 'unavailable') return 'unavailable'
+    if (availability === 'after-download' || availability === 'downloading') return 'after-download'
+    if (availability === 'ready' || availability === 'available') return 'ready'
+    
+    return 'unavailable'
   } catch (err) {
     classifierLog.warn('failed to check Gemini Nano availability', {
       err: err instanceof Error ? err.message : String(err),

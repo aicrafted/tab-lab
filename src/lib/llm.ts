@@ -151,8 +151,11 @@ export async function chatComplete(
     let response = ''
     switch (provider) {
       case 'gemini-nano': {
-        if (!window.ai?.languageModel) throw new Error('Gemini Nano unavailable')
-        const session = await window.ai.languageModel.create({ systemPrompt })
+        const win = window as any
+        const LanguageModel = win.ai?.languageModel || win.ai?.assistant || win.LanguageModel
+        if (!LanguageModel) throw new Error('Gemini Nano (Prompt API) unavailable')
+        
+        const session = await LanguageModel.create({ systemPrompt })
         try {
           response = (await session.prompt(cleanMessage)).trim()
         } finally {
