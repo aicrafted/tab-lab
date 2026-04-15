@@ -1,4 +1,4 @@
-import type { BookmarkItem, TabItem } from '@/lib/types'
+import type { BookmarkItem, TabItem, LlmSettings } from '@/lib/types'
 
 export type SourceFilter = 'bookmarks' | 'tabs' | 'both'
 
@@ -23,6 +23,9 @@ export type ViewId =
   | 'overlap-explorer'
   | 'shadow-map'
   | 'session-story'
+  | 'settings-llm'
+  | 'settings-knowledge'
+  | 'settings-advanced'
 
 export interface ViewProps {
   bookmarks: BookmarkItem[]
@@ -32,4 +35,6 @@ export interface ViewProps {
   clusterNames?: Map<number, string>
   onRunTags?: () => Promise<void>
   onRunEmbeddings?: () => Promise<void>
+  llmSettings?: LlmSettings
+  onSaveSettings?: (settings: LlmSettings) => Promise<void>
 }

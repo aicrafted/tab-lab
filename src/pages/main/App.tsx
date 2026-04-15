@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
-import { LlmSettingsPanel } from '@/components/LlmSettings'
+import { LlmSettingsView } from '@/components/views/settings/LlmSettingsView'
+import { KnowledgeSettingsView } from '@/components/views/settings/KnowledgeSettingsView'
+import { AdvancedSettingsView } from '@/components/views/settings/AdvancedSettingsView'
 import { FacetSidebar, type CategoryGroupFacet } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
 import { Button } from '@/components/ui/button'
@@ -97,6 +99,9 @@ const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX
   'overlap-explorer': OverlapExplorerView,
   'shadow-map': ShadowMapView,
   'session-story': SessionStoryView,
+  'settings-llm': LlmSettingsView,
+  'settings-knowledge': KnowledgeSettingsView,
+  'settings-advanced': AdvancedSettingsView,
 }
 
 const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
@@ -150,7 +155,6 @@ export function App() {
   const [, setLlmError] = useState<string | undefined>(undefined)
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [activeView, setActiveView] = useState<ViewId>('list')
   const [sourceFilter, setSourceFilterState] = useState<SourceFilter>('both')
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
@@ -618,6 +622,11 @@ export function App() {
       clusterNames,
       onRunTags: handleRunTags,
       onRunEmbeddings: () => runEmbeddingPass(filteredTabs, filteredBookmarks, llmSettings),
+      llmSettings,
+      onSaveSettings: async (s) => {
+        await setLlmSettings(s)
+        setLlmSettingsState(s)
+      },
     }
 
     if (activeView === 'list') {
@@ -716,15 +725,6 @@ export function App() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setShowSettings((s) => !s)}
-              className="h-7 w-7"
-              title="LLM Settings"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               onClick={reload}
               disabled={loading}
               className="h-7 w-7"
@@ -735,15 +735,6 @@ export function App() {
           </div>
         </header>
         <div className="h-px bg-border/60" />
-        <LlmSettingsPanel
-          open={showSettings}
-          settings={llmSettings}
-          onSave={async (s) => {
-            await setLlmSettings(s)
-            setLlmSettingsState(s)
-          }}
-          onClose={() => setShowSettings(false)}
-        />
       </div>
 
       <div className="flex min-h-0 flex-1">

@@ -22,6 +22,9 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'overlap-explorer', label: 'Overlap Explorer', hint: 'Venn-style intersections across tabs/bookmarks/tags' },
   { id: 'shadow-map', label: 'Shadow Map', hint: 'Duplicate and near-duplicate groups by semantic similarity' },
   { id: 'session-story', label: 'Session Story', hint: 'Chronological rabbit-hole chains from browsing sessions' },
+  { id: 'settings-llm', label: 'Models & Providers', hint: 'Configure LLM and Embedding providers (OpenRouter, LM Studio, etc.)' },
+  { id: 'settings-knowledge', label: 'Knowledge Base', hint: 'Manage domain pre-fill knowledge and site descriptions' },
+  { id: 'settings-advanced', label: 'Advanced Settings', hint: 'Network patterns, cache management, and performance' },
 ]
 
 export const VIEW_HINTS: Record<ViewId, string> = Object.fromEntries(
@@ -59,6 +62,12 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     hint: 'Views that rely more on remote assets/content.',
     views: ['magazine'],
   },
+  {
+    id: 'settings',
+    label: 'Settings',
+    hint: 'Application configuration and AI settings.',
+    views: ['settings-llm', 'settings-knowledge', 'settings-advanced'],
+  },
 ]
 
 const VIEW_BY_ID: Record<ViewId, { id: ViewId; label: string; hint: string }> = Object.fromEntries(
@@ -84,21 +93,27 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
         <div className="flex items-center gap-1 pt-1 px-1">
           {VIEW_GROUPS.map((group) => {
             const isActive = group.id === activeGroup.id
+            const isSettingsGroup = group.id === 'settings'
+
             return (
-              <button
-                key={group.id}
-                type="button"
-                title={group.hint}
-                onClick={() => onChange(group.views[0])}
-                className={cn(
-                  'whitespace-nowrap rounded-t-md rounded-b-none border-b px-2.5 py-1 text-base font-semibold transition-colors',
-                  isActive
-                    ? 'border-primary/50 bg-primary/20 text-primary ring-1 ring-primary/35'
-                    : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',
-                )}
-              >
-                {group.label}
-              </button>
+              <>
+                {isSettingsGroup && <div key="spacer" className="flex-grow" />}
+                <button
+                  key={group.id}
+                  type="button"
+                  title={group.hint}
+                  onClick={() => onChange(group.views[0])}
+                  className={cn(
+                    'whitespace-nowrap rounded-t-md rounded-b-none border-b px-2.5 py-1 text-base font-semibold transition-colors',
+                    isActive
+                      ? 'border-primary/50 bg-primary/20 text-primary ring-1 ring-primary/35'
+                      : 'border-transparent text-muted-foreground hover:bg-background hover:text-foreground',
+                    isSettingsGroup && 'ml-2',
+                  )}
+                >
+                  {group.label}
+                </button>
+              </>
             )
           })}
         </div>
