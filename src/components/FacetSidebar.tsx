@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { SourceFilterToggle } from '@/components/SourceFilter'
 import { IntentIcon } from '@/components/IntentIcon'
+import { PlatformIcon } from '@/components/PlatformIcon'
 import {
   Select,
   SelectContent,
@@ -217,6 +218,7 @@ export function FacetSidebar({
               value={item.value}
               count={item.count}
               showIntentIcon={activeMode === 'intent'}
+              showPlatformIcon={activeMode === 'platform'}
               active={activeValues.includes(item.value)}
               onClick={() => onToggle(item.value)}
             />
@@ -408,12 +410,14 @@ function FacetRow({
   value,
   count,
   showIntentIcon,
+  showPlatformIcon,
   active,
   onClick,
 }: {
   value: string
   count: number
   showIntentIcon: boolean
+  showPlatformIcon: boolean
   active: boolean
   onClick: () => void
 }) {
@@ -426,12 +430,14 @@ function FacetRow({
         active && 'bg-card',
       )}
     >
-      <span
-        className={cn(
-          'h-2 w-2 shrink-0 rounded-full transition-colors',
-          active ? 'bg-primary' : 'bg-muted-foreground/30',
-        )}
-      />
+      {!showIntentIcon && !showPlatformIcon && (
+        <span
+          className={cn(
+            'h-2 w-2 shrink-0 rounded-full transition-colors',
+            active ? 'bg-primary' : 'bg-muted-foreground/30',
+          )}
+        />
+      )}
       <span
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1.5 truncate',
@@ -440,6 +446,7 @@ function FacetRow({
         title={value}
       >
         {showIntentIcon && <IntentIcon intent={value} className={active ? 'text-primary/80' : undefined} />}
+        {showPlatformIcon && <PlatformIcon platform={value} className={active ? 'text-primary/80' : undefined} />}
         <span className="truncate">{value}</span>
       </span>
       <span className="shrink-0 tabular-nums text-muted-foreground/60">
