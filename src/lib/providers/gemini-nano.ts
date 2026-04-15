@@ -40,8 +40,7 @@ export class GeminiNanoProvider extends LlmProvider {
 
     // Handle both window.ai.languageModel.create and window.ai.create (older)
     const factory = LanguageModel.create ? LanguageModel : LanguageModel.languageModel
-    const session = await factory.create({
-      systemPrompt: systemMessage,
+    const createOptions: any = {
       expectedLanguage: 'en',
       expectedOutputLanguage: 'en',
       monitor(m: any) {
@@ -49,10 +48,25 @@ export class GeminiNanoProvider extends LlmProvider {
           console.debug(`[gemini-nano] download progress: ${e.loaded}/${e.total}`)
         })
       },
-      signal: options?.signal,
-      temperature: options?.temperature,
-      topK: 3,
+    }
+
+    if (systemMessage) createOptions.systemPrompt = systemMessage
+    if (options?.signal) createOptions.signal = options.signal
+
+    // Spec says: must specify both topK and temperature, or neither
+    if (options?.temperature !== undefined) {
+      createOptions.temperature = options.temperature
+      createOptions.topK = 3
+    }
+
+    console.debug('[gemini-nano] creating session with options:', {
+      ...createOptions,
+      systemPrompt: createOptions.systemPrompt ? `(length: ${createOptions.systemPrompt.length})` : 'none',
+      signal: createOptions.signal ? 'present' : 'none',
+      monitor: createOptions.monitor ? 'present' : 'none'
     })
+
+    const session = await factory.create(createOptions)
 
     try {
       const result = await session.prompt(prompt, {

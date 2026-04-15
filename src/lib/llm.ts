@@ -58,6 +58,7 @@ export interface ChatOptions {
   }
   metricKey?: string
   disableThinking?: boolean
+  topK?: number
 }
 
 type LlmMetric = {
@@ -122,6 +123,8 @@ export async function chatComplete(
       metricKey,
       model,
       maxTokens,
+      temperature: options.temperature,
+      topK: options.topK,
       responseFormat: options.responseFormat ?? 'text',
       systemPromptLength: systemPrompt.length,
       userMessageLength: cleanMessage.length,

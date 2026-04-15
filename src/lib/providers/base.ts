@@ -15,6 +15,7 @@ export interface ChatOptions {
     schema: Record<string, unknown>
     strict?: boolean
   }
+  topK?: number
 }
 
 export interface ProviderStatus {
