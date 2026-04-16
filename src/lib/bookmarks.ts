@@ -56,7 +56,6 @@ function buildFolderIndex(tree: chrome.bookmarks.BookmarkTreeNode[]): FolderInde
     visit(root)
   }
 
-  options.sort((a, b) => a.path.localeCompare(b.path))
   return { pathById, descendantIdsById, options }
 }
 

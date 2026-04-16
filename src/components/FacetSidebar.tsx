@@ -89,18 +89,14 @@ export function FacetSidebar({
         : activeMode === 'tags'
           ? tags.length === 0
           : false
-  const visibleFolderOptions = bookmarkFolderOptions.filter((option) => getMeaningfulParts(option.path).length > 0)
-  const duplicateLeafTitles = buildDuplicateLeafTitleSet(visibleFolderOptions)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
     ? bookmarkScopeFilter.folderId
     : 'root'
   const selectedFolder = bookmarkScopeValue === 'root'
     ? null
-    : visibleFolderOptions.find((option) => option.id === bookmarkScopeValue)
-      ?? bookmarkFolderOptions.find((option) => option.id === bookmarkScopeValue)
-      ?? null
+    : bookmarkFolderOptions.find((option) => option.id === bookmarkScopeValue) ?? null
   const bookmarkScopeLabel = selectedFolder
-    ? formatFolderPathForTrigger(selectedFolder.path)
+    ? selectedFolder.path
     : 'Root (all bookmarks)'
 
   return (
@@ -130,16 +126,16 @@ export function FacetSidebar({
                 {bookmarkScopeLabel}
               </span>
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="root">Root (all bookmarks)</SelectItem>
-              {visibleFolderOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
+            <SelectContent className="text-xs">
+              <SelectItem value="root" className="py-0.5 px-2 text-xs">Root (all bookmarks)</SelectItem>
+              {bookmarkFolderOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id} className="py-0.5 px-2 text-xs">
                   <span
-                    className="inline-block"
-                    style={{ paddingLeft: `${Math.min(option.depth, 2) * 12}px` }}
+                    className="inline-block truncate"
+                    style={{ paddingLeft: `${option.depth * 12}px` }}
                     title={option.path}
                   >
-                    {formatFolderPathForOption(option.path, duplicateLeafTitles)}
+                    {option.title}
                   </span>
                 </SelectItem>
               ))}
@@ -355,55 +351,6 @@ function GroupedCategoryList({
       })}
     </div>
   )
-}
-
-function formatFolderPathForTrigger(path: string): string {
-  const parts = getMeaningfulParts(path)
-  if (parts.length === 0) return 'Root (all bookmarks)'
-  if (parts.length === 1) return parts[0]
-  return parts.slice(-2).join(' / ')
-}
-
-function formatFolderPathForOption(path: string, duplicateLeafTitles: Set<string>): string {
-  const parts = getMeaningfulParts(path)
-  if (parts.length === 0) return ''
-  const leaf = parts[parts.length - 1]
-  if (!duplicateLeafTitles.has(leaf)) return leaf
-  if (parts.length === 1) return leaf
-  return parts.slice(-2).join(' / ')
-}
-
-function buildDuplicateLeafTitleSet(options: BookmarkFolderOption[]): Set<string> {
-  const counts = new Map<string, number>()
-  for (const option of options) {
-    const parts = getMeaningfulParts(option.path)
-    if (parts.length === 0) continue
-    const leaf = parts[parts.length - 1]
-    counts.set(leaf, (counts.get(leaf) ?? 0) + 1)
-  }
-  const duplicates = new Set<string>()
-  for (const [leaf, count] of counts.entries()) {
-    if (count > 1) duplicates.add(leaf)
-  }
-  return duplicates
-}
-
-function getMeaningfulParts(path: string): string[] {
-  return trimSystemRoot(path.split('/').filter(Boolean))
-}
-
-function trimSystemRoot(parts: string[]): string[] {
-  if (parts.length === 0) return parts
-  const first = parts[0].toLowerCase()
-  const systemRoots = new Set([
-    'bookmarks bar',
-    'other bookmarks',
-    'mobile bookmarks',
-    'панель закладок',
-    'другие закладки',
-    'мобильные закладки',
-  ])
-  return systemRoots.has(first) ? parts.slice(1) : parts
 }
 
 function FacetRow({
