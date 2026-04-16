@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { ChevronDown, ChevronRight, ExternalLink, FolderOutput, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, Trash2 } from 'lucide-react'
 import { DataTable } from './DataTable'
 import { IntentIcon } from './IntentIcon'
 import { Badge } from '@/components/ui/badge'
@@ -252,11 +252,10 @@ interface BookmarksTableProps {
   settings: LlmSettings
   loading?: boolean
   onDelete: (id: string) => void
-  onExport?: () => Promise<void>
   menuHost?: HTMLElement | null
 }
 
-export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete, onExport, menuHost }: BookmarksTableProps) {
+export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete, menuHost }: BookmarksTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
@@ -316,21 +315,8 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
     [onDelete, semanticScores, localUrlSet, expandedUrls],
   )
 
-  const hasCategories = data.some((b) => b.category)
-
   const toolbar = (
     <div className="flex items-center gap-2">
-      {hasCategories && onExport && (
-        <button
-          type="button"
-          onClick={onExport}
-          className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-          title="Export categorized bookmarks to Chrome folders"
-        >
-          <FolderOutput className="h-3.5 w-3.5" />
-          Export to folders
-        </button>
-      )}
       <button
         type="button"
         className={cn(

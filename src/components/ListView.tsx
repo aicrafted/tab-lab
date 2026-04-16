@@ -12,7 +12,6 @@ interface ListViewProps {
   settings: LlmSettings
   loading: boolean
   onDeleteBookmark: (id: string) => Promise<void>
-  onExport?: () => Promise<void>
   onCloseTab: (id: number) => Promise<void>
   onActivateTab: (id: number) => Promise<void>
   viewMenuHost?: HTMLElement | null
@@ -26,7 +25,6 @@ export function ListView({
   settings,
   loading,
   onDeleteBookmark,
-  onExport,
   onCloseTab,
   onActivateTab,
   viewMenuHost,
@@ -39,7 +37,6 @@ export function ListView({
         settings={settings}
         loading={loading}
         onDelete={(id) => void onDeleteBookmark(id)}
-        onExport={onExport}
         menuHost={viewMenuHost}
       />
     )
@@ -70,7 +67,6 @@ export function ListView({
       onDeleteBookmark={(id) => void onDeleteBookmark(id)}
       onCloseTab={(id) => void onCloseTab(id)}
       onActivateTab={(id) => void onActivateTab(id)}
-      onExport={onExport}
       menuHost={viewMenuHost}
     />
   )

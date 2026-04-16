@@ -8,7 +8,6 @@ import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
-  exportToChromeFolders,
   getBookmarkFolderDescendantIds,
   getBookmarkFolderOptions,
   type BookmarkFolderOption,
@@ -367,22 +366,6 @@ export function App() {
   }
 
   // Export categorized bookmarks to Chrome folders
-  const handleExport = async () => {
-    const withCategory = bookmarks.filter(b => b.category && !b.isDuplicate)
-    if (withCategory.length === 0) return
-    const confirmed = confirm(
-      `Create ${[...new Set(withCategory.map(b => b.category!))].length} folders under "TabLab" in your bookmarks bar and move ${withCategory.length} bookmarks? This reorganizes your bookmarks.`,
-    )
-    if (!confirmed) return
-    try {
-      const result = await exportToChromeFolders(bookmarks)
-      alert(`Exported ${result.exported} bookmarks into ${result.folders} folders.`)
-      reload()
-    } catch (err) {
-      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
   const bookmarkScopeBookmarks = useMemo(
     () => {
       if (bookmarkScopeFilter.mode === 'root') return bookmarks
@@ -643,7 +626,6 @@ export function App() {
             await chrome.bookmarks.remove(id)
             setBookmarks((prev) => prev.filter((b) => b.id !== id))
           }}
-          onExport={handleExport}
           onCloseTab={async (id) => {
             await chrome.tabs.remove(id)
             setTabs((prev) => prev.filter((t) => t.id !== id))

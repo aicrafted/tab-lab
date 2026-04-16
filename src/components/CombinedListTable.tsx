@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { ExternalLink, FolderOutput, Trash2, X } from 'lucide-react'
+import { ExternalLink, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/DataTable'
 import { Favicon } from '@/components/Favicon'
@@ -45,7 +45,6 @@ interface CombinedListTableProps {
   onDeleteBookmark: (id: string) => void
   onCloseTab: (id: number) => void
   onActivateTab: (id: number) => void
-  onExport?: () => Promise<void>
   menuHost?: HTMLElement | null
 }
 
@@ -151,7 +150,6 @@ export function CombinedListTable({
   onDeleteBookmark,
   onCloseTab,
   onActivateTab,
-  onExport,
   menuHost,
 }: CombinedListTableProps) {
   const [query, setQuery] = useState('')
@@ -377,20 +375,8 @@ export function CombinedListTable({
     },
   ], [localUrlSet, onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
 
-  const hasCategories = merged.some((row) => row.category)
   const toolbar = (
     <div className="flex items-center gap-2">
-      {hasCategories && onExport && (
-        <button
-          type="button"
-          onClick={() => void onExport()}
-          className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-          title="Export categorized bookmarks to Chrome folders"
-        >
-          <FolderOutput className="h-3.5 w-3.5" />
-          Export to folders
-        </button>
-      )}
       <button
         type="button"
         className={cn(
