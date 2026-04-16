@@ -298,14 +298,19 @@ export const classifyItem = {
     path?: string
     siteLine?: string
     parentCategory?: string
+    candidates?: string[]
   }): string {
-    const { title, domain, path, siteLine, parentCategory } = params
+    const { title, domain, path, siteLine, parentCategory, candidates } = params
     const lines = [`Title: ${title}`, `Domain: ${domain}`]
     if (siteLine) lines.push(siteLine.trimStart())
     if (path) lines.push(`Path: ${path}`)
     if (parentCategory) {
       lines.push(`Parent: ${parentCategory}`)
       lines.push('Assign a more specific sub-category.')
+    }
+    if (candidates && candidates.length > 0) {
+      lines.push(`Candidates: ${candidates.join(', ')}, Other`)
+      lines.push('Choose the best match from Candidates, or use "Other" if none fits.')
     }
     return lines.join('\n')
   },

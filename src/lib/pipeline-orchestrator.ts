@@ -6,7 +6,7 @@ import { aiPipelineLog } from './logger'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from './intent'
 import { detectPlatform } from './platform-detection'
 import { getChatProvider, getEmbeddingProvider } from './providers/factory'
-import { getCached, setCached } from './storage'
+import { getAllCached, getCached, setCached } from './storage'
 import { tagWithGeminiNano, tagWithLmStudio } from './tagger'
 import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from './types'
 
@@ -546,11 +546,13 @@ export class PipelineOrchestrator {
     const tabsTask = this.createTaskTracker(TASK_IDS.CLASSIFY_TABS, 'Auto classify tabs', tabs.length)
     const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'Auto classify bookmarks', bookmarks.length)
 
+    const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
+
     await classifyTabs(tabs, (updates) => {
       if (!this.isRunActive(runId)) return
       tabsTask.progress(updates.length)
       this.callbacks.onCategoryUpdate(updates, 'tab')
-    }, settings, this.currentRun?.abortController.signal)
+    }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
     if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
     tabsTask.done()
 
@@ -558,7 +560,7 @@ export class PipelineOrchestrator {
       if (!this.isRunActive(runId)) return
       bookmarksTask.progress(updates.length)
       this.callbacks.onCategoryUpdate(updates, 'bm')
-    }, settings, this.currentRun?.abortController.signal)
+    }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
     if (!this.isRunActive(runId)) { bookmarksTask.cancel(); return }
     bookmarksTask.done()
 
@@ -723,6 +725,8 @@ export class PipelineOrchestrator {
       const nanoStatus = await checkLlmAvailability(settings)
       const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
 
+      const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
+
       if (useNli) {
         await classifyWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -732,7 +736,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyWithLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -742,19 +746,19 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
       } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
         await classifyTabs(tabs, (updates) => {
           if (!this.isRunActive(runId)) return
           tabsTask.progress(updates.length)
           this.callbacks.onCategoryUpdate(updates, 'tab')
-        }, settings, this.currentRun?.abortController.signal)
+        }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyBookmarks(bookmarks, (updates) => {
           if (!this.isRunActive(runId)) return
           bookmarksTask.progress(updates.length)
           this.callbacks.onCategoryUpdate(updates, 'bm')
-        }, settings, this.currentRun?.abortController.signal)
+        }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
       } else if (hasChatProviderConfig(settings)) {
         await classifyWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -764,7 +768,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyWithLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -774,7 +778,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
       } else {
         throw new Error('LLM unavailable')
       }
@@ -1099,6 +1103,43 @@ export class PipelineOrchestrator {
       this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
     } finally {
       if (this.currentRun?.runId === runId) this.currentRun = null
+    }
+  }
+
+  private async getTaxonomyContext(): Promise<{ candidates: string[]; taxonomyCentroidsMap: Map<string, number[]> }> {
+    const all = await getAllCached()
+    const labels = new Set<string>()
+    const labelEmbeddings = new Map<string, number[][]>()
+
+    for (const entry of all.values()) {
+      if (entry.category) {
+        labels.add(entry.category)
+        if (entry.embedding) {
+          if (!labelEmbeddings.has(entry.category)) labelEmbeddings.set(entry.category, [])
+          labelEmbeddings.get(entry.category)!.push(entry.embedding)
+        }
+      }
+    }
+
+    const taxonomyCentroidsMap = new Map<string, number[]>()
+    for (const [label, embeddings] of labelEmbeddings.entries()) {
+      if (embeddings.length === 0) continue
+      const dim = embeddings[0].length
+      const centroid = new Array(dim).fill(0)
+      for (const emb of embeddings) {
+        for (let i = 0; i < dim; i++) {
+          centroid[i] += emb[i]
+        }
+      }
+      for (let i = 0; i < dim; i++) {
+        centroid[i] /= embeddings.length
+      }
+      taxonomyCentroidsMap.set(label, centroid)
+    }
+
+    return {
+      candidates: [...labels].sort(),
+      taxonomyCentroidsMap,
     }
   }
 }

@@ -19,7 +19,7 @@ import {
   STORAGE_KEEP_KEYS,
 } from './storage-keys'
 
-export { clearAll as clearCache } from './cacheDb'
+export { clearAll as clearCache, getAll as getAllCached } from './cacheDb'
 
 /** Clear ALL AI caches (IndexedDB for per-URL cache + embeddings). */
 export async function clearAllAICache(): Promise<void> {

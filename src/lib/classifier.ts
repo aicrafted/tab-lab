@@ -140,6 +140,19 @@ function urlPathSnippet(url: string): string {
   }
 }
 
+async function getTopCandidates(
+  itemEmbedding: number[],
+  taxonomyCentroids: Map<string, number[]>,
+  topK = 5,
+): Promise<string[]> {
+  const scores: { label: string; score: number }[] = []
+  for (const [label, centroid] of taxonomyCentroids.entries()) {
+    scores.push({ label, score: cosineSimilarity(itemEmbedding, centroid) })
+  }
+  scores.sort((a, b) => b.score - a.score)
+  return scores.slice(0, topK).map((s) => s.label)
+}
+
 function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined): string {
   if (!domainMap) return ''
   const info = getDomainInfo(domain, domainMap)
@@ -223,6 +236,8 @@ export async function classifyItems(
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
+  taxonomyCentroids?: Map<string, number[]>,
+  candidates?: string[],
 ): Promise<void> {
   const uncached: ClassifiedItem[] = []
   const cached: { url: string; category: string }[] = []
@@ -306,7 +321,29 @@ export async function classifyItems(
         } else {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
-          const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
+
+          let itemCandidates = candidates
+          if (taxonomyCentroids && taxonomyCentroids.size > 0 && !!embedProvider.getEmbeddingModel(settings)) {
+            try {
+              const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
+              const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
+              const queryEmbedding = await embedProvider.embed(text, settings, signal)
+              itemCandidates = await getTopCandidates(queryEmbedding, taxonomyCentroids)
+            } catch (err) {
+              classifierLog.warn('failed to get top candidates via embeddings, falling back to free-form or global list', {
+                url: item.url,
+                err: err instanceof Error ? err.message : String(err)
+              })
+            }
+          }
+
+          const userMsg = classifyItem.user({ 
+            title: item.title, 
+            domain: item.domain, 
+            path, 
+            siteLine,
+            candidates: itemCandidates
+          })
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, { ...options, signal })
           if (useJsonOutput) {
             const parsed = classifyItem.parseResponseDetailed(raw)
@@ -679,6 +716,8 @@ export async function classifyTabs(
   onProgress: (updates: { url: string; category: string }[]) => void,
   settings?: LlmSettings,
   signal?: AbortSignal,
+  candidates?: string[],
+  taxonomyCentroids?: Map<string, number[]>,
 ): Promise<void> {
   const activeSettings = settings ?? {
     ...DEFAULT_LLM_SETTINGS,
@@ -695,6 +734,8 @@ export async function classifyTabs(
     onProgress,
     undefined,
     signal,
+    taxonomyCentroids,
+    candidates,
   )
 }
 
@@ -703,6 +744,8 @@ export async function classifyBookmarks(
   onProgress: (updates: { url: string; category: string }[]) => void,
   settings?: LlmSettings,
   signal?: AbortSignal,
+  candidates?: string[],
+  taxonomyCentroids?: Map<string, number[]>,
 ): Promise<void> {
   const activeSettings = settings ?? {
     ...DEFAULT_LLM_SETTINGS,
@@ -713,12 +756,14 @@ export async function classifyBookmarks(
     },
   }
   await classifyItems(
-    bookmarks.map((bookmark) => ({ url: bookmark.url, title: bookmark.title, domain: bookmark.domain })),
+    bookmarks.map((bookmark) => ({ url: bookmark.id ?? bookmark.url, title: bookmark.title, domain: bookmark.domain })),
     'bm',
     activeSettings,
     onProgress,
     undefined,
     signal,
+    taxonomyCentroids,
+    candidates,
   )
 }
 
@@ -729,8 +774,10 @@ export async function classifyWithLmStudio(
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
+  taxonomyCentroids?: Map<string, number[]>,
+  candidates?: string[],
 ): Promise<void> {
-  await classifyItems(items, prefix, settings, onProgress, domainMap, signal)
+  await classifyItems(items, prefix, settings, onProgress, domainMap, signal, taxonomyCentroids, candidates)
 }
 
 function inferClusterNameFromRepresentative(title: string, category: string): string {
