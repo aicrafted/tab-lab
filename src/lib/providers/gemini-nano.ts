@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
-import type { LlmSettings, ClassificationMethod } from '../types'
+import type { LlmSettings } from '../types'
 
 export class GeminiNanoProvider extends LlmProvider {
   readonly id = 'gemini-nano'
@@ -13,10 +13,6 @@ export class GeminiNanoProvider extends LlmProvider {
     return undefined
   }
 
-  getClassificationMethod(_settings: LlmSettings): ClassificationMethod {
-    return 'llm'
-  }
-  
   getTemperature(settings: LlmSettings): number {
     return settings.providers.geminiNano.temperature
   }

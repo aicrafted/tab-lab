@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
-import type { LlmSettings, ClassificationMethod } from '../types'
+import type { LlmSettings } from '../types'
 
 async function fetchRemote(
   text: string,
@@ -36,7 +36,6 @@ async function fetchRemote(
 export abstract class OpenAiCompatibleProvider extends LlmProvider {
   protected abstract getBaseUrl(settings: LlmSettings): string
   protected abstract getApiKey(settings: LlmSettings): string
-  abstract getClassificationMethod(settings: LlmSettings): ClassificationMethod
   abstract getTemperature(settings: LlmSettings): number
 
   async chat(messages: ChatMessage[], settings: LlmSettings, options?: ChatOptions): Promise<string> {
@@ -134,7 +133,6 @@ export class LmStudioProvider extends OpenAiCompatibleProvider {
   readonly id = 'lmstudio'
   getChatModel(settings: LlmSettings) { return settings.providers.lmstudio.chatModel }
   getEmbeddingModel(settings: LlmSettings) { return settings.providers.lmstudio.embeddingModel }
-  getClassificationMethod(settings: LlmSettings) { return settings.providers.lmstudio.classificationMethod }
   getTemperature(settings: LlmSettings) { return settings.providers.lmstudio.temperature }
   protected getBaseUrl(settings: LlmSettings) { return settings.providers.lmstudio.baseUrl }
   protected getApiKey(settings: LlmSettings) { return settings.providers.lmstudio.apiKey }
@@ -189,7 +187,6 @@ export class OpenRouterProvider extends OpenAiCompatibleProvider {
   readonly id = 'openrouter'
   getChatModel(settings: LlmSettings) { return settings.providers.openrouter.chatModel }
   getEmbeddingModel(settings: LlmSettings) { return settings.providers.openrouter.embeddingModel }
-  getClassificationMethod(settings: LlmSettings) { return settings.providers.openrouter.classificationMethod }
   getTemperature(settings: LlmSettings) { return settings.providers.openrouter.temperature }
   protected getBaseUrl(_settings: LlmSettings) { return 'https://openrouter.ai/api/v1' }
   protected getApiKey(settings: LlmSettings) { return settings.providers.openrouter.apiKey }

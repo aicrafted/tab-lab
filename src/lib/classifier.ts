@@ -245,7 +245,7 @@ export async function classifyItems(
   const chatProviderId = settings.tasks.chat.provider
   const embedProviderId = settings.tasks.embedding.provider
   const embedProvider = getEmbeddingProvider(embedProviderId)
-  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
+  const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
 
   // Ensure the required provider is ready
   const activeProviderId = useNli ? embedProviderId : chatProviderId
@@ -776,7 +776,7 @@ export async function classifyByClusters(
   const names = new Map<number, string>()
   const embedProviderId = settings.tasks.embedding.provider
   const embedProvider = getEmbeddingProvider(embedProviderId)
-  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
+  const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
 
   for (const cluster of clusters) {
     if (signal?.aborted) throw new Error('Aborted')

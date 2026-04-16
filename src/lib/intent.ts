@@ -125,7 +125,7 @@ export async function classifyIntent(
 
   const embedProviderId = settings.tasks.embedding.provider
   const embedProvider = getEmbeddingProvider(embedProviderId)
-  const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
+  const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
 
   const provider = settings.tasks.chat.provider
   const format = 'json' as const

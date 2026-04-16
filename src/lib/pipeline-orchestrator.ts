@@ -372,7 +372,9 @@ export class PipelineOrchestrator {
       bookmarks: bookmarks.length,
     })
 
-    if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
+    const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+
+    if (useNli) {
       await this.runAutoClusterFlow(runId, tabs, bookmarks, settings)
       return
     }
@@ -719,7 +721,9 @@ export class PipelineOrchestrator {
     const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'LLM classifying bookmarks', bookmarks.length)
     try {
       const nanoStatus = await checkLlmAvailability(settings)
-      if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
+      const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+
+      if (useNli) {
         await classifyWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',
@@ -869,7 +873,10 @@ export class PipelineOrchestrator {
     const bookmarksTask = this.createTaskTracker(TASK_IDS.INTENT_BOOKMARKS, 'LLM intent bookmarks', bookmarks.length)
     try {
       const nanoStatus = await checkLlmAvailability(settings)
-      if (settings.providers.browserMl.classificationMethod === 'nli' && settings.tasks.embedding.provider === 'browser-ml') {
+      const embedProvider = getEmbeddingProvider(settings.tasks.embedding.provider)
+      const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
+      
+      if (useNli) {
         await classifyIntentLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',

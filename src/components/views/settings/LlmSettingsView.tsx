@@ -63,6 +63,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   // Task Assignments
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(llmSettings.tasks.embedding.provider)
+  const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(llmSettings.tasks.classification.method)
   const [nliCategories, setNliCategories] = useState<NliCategory[]>(llmSettings.nliCategories ?? [...DEFAULT_NLI_CATEGORIES])
   const [nliConfidenceThreshold, setNliConfidenceThreshold] = useState(llmSettings.nliConfidenceThreshold ?? 0.25)
 
@@ -201,11 +202,12 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       tasks: {
         chat: { provider: chatProvider },
         embedding: { provider: embeddingProvider },
+        classification: { method: classificationMethod },
       },
       nliCategories,
       nliConfidenceThreshold,
     })
-  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
+  }, [browserMl, chatProvider, embeddingProvider, classificationMethod, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
@@ -282,21 +284,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
 
               <div className="flex gap-4 pt-1">
-                <div className="space-y-1.5 flex-1">
-                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select
-                    value={browserMl.classificationMethod}
-                    onValueChange={(v) => setBrowserMl({ ...browserMl, classificationMethod: v as ClassificationMethod })}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="space-y-1.5 w-24">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
                   <Input
@@ -377,21 +364,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 </div>
               </div>
               <div className="flex gap-4 pt-1">
-                <div className="space-y-1.5 flex-1">
-                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select
-                    value={lmstudio.classificationMethod}
-                    onValueChange={(v) => setLmstudio({ ...lmstudio, classificationMethod: v as ClassificationMethod })}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="space-y-1.5 w-24">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
                   <Input
@@ -462,21 +434,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 </div>
               </div>
               <div className="flex gap-4 pt-1">
-                <div className="space-y-1.5 flex-1">
-                  <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Classification Method</label>
-                  <Select
-                    value={openrouter.classificationMethod}
-                    onValueChange={(v) => setOpenrouter({ ...openrouter, classificationMethod: v as ClassificationMethod })}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="llm" className="text-xs">LLM (Smart, slower)</SelectItem>
-                      <SelectItem value="nli" className="text-xs">NLI (Fast semantic match)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="space-y-1.5 w-24">
                   <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
                   <Input
@@ -535,6 +492,24 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     <SelectItem value="browser-ml">Browser-local ML</SelectItem>
                     <SelectItem value="lmstudio">LM Studio / Ollama</SelectItem>
                     <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="h-px bg-border/40" />
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold uppercase tracking-tight">Classification</p>
+                  <p className="text-[11px] text-muted-foreground">Choose speed vs. reasoning</p>
+                </div>
+                <Select value={classificationMethod} onValueChange={(v) => setClassificationMethod(v as ClassificationMethod)}>
+                  <SelectTrigger className="h-9 w-44 text-xs font-medium">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="llm">LLM (Smart, slower)</SelectItem>
+                    <SelectItem value="nli">NLI (Fast semantic)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

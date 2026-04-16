@@ -169,7 +169,6 @@ export interface LlmSettings {
     browserMl: {
       chatModel: string
       embeddingModel: string
-      classificationMethod: ClassificationMethod
       temperature: number
     }
     lmstudio: {
@@ -177,24 +176,22 @@ export interface LlmSettings {
       apiKey: string
       chatModel: string
       embeddingModel: string
-      classificationMethod: ClassificationMethod
       temperature: number
     }
     openrouter: {
       apiKey: string
       chatModel: string
       embeddingModel: string
-      classificationMethod: ClassificationMethod
       temperature: number
     }
     geminiNano: {
-      classificationMethod: ClassificationMethod
       temperature: number
     }
   }
   tasks: {
     chat: { provider: ChatProvider }
     embedding: { provider: EmbeddingProvider }
+    classification: { method: ClassificationMethod }
   }
 }
 
@@ -253,7 +250,6 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
     browserMl: {
       chatModel: '',
       embeddingModel: DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
-      classificationMethod: 'llm',
       temperature: 0.1,
     },
     lmstudio: {
@@ -261,18 +257,15 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
       apiKey: '',
       chatModel: '',
       embeddingModel: '',
-      classificationMethod: 'llm',
       temperature: 0.1,
     },
     openrouter: {
       apiKey: '',
       chatModel: '',
       embeddingModel: '',
-      classificationMethod: 'llm',
       temperature: 0.1,
     },
     geminiNano: {
-      classificationMethod: 'llm',
       temperature: 0.1,
     },
   },
@@ -281,6 +274,7 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   tasks: {
     chat: { provider: 'lmstudio' },
     embedding: { provider: 'lmstudio' },
+    classification: { method: 'llm' },
   },
 }
 
@@ -294,10 +288,14 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
     const lmstudio = asObject(providers.lmstudio)
     const openrouter = asObject(providers.openrouter)
     
+    // Migration of classificationMethod: pull from browserMl if it exists there (legacy)
+    const legacyMethod = toClassificationMethod(browserMl.classificationMethod ?? lmstudio.classificationMethod ?? openrouter.classificationMethod, 'llm')
+    
     // Tasks
     const tasks = asObject(obj.tasks)
     const chat = asObject(tasks.chat)
     const embedding = asObject(tasks.embedding)
+    const classification = asObject(tasks.classification)
     
     const localNetworks = toStringArray(obj.localNetworks) ?? [...DEFAULT_LOCAL_NETWORKS]
 
@@ -307,7 +305,6 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         browserMl: {
           chatModel: asString(browserMl.chatModel, ''),
           embeddingModel: asString(browserMl.embeddingModel, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL),
-          classificationMethod: toClassificationMethod(browserMl.classificationMethod, 'llm'),
           temperature: typeof browserMl.temperature === 'number' ? browserMl.temperature : 0.1,
         },
         lmstudio: {
@@ -315,18 +312,15 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
           apiKey: asString(lmstudio.apiKey, ''),
           chatModel: asString(lmstudio.chatModel, ''),
           embeddingModel: asString(lmstudio.embeddingModel, ''),
-          classificationMethod: toClassificationMethod(lmstudio.classificationMethod, 'llm'),
           temperature: typeof lmstudio.temperature === 'number' ? lmstudio.temperature : 0.1,
         },
         openrouter: {
           apiKey: asString(openrouter.apiKey, ''),
           chatModel: asString(openrouter.chatModel, ''),
           embeddingModel: asString(openrouter.embeddingModel, ''),
-          classificationMethod: toClassificationMethod(openrouter.classificationMethod, 'llm'),
           temperature: typeof openrouter.temperature === 'number' ? openrouter.temperature : 0.1,
         },
         geminiNano: {
-          classificationMethod: toClassificationMethod(asObject(providers.geminiNano).classificationMethod, 'llm'),
           temperature: typeof (providers.geminiNano as any)?.temperature === 'number' ? (providers.geminiNano as any).temperature : 0.1,
         },
       },
@@ -336,6 +330,9 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         },
         embedding: {
           provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
+        },
+        classification: {
+          method: toClassificationMethod(classification.method, legacyMethod),
         },
       },
       nliCategories: (obj.nliCategories as NliCategory[]) ?? [...DEFAULT_NLI_CATEGORIES],
@@ -375,6 +372,9 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       },
       embedding: {
         provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'lmstudio'),
+      },
+      classification: {
+        method: toClassificationMethod(old.classificationMethod, 'llm'),
       },
     },
   }
