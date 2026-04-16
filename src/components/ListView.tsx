@@ -2,7 +2,7 @@ import { BookmarksTable } from '@/components/BookmarksTable'
 import { CombinedListTable } from '@/components/CombinedListTable'
 import { TabsTable } from '@/components/TabsTable'
 import type { SourceFilter } from '@/components/views/types'
-import type { BookmarkItem, LlmSettings, TabItem } from '@/lib/types'
+import type { BookmarkItem, LlmSettings, TabItem } from '@/lib/core/types'
 
 interface ListViewProps {
   bookmarks: BookmarkItem[]

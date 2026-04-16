@@ -1,6 +1,6 @@
-import { DOMAIN_PREFILL, PREFILL_CANDIDATES_SORTED } from './domain-prefill'
+import { DOMAIN_PREFILL, PREFILL_CANDIDATES_SORTED } from '../ai/domain-prefill'
 import type { KnownPlatform, PageIntent } from './types'
-import type { DomainInfo } from './domain-enricher'
+import type { DomainInfo } from '../ai/domain-enricher'
 
 export const PLATFORM_TO_INTENT: Partial<Record<KnownPlatform, PageIntent>> = {
   social: 'article',

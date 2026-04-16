@@ -1,10 +1,10 @@
-import { getAllBookmarks } from './bookmarks'
-import { loadCachedCategoryData, loadCachedIntents, loadCachedTags } from './classifier'
-import { crossLink } from './crosslink'
-import { detectPlatform, intentFromPlatform } from './platform-detection'
-import { detectStaticIntent } from './static-intent'
-import type { BookmarkItem, TabItem } from './types'
-import { getAllTabs } from './tabs'
+import { getAllBookmarks } from '../browser/bookmarks'
+import { loadCachedCategoryData, loadCachedIntents, loadCachedTags } from '../ai/classifier'
+import { crossLink } from '../core/crosslink'
+import { detectPlatform, intentFromPlatform } from '../core/platform-detection'
+import { detectStaticIntent } from '../ai/static-intent'
+import type { BookmarkItem, TabItem } from '../core/types'
+import { getAllTabs } from '../browser/tabs'
 
 interface LinkedData {
   bookmarks: BookmarkItem[]

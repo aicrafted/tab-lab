@@ -1,4 +1,4 @@
-import { runDeterministicForceLayout, runDeterministicRadialForceLayout } from '@/lib/force-layout'
+import { runDeterministicForceLayout, runDeterministicRadialForceLayout } from '@/lib/ui/force-layout'
 
 interface LayoutPoint {
   x: number

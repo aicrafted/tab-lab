@@ -1,4 +1,4 @@
-import type { LlmSettings, ClassificationMethod } from '../types'
+import type { LlmSettings, ClassificationMethod } from '../../core/types'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'

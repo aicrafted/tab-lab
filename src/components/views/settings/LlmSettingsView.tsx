@@ -17,19 +17,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/classifier'
-import { getChatProvider } from '@/lib/providers/factory'
-import { GeminiNanoProvider } from '@/lib/providers/gemini-nano'
-import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, DEFAULT_NLI_CATEGORIES } from '@/lib/types'
-import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings, NliCategory } from '@/lib/types'
+import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/ai/classifier'
+import { getChatProvider } from '@/lib/ai/providers/factory'
+import { GeminiNanoProvider } from '@/lib/ai/providers/gemini-nano'
+import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, DEFAULT_NLI_CATEGORIES } from '@/lib/core/types'
+import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings, NliCategory } from '@/lib/core/types'
 import {
   isWebllmModelCached,
   preloadWebllmModel,
-} from '@/lib/providers/webllm-provider'
+} from '@/lib/ai/providers/webllm-provider'
 import {
   isTransformersEmbeddingModelCached,
   preloadTransformersEmbeddingModel,
-} from '@/lib/providers/webgpu-provider'
+} from '@/lib/ai/providers/webgpu-provider'
 import type { ViewProps } from '@/components/views/types'
 
 const WEBLLM_CHAT_MODELS = [

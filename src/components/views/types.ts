@@ -1,4 +1,4 @@
-import type { BookmarkItem, TabItem, LlmSettings } from '@/lib/types'
+import type { BookmarkItem, TabItem, LlmSettings } from '@/lib/core/types'
 
 export type SourceFilter = 'bookmarks' | 'tabs' | 'both'
 

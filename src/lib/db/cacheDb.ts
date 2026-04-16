@@ -5,9 +5,9 @@
  * chrome.storage.local is only used for LLM settings (small, single key).
  */
 
-import type { PageIntent } from './types'
+import type { PageIntent } from '../core/types'
 
-import { getPageCache, setPageCache, getAllPageCache, clearPageCache } from './db/page-cache-repo'
+import { getPageCache, setPageCache, getAllPageCache, clearPageCache } from '../db/page-cache-repo'
 
 
 /** One cached entry per URL. */

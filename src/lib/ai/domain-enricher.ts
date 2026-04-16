@@ -1,11 +1,11 @@
 import { chatComplete } from './llm'
-import { domainEnricherLog } from './logger'
+import { domainEnricherLog } from '../core/logger'
 import { getChatProvider } from './providers/factory'
 import { enrichDomain } from './prompts'
-import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
+import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from '../core/types'
 import { getPrefilledDomain } from './domain-prefill'
-import { isLocalHost } from './local-network'
-import { setDomainRow, getAllDomainRows, clearDomains } from './db/domain-repo'
+import { isLocalHost } from '../core/local-network'
+import { setDomainRow, getAllDomainRows, clearDomains } from '../db/domain-repo'
 
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4

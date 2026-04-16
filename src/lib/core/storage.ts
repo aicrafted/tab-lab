@@ -5,9 +5,9 @@
  *   to avoid the 10MB chrome.storage.local quota limit.
  */
 
-import * as cacheDb from './cacheDb'
-import { clearDomainKnowledgeCache } from './domain-enricher'
-import { clearEmbeddingCache } from './embedder'
+import * as cacheDb from '../db/cacheDb'
+import { clearDomainKnowledgeCache } from '../ai/domain-enricher'
+import { clearEmbeddingCache } from '../ai/embedder'
 import { migrateLlmSettings } from './types'
 import type { BookmarkScopeFilter, CacheEntry, LlmSettings } from './types'
 import type { SourceFilter } from '@/components/views/types'
@@ -19,7 +19,7 @@ import {
   STORAGE_KEEP_KEYS,
 } from './storage-keys'
 
-export { clearAll as clearCache, getAll as getAllCached } from './cacheDb'
+export { clearAll as clearCache, getAll as getAllCached } from '../db/cacheDb'
 
 /** Clear ALL AI caches (IndexedDB for per-URL cache + embeddings). */
 export async function clearAllAICache(): Promise<void> {

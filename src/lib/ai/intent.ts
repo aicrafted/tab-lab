@@ -2,11 +2,11 @@ import { chatComplete } from './llm'
 import { getEmbeddingProvider } from './providers/factory'
 import { cosineSimilarity } from './embedder'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { detectPlatform, intentFromPlatform } from './platform-detection'
+import { detectPlatform, intentFromPlatform } from '../core/platform-detection'
 import { classifyIntent as classifyIntentContract } from './prompts'
 import { detectStaticIntent } from './static-intent'
-import { getCached, setCached } from './storage'
-import { DEFAULT_LLM_SETTINGS, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from './types'
+import { getCached, setCached } from '../core/storage'
+import { DEFAULT_LLM_SETTINGS, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from '../core/types'
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 const intentParseMetrics = {

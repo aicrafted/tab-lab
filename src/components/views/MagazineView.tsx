@@ -8,8 +8,8 @@ import {
   getStubSummary,
   getThumbnailPlaceholder,
 } from '@/components/views/stubs'
-import { effectiveIntent } from '@/lib/static-intent'
-import type { PageIntent } from '@/lib/types'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import type { PageIntent } from '@/lib/core/types'
 
 interface MagazineCardItem {
   id: string

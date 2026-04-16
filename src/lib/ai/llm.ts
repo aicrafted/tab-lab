@@ -1,6 +1,6 @@
 import { getChatProvider } from './providers/factory'
-import { llmLog } from './logger'
-import type { LlmSettings } from './types'
+import { llmLog } from '../core/logger'
+import type { LlmSettings } from '../core/types'
 
 /**
  * Sanitize a string for safe transmission to an LLM.

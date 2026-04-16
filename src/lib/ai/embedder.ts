@@ -1,11 +1,11 @@
-import { projectTo2D, type Point2D } from './project'
+import { projectTo2D, type Point2D } from '../core/project'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { embedderLog } from './logger'
-import type { LlmSettings } from './types'
+import { embedderLog } from '../core/logger'
+import type { LlmSettings } from '../core/types'
 import { getEmbeddingProvider } from './providers/factory'
 
-import { setEmbedding, getEmbeddingsByDim, clearEmbeddings } from './db/embeddings-repo'
-import { setProjection, getProjectionsByDim, clearProjections } from './db/projection-repo'
+import { setEmbedding, getEmbeddingsByDim, clearEmbeddings } from '../db/embeddings-repo'
+import { setProjection, getProjectionsByDim, clearProjections } from '../db/projection-repo'
 
 
 /** Load cached 2D projection coordinates from the embeddings DB. */

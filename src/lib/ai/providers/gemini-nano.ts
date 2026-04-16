@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
-import type { LlmSettings } from '../types'
+import type { LlmSettings } from '../../core/types'
 
 export class GeminiNanoProvider extends LlmProvider {
   readonly id = 'gemini-nano'

@@ -1,5 +1,5 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
-import type { LlmSettings } from '../types'
+import type { LlmSettings } from '../../core/types'
 import { webllmChat, isWebllmModelCached } from './webllm-provider'
 import { webgpuEmbed, isTransformersEmbeddingModelCached } from './webgpu-provider'
 

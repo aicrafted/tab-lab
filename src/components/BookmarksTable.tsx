@@ -5,9 +5,9 @@ import { DataTable } from './DataTable'
 import { IntentIcon } from './IntentIcon'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
-import { effectiveIntent } from '@/lib/static-intent'
-import type { BookmarkItem, LlmSettings } from '@/lib/types'
-import { cn, formatDate, formatAge } from '@/lib/utils'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import type { BookmarkItem, LlmSettings } from '@/lib/core/types'
+import { cn, formatDate, formatAge } from '@/lib/core/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 interface BookmarkGroupRow {

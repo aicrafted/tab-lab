@@ -3,11 +3,11 @@ import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { cosineSimilarity } from './embedder'
 import { kMeans, type ClusterResult } from './cluster'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { classifierLog } from './logger'
+import { classifierLog } from '../core/logger'
 import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
-import { getCached, setCached } from './storage'
-import type { BookmarkItem, LlmSettings, TabItem } from './types'
-import { DEFAULT_LLM_SETTINGS } from './types'
+import { getCached, setCached } from '../core/storage'
+import type { BookmarkItem, LlmSettings, TabItem } from '../core/types'
+import { DEFAULT_LLM_SETTINGS } from '../core/types'
 
 const classifierParseMetrics = {
   strict: 0,
@@ -435,8 +435,8 @@ export async function loadCachedTags(
 export async function loadCachedIntents(
   items: { url: string }[],
   prefix: 'tab' | 'bm',
-): Promise<Map<string, import('./types').PageIntent>> {
-  const map = new Map<string, import('./types').PageIntent>()
+): Promise<Map<string, import('../core/types').PageIntent>> {
+  const map = new Map<string, import('../core/types').PageIntent>()
   await Promise.all(
     items.map(async (item) => {
       const entry = await getCached(prefix, item.url)

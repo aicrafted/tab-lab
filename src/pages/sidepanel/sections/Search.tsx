@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
-import { parseDomain } from '@/lib/utils'
+import { parseDomain } from '@/lib/core/utils'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]

@@ -7,7 +7,7 @@ import { SimilarTabs } from './sections/SimilarTabs'
 import { RelatedBookmarks } from './sections/RelatedBookmarks'
 import { Search } from './sections/Search'
 import { RecentTabs } from './sections/RecentTabs'
-import { parseDomain } from '@/lib/utils'
+import { parseDomain } from '@/lib/core/utils'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]

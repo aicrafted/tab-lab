@@ -1,4 +1,4 @@
-import type { ChatProvider, EmbeddingProvider } from '../types'
+import type { ChatProvider, EmbeddingProvider } from '../../core/types'
 import type { LlmProvider } from './base'
 import { GeminiNanoProvider } from './gemini-nano'
 import { BrowserMlProvider } from './browser-ml'

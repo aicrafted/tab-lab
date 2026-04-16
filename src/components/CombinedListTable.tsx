@@ -6,9 +6,9 @@ import { DataTable } from '@/components/DataTable'
 import { Favicon } from '@/components/Favicon'
 import { IntentIcon } from '@/components/IntentIcon'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
-import { effectiveIntent } from '@/lib/static-intent'
-import { cn, formatAge, formatDate } from '@/lib/utils'
-import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/types'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import { cn, formatAge, formatDate } from '@/lib/core/utils'
+import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
 
 type SourceKind = 'bookmark' | 'tab' | 'both'
 

@@ -16,7 +16,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-import type { PageIntent } from '@/lib/types'
+import type { PageIntent } from '@/lib/core/types'
 
 export function getStubSummary(title: string): string {
   const clean = title.trim()

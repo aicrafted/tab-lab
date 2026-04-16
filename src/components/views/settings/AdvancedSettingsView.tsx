@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { DEFAULT_LOCAL_NETWORKS } from '@/lib/types'
+import { DEFAULT_LOCAL_NETWORKS } from '@/lib/core/types'
 import type { ViewProps } from '@/components/views/types'
 
 export function AdvancedSettingsView({ llmSettings, onSaveSettings }: ViewProps) {

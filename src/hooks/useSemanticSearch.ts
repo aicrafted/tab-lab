@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
-import { cosineSimilarity, fetchEmbedding, loadEmbeddingsForCurrentModel } from '@/lib/embedder'
-import type { LlmSettings } from '@/lib/types'
+import { cosineSimilarity, fetchEmbedding, loadEmbeddingsForCurrentModel } from '@/lib/ai/embedder'
+import type { LlmSettings } from '@/lib/core/types'
 
 export interface SemanticResult {
   url: string

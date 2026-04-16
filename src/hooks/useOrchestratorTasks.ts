@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { PipelineEvent, PipelineOrchestrator, TaskState } from '@/lib/pipeline-orchestrator'
+import type { PipelineEvent, PipelineOrchestrator, TaskState } from '@/lib/pipeline/pipeline-orchestrator'
 
 interface OrchestratorTasksState {
   tasks: TaskState[]

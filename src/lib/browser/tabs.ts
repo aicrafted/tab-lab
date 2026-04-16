@@ -1,5 +1,5 @@
-import type { TabItem } from './types'
-import { parseDomain } from './utils'
+import type { TabItem } from '../core/types'
+import { parseDomain } from '../core/utils'
 
 /** Returns all open tabs across all windows. */
 export async function getAllTabs(): Promise<TabItem[]> {

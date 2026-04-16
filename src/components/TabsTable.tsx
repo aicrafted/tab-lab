@@ -5,9 +5,9 @@ import { DataTable } from './DataTable'
 import { IntentIcon } from './IntentIcon'
 import { Badge } from '@/components/ui/badge'
 import { Favicon } from './Favicon'
-import { effectiveIntent } from '@/lib/static-intent'
-import { cn, formatAge } from '@/lib/utils'
-import type { TabItem, LlmSettings } from '@/lib/types'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import { cn, formatAge } from '@/lib/core/utils'
+import type { TabItem, LlmSettings } from '@/lib/core/types'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 const ZOMBIE_DAYS = 7

@@ -1,9 +1,9 @@
 import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { formatAge } from '@/lib/utils'
-import type { LlmAvailability } from '@/lib/classifier'
-import type { TaskState } from '@/lib/pipeline-orchestrator'
+import { formatAge } from '@/lib/core/utils'
+import type { LlmAvailability } from '@/lib/ai/classifier'
+import type { TaskState } from '@/lib/pipeline/pipeline-orchestrator'
 
 interface StatusBarAiActions {
   onClearCache?: () => Promise<void>

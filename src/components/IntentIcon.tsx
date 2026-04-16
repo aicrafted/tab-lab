@@ -15,8 +15,8 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import type { PageIntent } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import type { PageIntent } from '@/lib/core/types'
+import { cn } from '@/lib/core/utils'
 
 const ICON_BY_INTENT: Record<PageIntent, LucideIcon> = {
   article: FileText,

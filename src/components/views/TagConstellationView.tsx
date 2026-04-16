@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey, getStubIntent } from '@/components/views/stubs'
-import { getTagConstellationLayout, type TagConstellationLayoutMode } from '@/lib/tag-constellation-layout'
+import { getTagConstellationLayout, type TagConstellationLayoutMode } from '@/lib/ui/tag-constellation-layout'
 
 interface TagPage {
   id: string

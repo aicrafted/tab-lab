@@ -13,8 +13,8 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import type { KnownPlatform } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import type { KnownPlatform } from '@/lib/core/types'
+import { cn } from '@/lib/core/utils'
 
 const ICON_BY_PLATFORM: Record<KnownPlatform, LucideIcon> = {
   social: MessageCircle,

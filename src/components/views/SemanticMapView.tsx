@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey, urlToCoords } from '@/components/views/stubs'
-import { effectiveIntent } from '@/lib/static-intent'
-import type { PageIntent } from '@/lib/types'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import type { PageIntent } from '@/lib/core/types'
 
 type ColorMode = 'category' | 'domain' | 'intent'
 

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { AlarmClock, ExternalLink, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { BookmarkItem, PageIntent } from '@/lib/types'
+import type { BookmarkItem, PageIntent } from '@/lib/core/types'
 import type { ViewProps } from '@/components/views/types'
-import { effectiveIntent } from '@/lib/static-intent'
+import { effectiveIntent } from '@/lib/ai/static-intent'
 import {
   getStubIntent,
   getStubReadingTime,

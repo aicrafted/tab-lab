@@ -1,5 +1,5 @@
 import { openDB, STORES } from './tab-lab-db'
-import type { KnownPlatform } from '../types'
+import type { KnownPlatform } from '../core/types'
 
 export interface DomainRow {
   domain: string

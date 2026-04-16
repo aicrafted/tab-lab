@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Favicon } from '@/components/Favicon'
 import { colorFromKey } from '@/components/views/stubs'
 import type { ViewProps } from '@/components/views/types'
-import { loadSessions, type Session, type SessionType, type Visit } from '@/lib/historySessions'
-import { cn } from '@/lib/utils'
+import { loadSessions, type Session, type SessionType, type Visit } from '@/lib/browser/historySessions'
+import { cn } from '@/lib/core/utils'
 const DAY_MS = 86_400_000
 
 const SESSION_TYPE_META: Record<SessionType, { label: string; color: string }> = {

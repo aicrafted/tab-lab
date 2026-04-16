@@ -2,7 +2,7 @@ import { CreateMLCEngine } from '@mlc-ai/web-llm'
 import { hasModelInCache } from '@mlc-ai/web-llm'
 import { prebuiltAppConfig } from '@mlc-ai/web-llm'
 import type { MLCEngine } from '@mlc-ai/web-llm'
-import { webllmLog } from '../logger'
+import { webllmLog } from '../../core/logger'
 import { patchRequestAdapterForWindows } from './webgpu-compat'
 
 export interface WebllmChatOptions {

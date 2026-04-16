@@ -1,6 +1,6 @@
 import { extractJson } from './llm'
 import type { DomainInfo } from './domain-enricher'
-import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from './types'
+import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from '../core/types'
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 

@@ -11,11 +11,11 @@ import {
   getBookmarkFolderDescendantIds,
   getBookmarkFolderOptions,
   type BookmarkFolderOption,
-} from '@/lib/bookmarks'
-import { checkLlmAvailability, type LlmAvailability } from '@/lib/classifier'
-import { loadProjectionForCurrentModel } from '@/lib/embedder'
-import { loadHydratedData } from '@/lib/initial-load'
-import { loadClusterNames } from '@/lib/cluster-names'
+} from '@/lib/browser/bookmarks'
+import { checkLlmAvailability, type LlmAvailability } from '@/lib/ai/classifier'
+import { loadProjectionForCurrentModel } from '@/lib/ai/embedder'
+import { loadHydratedData } from '@/lib/pipeline/initial-load'
+import { loadClusterNames } from '@/lib/ai/cluster-names'
 import {
   getBookmarkScopeFilter,
   getLlmSettings,
@@ -23,18 +23,18 @@ import {
   setBookmarkScopeFilter,
   setLlmSettings,
   setSourceFilter,
-} from '@/lib/storage'
+} from '@/lib/core/storage'
 import { useResizable } from '@/hooks/useResizable'
 import { useAiPipelines } from '@/hooks/useAiPipelines'
 import { useOrchestratorTasks } from '@/hooks/useOrchestratorTasks'
 import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
-import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
-import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
+import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/core/types'
+import { DEFAULT_LLM_SETTINGS } from '@/lib/core/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
-import { effectiveIntent } from '@/lib/static-intent'
-import { isLocalUrl } from '@/lib/local-network'
-import { formatAge } from '@/lib/utils'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import { isLocalUrl } from '@/lib/core/local-network'
+import { formatAge } from '@/lib/core/utils'
 import { Brain, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'

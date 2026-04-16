@@ -1,4 +1,4 @@
-import type { PageIntent } from './types'
+import type { PageIntent } from '../core/types'
 
 const STATIC_INTENT_BY_EXTENSION: Record<string, PageIntent> = {
   pdf: 'document',

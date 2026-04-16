@@ -1,5 +1,9 @@
 // MV3 service worker — no persistent state here.
 // All state lives in chrome.storage.local or the page's React state.
+import { initDomainData } from '@/lib/ai/domain-prefill'
+
+// Initialize domain data at startup
+void initDomainData()
 
 const MAX_HISTORY = 50
 let activeTabId: number | null = null

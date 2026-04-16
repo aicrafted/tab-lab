@@ -8,10 +8,10 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select'
-import type { BookmarkFolderOption } from '@/lib/bookmarks'
-import type { BookmarkScopeFilter } from '@/lib/types'
+import type { BookmarkFolderOption } from '@/lib/browser/bookmarks'
+import type { BookmarkScopeFilter } from '@/lib/core/types'
 import type { SourceFilter } from '@/components/views/types'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils'
 
 interface FacetItem {
   value: string

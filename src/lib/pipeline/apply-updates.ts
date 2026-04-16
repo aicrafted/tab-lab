@@ -1,6 +1,6 @@
-import { detectPlatformFromUrl, intentFromPlatform } from './platform-detection'
-import { detectStaticIntent } from './static-intent'
-import type { KnownPlatform, PageIntent } from './types'
+import { detectPlatformFromUrl, intentFromPlatform } from '../core/platform-detection'
+import { detectStaticIntent } from '../ai/static-intent'
+import type { KnownPlatform, PageIntent } from '../core/types'
 
 export interface UrlUpdate {
   url: string

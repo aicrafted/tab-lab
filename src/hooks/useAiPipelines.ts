@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/apply-updates'
-import { saveClusterNames } from '@/lib/cluster-names'
-import { clearEmbeddingCache } from '@/lib/embedder'
-import { PipelineOrchestrator } from '@/lib/pipeline-orchestrator'
-import { detectPlatform } from '@/lib/platform-detection'
-import { clearAllAICache, getCached, setCached } from '@/lib/storage'
-import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/types'
+import { applyCategoryUpdates, applyClusterIdUpdates, applyIntentUpdates, applyTagsUpdates } from '@/lib/pipeline/apply-updates'
+import { saveClusterNames } from '@/lib/ai/cluster-names'
+import { clearEmbeddingCache } from '@/lib/ai/embedder'
+import { PipelineOrchestrator } from '@/lib/pipeline/pipeline-orchestrator'
+import { detectPlatform } from '@/lib/core/platform-detection'
+import { clearAllAICache, getCached, setCached } from '@/lib/core/storage'
+import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
 
 interface UseAiPipelinesArgs {
   bookmarks: BookmarkItem[]
@@ -78,7 +78,7 @@ export function useAiPipelines({
   const applyPlatformsFromDomainMap = useCallback((
     tb: { url: string; domain: string }[],
     bm: { url: string; domain: string }[],
-    domainMap: Map<string, import('@/lib/domain-enricher').DomainInfo>,
+    domainMap: Map<string, import('@/lib/ai/domain-enricher').DomainInfo>,
   ) => {
     const tabPlatforms = new Map<string, KnownPlatform>()
     for (const item of tb) {
@@ -117,7 +117,7 @@ export function useAiPipelines({
     }
   }, [setBookmarks, setTabs])
 
-  const applyPlatformsFromCurrentDomainMap = useCallback((domainMap: Map<string, import('@/lib/domain-enricher').DomainInfo>) => {
+  const applyPlatformsFromCurrentDomainMap = useCallback((domainMap: Map<string, import('@/lib/ai/domain-enricher').DomainInfo>) => {
     applyPlatformsFromDomainMap(tabsRef.current, bookmarksRef.current, domainMap)
   }, [applyPlatformsFromDomainMap])
 

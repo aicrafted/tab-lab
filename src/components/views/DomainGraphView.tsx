@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey } from '@/components/views/stubs'
-import { runDeterministicForceLayout } from '@/lib/force-layout'
+import { runDeterministicForceLayout } from '@/lib/ui/force-layout'
 
 type DomainLayoutMode = 'live' | 'static'
 

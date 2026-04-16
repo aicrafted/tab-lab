@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { SIDEBAR_WIDTH_KEY, STORAGE_KEEP_KEYS } from '@/lib/storage-keys'
+import { SIDEBAR_WIDTH_KEY, STORAGE_KEEP_KEYS } from '@/lib/core/storage-keys'
 
 function useResizable(
   initial: number,

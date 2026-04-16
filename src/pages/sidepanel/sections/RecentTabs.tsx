@@ -1,5 +1,5 @@
 import { Favicon } from '@/components/Favicon'
-import { parseDomain } from '@/lib/utils'
+import { parseDomain } from '@/lib/core/utils'
 
 interface HistoryEntry {
   tabId: number

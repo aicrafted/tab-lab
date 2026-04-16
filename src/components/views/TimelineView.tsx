@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ViewProps } from '@/components/views/types'
-import { formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/core/utils'
 
 type TimelineZoom = '7d' | '30d' | '6m' | 'all'
 

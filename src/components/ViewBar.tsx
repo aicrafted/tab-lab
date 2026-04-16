@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils'
 import type { ViewId } from '@/components/views/types'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [

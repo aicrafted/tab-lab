@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils'
 import type { SourceFilter } from '@/components/views/types'
 
 interface SourceFilterProps {

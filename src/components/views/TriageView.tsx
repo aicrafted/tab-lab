@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink, FolderTree, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { BookmarkItem } from '@/lib/types'
+import type { BookmarkItem } from '@/lib/core/types'
 import type { ViewProps } from '@/components/views/types'
-import { effectiveIntent } from '@/lib/static-intent'
-import { formatAge, formatDate } from '@/lib/utils'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import { formatAge, formatDate } from '@/lib/core/utils'
 
 const STALE_AFTER_MS = 180 * 86_400_000
 

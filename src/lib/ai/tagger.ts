@@ -1,8 +1,8 @@
 import { chatComplete } from './llm'
 import { tagItem } from './prompts'
-import { getCached, setCached } from './storage'
-import type { LlmSettings } from './types'
-import { DEFAULT_LLM_SETTINGS } from './types'
+import { getCached, setCached } from '../core/storage'
+import type { LlmSettings } from '../core/types'
+import { DEFAULT_LLM_SETTINGS } from '../core/types'
 const tagParseMetrics = {
   strict: 0,
   fallback: 0,

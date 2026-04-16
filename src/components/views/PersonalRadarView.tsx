@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
-import { effectiveIntent } from '@/lib/static-intent'
-import type { PageIntent } from '@/lib/types'
+import { effectiveIntent } from '@/lib/ai/static-intent'
+import type { PageIntent } from '@/lib/core/types'
 
 const AXES = ['Work', 'Learning', 'Entertainment', 'Tools', 'Reference', 'Social', 'News', 'Other'] as const
 type AxisName = (typeof AXES)[number]

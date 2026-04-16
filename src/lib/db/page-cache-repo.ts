@@ -1,5 +1,5 @@
 import { openDB, STORES } from './tab-lab-db'
-import type { PageIntent } from '../types'
+import type { PageIntent } from '../core/types'
 
 export interface PageCacheRow {
   key: string // prefix:url

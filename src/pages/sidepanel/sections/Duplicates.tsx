@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Favicon } from '@/components/Favicon'
-import { parseDomain } from '@/lib/utils'
+import { parseDomain } from '@/lib/core/utils'
 import { X } from 'lucide-react'
 
 interface TabInfo {

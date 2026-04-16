@@ -1,5 +1,5 @@
-import type { BookmarkItem } from './types'
-import { parseDomain } from './utils'
+import type { BookmarkItem } from '../core/types'
+import { parseDomain } from '../core/utils'
 
 export interface BookmarkFolderOption {
   id: string

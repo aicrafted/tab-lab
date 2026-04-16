@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
-import { loadEmbeddingsForCurrentModel } from '@/lib/embedder'
+import { loadEmbeddingsForCurrentModel } from '@/lib/ai/embedder'
 
 type ClusterType = 'exact' | 'title-similar' | 'semantic'
 
