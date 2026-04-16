@@ -174,24 +174,42 @@ export async function fetchAndCacheEmbeddings(
   const uncached = items.filter(item => !cachedUrls.has(item.url))
   if (uncached.length === 0) return result
 
-  for (const item of uncached) {
+  const BATCH_SIZE = 20
+  for (let i = 0; i < uncached.length; i += BATCH_SIZE) {
+    const chunk = uncached.slice(i, i + BATCH_SIZE)
     try {
-      const path = urlPathSnippet(item.url)
-      const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks) : undefined
-      const domainLabel = domainInfo?.category && domainInfo?.description
-        ? `${domainInfo.category}: ${domainInfo.description}`
-        : (domainInfo?.description ?? domainInfo?.category)
-      const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
-      const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
-      const text = item.category ? `${item.category}\n${enrichedText}` : enrichedText
       if (signal?.aborted) throw new Error('Aborted')
-      const embedding = await fetchEmbedding(text, settings, signal)
-      await storeEmbedding(item.url, embedding)
-      result.set(item.url, embedding)
-      onProgress?.([{ url: item.url, embedding }])
+
+      const texts = chunk.map(item => {
+        const path = urlPathSnippet(item.url)
+        const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks) : undefined
+        const domainLabel = domainInfo?.category && domainInfo?.description
+          ? `${domainInfo.category}: ${domainInfo.description}`
+          : (domainInfo?.description ?? domainInfo?.category)
+        const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
+        const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
+        return item.category ? `${item.category}\n${enrichedText}` : enrichedText
+      })
+
+      const embeddings = await provider.embedBatch(texts, settings, signal)
+      
+      const batchUpdates: { url: string; embedding: number[] }[] = []
+      for (let j = 0; j < chunk.length; j++) {
+        const item = chunk[j]
+        const vector = embeddings[j]
+        if (vector) {
+          await storeEmbedding(item.url, vector)
+          result.set(item.url, vector)
+          batchUpdates.push({ url: item.url, embedding: vector })
+        }
+      }
+
+      if (batchUpdates.length > 0) {
+        onProgress?.(batchUpdates)
+      }
     } catch (err) {
-      embedderLog.error('embedding failed for item', {
-        url: item.url,
+      embedderLog.error('batch embedding failed', {
+        count: chunk.length,
         err: err instanceof Error ? err.message : String(err),
       })
     }

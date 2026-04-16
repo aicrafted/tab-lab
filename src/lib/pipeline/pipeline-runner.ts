@@ -105,19 +105,26 @@ export class PipelineRunner {
       .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
       .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
 
-    if (tabItems.length > 0) {
-      await this.clustering.runTwoPassClustering(runId, tabItems, 'tab', settings, tabsTask, domainMap, 0, this.currentRun?.abortController.signal)
-    }
-    tabsTask.done()
-
     const bookmarkItems = bookmarks
       .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
       .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
 
-    if (bookmarkItems.length > 0) {
-      await this.clustering.runTwoPassClustering(runId, bookmarkItems, 'bm', settings, bookmarksTask, domainMap, BOOKMARK_CLUSTER_OFFSET, this.currentRun?.abortController.signal)
-    }
-    bookmarksTask.done()
+    await Promise.all([
+      (async () => {
+        if (tabItems.length > 0) {
+          await this.clustering.runTwoPassClustering(runId, tabItems, 'tab', settings, tabsTask, domainMap, 0, this.currentRun?.abortController.signal)
+        }
+        tabsTask.done()
+      })(),
+      (async () => {
+        if (bookmarkItems.length > 0) {
+          await this.clustering.runTwoPassClustering(runId, bookmarkItems, 'bm', settings, bookmarksTask, domainMap, BOOKMARK_CLUSTER_OFFSET, this.currentRun?.abortController.signal)
+        }
+        bookmarksTask.done()
+      })(),
+    ])
+
+    if (!this.isRunActive(runId)) return
 
     const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
     await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
@@ -133,31 +140,34 @@ export class PipelineRunner {
 
     const { candidates, taxonomyCentroidsMap } = await getTaxonomyContext()
 
-    await classifyItems(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tabsTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'tab')
-      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-    
-    if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-    tabsTask.done()
+    await Promise.all([
+      (async () => {
+        await classifyItems(
+          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+          'tab',
+          settings,
+          (updates) => {
+            if (!this.isRunActive(runId)) return
+            tabsTask.progress(updates.length)
+            this.callbacks.onCategoryUpdate(updates, 'tab')
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+        tabsTask.done()
+      })(),
+      (async () => {
+        await classifyItems(
+          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+          'bm',
+          settings,
+          (updates) => {
+            if (!this.isRunActive(runId)) return
+            bookmarksTask.progress(updates.length)
+            this.callbacks.onCategoryUpdate(updates, 'bm')
+          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+        bookmarksTask.done()
+      })(),
+    ])
 
-    await classifyItems(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        bookmarksTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'bm')
-      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-    
-    if (!this.isRunActive(runId)) { bookmarksTask.cancel(); return }
-    bookmarksTask.done()
+    if (!this.isRunActive(runId)) return
 
     const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
     await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
@@ -179,78 +189,96 @@ export class PipelineRunner {
     const intentTabsTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'Intent tabs', tabs.length)
     const intentBookmarksTask = this.registry.registerTask(TASK_IDS.INTENT_BOOKMARKS, 'Intent bookmarks', bookmarks.length)
 
-    if (settings.tasks.chat.provider === 'gemini-nano') {
-      await tagWithGeminiNano(tabs, 'tab', (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsTabsTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-      tagsTabsTask.done()
-      await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsBookmarksTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-      tagsBookmarksTask.done()
+    const runIdStr = String(runId)
+    aiPipelineLog.debug('parallelizing tags and intents', { runId: runIdStr, tabs: tabs.length, bookmarks: bookmarks.length })
 
-      await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentTabsTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-      intentTabsTask.done()
-      await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentBookmarksTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-      intentBookmarksTask.done()
-      return
-    }
+    await Promise.all([
+      // 1. Tags
+      (async () => {
+        if (settings.tasks.chat.provider === 'gemini-nano') {
+          await tagWithGeminiNano(tabs, 'tab', (updates) => {
+            if (!this.isRunActive(runId)) return
+            tagsTabsTask.progress(updates.length)
+            this.callbacks.onTagsUpdate(updates, 'tab')
+          }, this.currentRun?.abortController.signal)
+        } else {
+          await tagWithLmStudio(
+            tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+            'tab',
+            settings,
+            (updates) => {
+              if (!this.isRunActive(runId)) return
+              tagsTabsTask.progress(updates.length)
+              this.callbacks.onTagsUpdate(updates, 'tab')
+            }, this.currentRun?.abortController.signal)
+        }
+        tagsTabsTask.done()
+      })(),
 
-    await tagWithLmStudio(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsTabsTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-    tagsTabsTask.done()
-    
-    await tagWithLmStudio(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsBookmarksTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-    tagsBookmarksTask.done()
+      (async () => {
+        if (settings.tasks.chat.provider === 'gemini-nano') {
+          await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
+            if (!this.isRunActive(runId)) return
+            tagsBookmarksTask.progress(updates.length)
+            this.callbacks.onTagsUpdate(updates, 'bm')
+          }, this.currentRun?.abortController.signal)
+        } else {
+          await tagWithLmStudio(
+            bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+            'bm',
+            settings,
+            (updates) => {
+              if (!this.isRunActive(runId)) return
+              tagsBookmarksTask.progress(updates.length)
+              this.callbacks.onTagsUpdate(updates, 'bm')
+            }, this.currentRun?.abortController.signal)
+        }
+        tagsBookmarksTask.done()
+      })(),
 
-    await classifyIntentLmStudio(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentTabsTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'tab')
-      }, domainMap, this.currentRun?.abortController.signal)
-    intentTabsTask.done()
-    
-    await classifyIntentLmStudio(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentBookmarksTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'bm')
-      }, domainMap, this.currentRun?.abortController.signal)
-    intentBookmarksTask.done()
+      // 2. Intents
+      (async () => {
+        if (settings.tasks.chat.provider === 'gemini-nano') {
+          await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
+            if (!this.isRunActive(runId)) return
+            intentTabsTask.progress(updates.length)
+            this.callbacks.onIntentUpdate(updates, 'tab')
+          }, this.currentRun?.abortController.signal)
+        } else {
+          await classifyIntentLmStudio(
+            tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+            'tab',
+            settings,
+            (updates) => {
+              if (!this.isRunActive(runId)) return
+              intentTabsTask.progress(updates.length)
+              this.callbacks.onIntentUpdate(updates, 'tab')
+            }, domainMap, this.currentRun?.abortController.signal)
+        }
+        intentTabsTask.done()
+      })(),
+
+      (async () => {
+        if (settings.tasks.chat.provider === 'gemini-nano') {
+          await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
+            if (!this.isRunActive(runId)) return
+            intentBookmarksTask.progress(updates.length)
+            this.callbacks.onIntentUpdate(updates, 'bm')
+          }, this.currentRun?.abortController.signal)
+        } else {
+          await classifyIntentLmStudio(
+            bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+            'bm',
+            settings,
+            (updates) => {
+              if (!this.isRunActive(runId)) return
+              intentBookmarksTask.progress(updates.length)
+              this.callbacks.onIntentUpdate(updates, 'bm')
+            }, domainMap, this.currentRun?.abortController.signal)
+        }
+        intentBookmarksTask.done()
+      })(),
+    ])
   }
 
   async normalizeCategoriesAfterClassification(tabItems: { url: string }[], bookmarkItems: { url: string }[], settings: LlmSettings): Promise<void> {
@@ -315,27 +343,32 @@ export class PipelineRunner {
       const { candidates, taxonomyCentroidsMap } = await getTaxonomyContext()
 
       if (useNli || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) || hasChatProviderConfig(settings)) {
-        await classifyItems(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-        
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        
-        await classifyItems(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+        await Promise.all([
+          (async () => {
+            await classifyItems(
+              tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+              'tab',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                tabsTask.progress(updates.length)
+                this.callbacks.onCategoryUpdate(updates, 'tab')
+              }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await classifyItems(
+              bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+              'bm',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                bookmarksTask.progress(updates.length)
+                this.callbacks.onCategoryUpdate(updates, 'bm')
+              }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+            bookmarksTask.done()
+          })(),
+        ])
       } else {
         throw new Error('LLM unavailable')
       }
@@ -361,37 +394,51 @@ export class PipelineRunner {
     try {
       const nanoStatus = await checkLlmAvailability(settings)
       if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-        await tagWithGeminiNano(tabs, 'tab', (updates) => {
-          if (!this.isRunActive(runId)) return
-          tabsTask.progress(updates.length)
-          this.callbacks.onTagsUpdate(updates, 'tab')
-        }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-          if (!this.isRunActive(runId)) return
-          bookmarksTask.progress(updates.length)
-          this.callbacks.onTagsUpdate(updates, 'bm')
-        }, this.currentRun?.abortController.signal)
+        await Promise.all([
+          (async () => {
+            await tagWithGeminiNano(tabs, 'tab', (updates) => {
+              if (!this.isRunActive(runId)) return
+              tabsTask.progress(updates.length)
+              this.callbacks.onTagsUpdate(updates, 'tab')
+            }, this.currentRun?.abortController.signal)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
+              if (!this.isRunActive(runId)) return
+              bookmarksTask.progress(updates.length)
+              this.callbacks.onTagsUpdate(updates, 'bm')
+            }, this.currentRun?.abortController.signal)
+            bookmarksTask.done()
+          })(),
+        ])
       } else if (hasChatProviderConfig(settings)) {
-        await tagWithLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'tab')
-          }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await tagWithLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'bm')
-          }, this.currentRun?.abortController.signal)
+        await Promise.all([
+          (async () => {
+            await tagWithLmStudio(
+              tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+              'tab',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                tabsTask.progress(updates.length)
+                this.callbacks.onTagsUpdate(updates, 'tab')
+              }, this.currentRun?.abortController.signal)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await tagWithLmStudio(
+              bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+              'bm',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                bookmarksTask.progress(updates.length)
+                this.callbacks.onTagsUpdate(updates, 'bm')
+              }, this.currentRun?.abortController.signal)
+            bookmarksTask.done()
+          })(),
+        ])
       } else {
         throw new Error('LLM unavailable')
       }
@@ -414,57 +461,78 @@ export class PipelineRunner {
       const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
       
       if (useNli) {
-        await classifyIntentLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
+        await Promise.all([
+          (async () => {
+            await classifyIntentLmStudio(
+              tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+              'tab',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                tabsTask.progress(updates.length)
+                this.callbacks.onIntentUpdate(updates, 'tab')
+              }, undefined, this.currentRun?.abortController.signal)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await classifyIntentLmStudio(
+              bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+              'bm',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                bookmarksTask.progress(updates.length)
+                this.callbacks.onIntentUpdate(updates, 'bm')
+              }, undefined, this.currentRun?.abortController.signal)
+            bookmarksTask.done()
+          })(),
+        ])
       } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-        await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-          if (!this.isRunActive(runId)) return
-          tabsTask.progress(updates.length)
-          this.callbacks.onIntentUpdate(updates, 'tab')
-        }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-          if (!this.isRunActive(runId)) return
-          bookmarksTask.progress(updates.length)
-          this.callbacks.onIntentUpdate(updates, 'bm')
-        }, this.currentRun?.abortController.signal)
+        await Promise.all([
+          (async () => {
+            await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
+              if (!this.isRunActive(runId)) return
+              tabsTask.progress(updates.length)
+              this.callbacks.onIntentUpdate(updates, 'tab')
+            }, this.currentRun?.abortController.signal)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
+              if (!this.isRunActive(runId)) return
+              bookmarksTask.progress(updates.length)
+              this.callbacks.onIntentUpdate(updates, 'bm')
+            }, this.currentRun?.abortController.signal)
+            bookmarksTask.done()
+          })(),
+        ])
       } else if (hasChatProviderConfig(settings)) {
-        await classifyIntentLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
+        await Promise.all([
+          (async () => {
+            await classifyIntentLmStudio(
+              tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+              'tab',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                tabsTask.progress(updates.length)
+                this.callbacks.onIntentUpdate(updates, 'tab')
+              }, undefined, this.currentRun?.abortController.signal)
+            tabsTask.done()
+          })(),
+          (async () => {
+            await classifyIntentLmStudio(
+              bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+              'bm',
+              settings,
+              (updates) => {
+                if (!this.isRunActive(runId)) return
+                bookmarksTask.progress(updates.length)
+                this.callbacks.onIntentUpdate(updates, 'bm')
+              }, undefined, this.currentRun?.abortController.signal)
+            bookmarksTask.done()
+          })(),
+        ])
       } else {
         throw new Error('LLM unavailable')
       }

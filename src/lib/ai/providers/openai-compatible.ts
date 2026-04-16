@@ -2,7 +2,7 @@ import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, t
 import type { LlmSettings } from '../../core/types'
 
 async function fetchRemote(
-  text: string,
+  input: string | string[],
   baseUrl: string,
   apiKey: string,
   model: string,
@@ -13,7 +13,7 @@ async function fetchRemote(
   const isEmbed = endpoint === 'embeddings'
   const body = JSON.stringify({
     model,
-    ...(isEmbed ? { input: text } : extraBody),
+    ...(isEmbed ? { input } : extraBody),
   })
 
   const res = await fetch(`${baseUrl}/${endpoint}`, {
@@ -77,11 +77,16 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
   }
 
   async embed(text: string, settings: LlmSettings, signal?: AbortSignal): Promise<number[]> {
+    const results = await this.embedBatch([text], settings, signal)
+    return results[0]
+  }
+
+  async embedBatch(texts: string[], settings: LlmSettings, signal?: AbortSignal): Promise<number[][]> {
     const model = this.getEmbeddingModel(settings)
     if (!model) throw new Error(`No embedding model selected for ${this.id}`)
 
     const data = await fetchRemote(
-      text,
+      texts,
       this.getBaseUrl(settings),
       this.getApiKey(settings),
       model,
@@ -90,7 +95,10 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
       signal
     )
 
-    return data.data[0].embedding
+    // OpenAI format: data: [{ embedding: [...], index: 0 }, ...]
+    // Sort by index to ensure correct order
+    const sorted = [...data.data].sort((a: any, b: any) => a.index - b.index)
+    return sorted.map((item: any) => item.embedding)
   }
 
   async checkStatus(settings: LlmSettings, _options?: CheckStatusOptions): Promise<ProviderStatus> {

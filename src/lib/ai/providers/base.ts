@@ -62,6 +62,20 @@ export abstract class LlmProvider {
     signal?: AbortSignal
   ): Promise<number[]>
 
+  /** Default implementation calls embed sequentially. Implementation overrides for efficiency. */
+  async embedBatch(
+    texts: string[],
+    settings: LlmSettings,
+    signal?: AbortSignal
+  ): Promise<number[][]> {
+    const results: number[][] = []
+    for (const text of texts) {
+      if (signal?.aborted) throw new Error('Aborted')
+      results.push(await this.embed(text, settings, signal))
+    }
+    return results
+  }
+
   abstract checkStatus(
     settings: LlmSettings, 
     options?: CheckStatusOptions
