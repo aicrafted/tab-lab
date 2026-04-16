@@ -1,4 +1,5 @@
 import { projectTo2D, type Point2D } from '../core/project'
+import { isLocalHost } from '../core/local-network'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { embedderLog } from '../core/logger'
 import type { LlmSettings } from '../core/types'
@@ -185,13 +186,16 @@ export async function fetchAndCacheEmbeddings(
         const cfg = settings.tasks.embedding
         const path = cfg.includePath ? urlPathSnippet(item.url) : ''
         
-        const domainInfo = (cfg.includeDomainLabel && domainMap) 
-          ? getDomainInfo(item.domain, domainMap, settings.localNetworks) 
+        const domainInfo = (cfg.includeDomainCategory || cfg.includeDomainDescription || cfg.includeDomainPlatform) 
+          ? getDomainInfo(item.domain, domainMap ?? new Map(), settings.localNetworks) 
           : undefined
         
-        const domainLabel = domainInfo?.category && domainInfo?.description
-          ? `${domainInfo.category}: ${domainInfo.description}`
-          : (domainInfo?.description ?? domainInfo?.category)
+        const domainParts: string[] = []
+        if (cfg.includeDomainCategory && domainInfo?.category) domainParts.push(domainInfo.category)
+        if (cfg.includeDomainDescription && domainInfo?.description) domainParts.push(domainInfo.description)
+        if (cfg.includeDomainPlatform && domainInfo?.platform) domainParts.push(`Platform: ${domainInfo.platform}`)
+        
+        const domainRichText = domainParts.length > 0 ? domainParts.join(': ') : ''
         
         const displayTitle = cfg.includeTitle ? cleanTitle(item.title, item.domain) : ''
         const displayDomain = cfg.includeDomain ? item.domain : ''
@@ -207,13 +211,18 @@ export async function fetchAndCacheEmbeddings(
           else baseText = baseText ? `${baseText}\n${path}` : path
         }
 
-        const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
-        return (cfg.includeCategory && item.category) ? `${item.category}\n${enrichedText}` : enrichedText
+        const enrichedText = domainRichText ? `${domainRichText}\n${baseText}` : baseText
+        const categoryText = (cfg.includeCategory && item.category) ? `${item.category}\n${enrichedText}` : enrichedText
+        
+        if (cfg.includeLocalLabel && isLocalHost(item.domain, settings.localNetworks)) {
+          return `Local\n${categoryText}`
+        }
+        return categoryText
       })
 
       embedderLog.info('fetching embeddings batch', {
         count: texts.length,
-        samples: texts.slice(0, 3).map(t => t.slice(0, 100) + (t.length > 100 ? '...' : '')),
+        samples: texts.slice(0, 3),
       })
 
       const embeddings = await provider.embedBatch(texts, settings, signal)

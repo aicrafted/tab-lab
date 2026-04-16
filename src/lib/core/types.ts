@@ -195,8 +195,11 @@ export interface LlmSettings {
       includeTitle: boolean
       includeDomain: boolean
       includePath: boolean
-      includeDomainLabel: boolean
+      includeDomainCategory: boolean
+      includeDomainDescription: boolean
+      includeDomainPlatform: boolean
       includeCategory: boolean
+      includeLocalLabel: boolean
     }
     classification: { method: ClassificationMethod }
   }
@@ -285,8 +288,11 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
       includeTitle: true,
       includeDomain: true,
       includePath: true,
-      includeDomainLabel: true,
+      includeDomainCategory: true,
+      includeDomainDescription: true,
+      includeDomainPlatform: true,
       includeCategory: true,
+      includeLocalLabel: true,
     },
     classification: { method: 'llm' },
   },
@@ -347,8 +353,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
           includeTitle: typeof embedding.includeTitle === 'boolean' ? embedding.includeTitle : true,
           includeDomain: typeof embedding.includeDomain === 'boolean' ? embedding.includeDomain : true,
           includePath: typeof embedding.includePath === 'boolean' ? embedding.includePath : true,
-          includeDomainLabel: typeof embedding.includeDomainLabel === 'boolean' ? embedding.includeDomainLabel : true,
+          includeDomainCategory: typeof (embedding as any).includeDomainCategory === 'boolean' ? (embedding as any).includeDomainCategory : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : true),
+          includeDomainDescription: typeof (embedding as any).includeDomainDescription === 'boolean' ? (embedding as any).includeDomainDescription : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : true),
+          includeDomainPlatform: typeof (embedding as any).includeDomainPlatform === 'boolean' ? (embedding as any).includeDomainPlatform : true,
           includeCategory: typeof embedding.includeCategory === 'boolean' ? embedding.includeCategory : true,
+          includeLocalLabel: typeof embedding.includeLocalLabel === 'boolean' ? embedding.includeLocalLabel : true,
         },
         classification: {
           method: toClassificationMethod(classification.method, legacyMethod),
@@ -394,8 +403,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         includeTitle: true,
         includeDomain: true,
         includePath: true,
-        includeDomainLabel: true,
+        includeDomainCategory: true,
+        includeDomainDescription: true,
+        includeDomainPlatform: true,
         includeCategory: true,
+        includeLocalLabel: true,
       },
       classification: {
         method: toClassificationMethod(old.classificationMethod, 'llm'),

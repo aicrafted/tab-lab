@@ -63,6 +63,16 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   // Task Assignments
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(llmSettings.tasks.embedding.provider)
+  const [embeddingFlags, setEmbeddingFlags] = useState({
+    includeTitle: llmSettings.tasks.embedding.includeTitle,
+    includeDomain: llmSettings.tasks.embedding.includeDomain,
+    includePath: llmSettings.tasks.embedding.includePath,
+    includeDomainCategory: llmSettings.tasks.embedding.includeDomainCategory,
+    includeDomainDescription: llmSettings.tasks.embedding.includeDomainDescription,
+    includeDomainPlatform: llmSettings.tasks.embedding.includeDomainPlatform,
+    includeCategory: llmSettings.tasks.embedding.includeCategory,
+    includeLocalLabel: llmSettings.tasks.embedding.includeLocalLabel,
+  })
   const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(llmSettings.tasks.classification.method)
   const [nliCategories, setNliCategories] = useState<NliCategory[]>(llmSettings.nliCategories ?? [...DEFAULT_NLI_CATEGORIES])
   const [nliConfidenceThreshold, setNliConfidenceThreshold] = useState(llmSettings.nliConfidenceThreshold ?? 0.25)
@@ -201,13 +211,16 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       providers: { browserMl, lmstudio, openrouter, geminiNano },
       tasks: {
         chat: { provider: chatProvider },
-        embedding: { provider: embeddingProvider },
+        embedding: { 
+          provider: embeddingProvider,
+          ...embeddingFlags
+        },
         classification: { method: classificationMethod },
       },
       nliCategories,
       nliConfidenceThreshold,
     })
-  }, [browserMl, chatProvider, embeddingProvider, classificationMethod, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
+  }, [browserMl, chatProvider, embeddingProvider, embeddingFlags, classificationMethod, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
@@ -494,6 +507,82 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Embedding Content Toggles */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-2 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeTitle}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeTitle: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Title</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeDomain}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomain: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includePath}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includePath: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Path</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeDomainCategory}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainCategory: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Category</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeDomainDescription}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainDescription: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Description</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeDomainPlatform}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainPlatform: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Platform</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeCategory}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeCategory: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">AI Category</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={embeddingFlags.includeLocalLabel}
+                    onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeLocalLabel: e.target.checked })}
+                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                  />
+                  <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Local Label</span>
+                </label>
               </div>
 
               <div className="h-px bg-border/40" />

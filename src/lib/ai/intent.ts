@@ -196,7 +196,10 @@ export async function classifyIntentGeminiNano(
       tasks: {
         ...DEFAULT_LLM_SETTINGS.tasks,
         chat: { provider: 'gemini-nano' },
-        embedding: { provider: 'browser-ml' },
+        embedding: {
+          ...DEFAULT_LLM_SETTINGS.tasks.embedding,
+          provider: 'browser-ml',
+        },
       },
     },
     onProgress,
