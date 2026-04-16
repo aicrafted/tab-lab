@@ -1,4 +1,4 @@
-import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
+import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
 import type { LlmSettings, ClassificationMethod } from '../types'
 
 export class GeminiNanoProvider extends LlmProvider {
@@ -82,7 +82,7 @@ export class GeminiNanoProvider extends LlmProvider {
     throw new Error('Gemini Nano does not support embeddings yet')
   }
 
-  async checkStatus(_settings: LlmSettings): Promise<ProviderStatus> {
+  async checkStatus(_settings: LlmSettings, _options?: CheckStatusOptions): Promise<ProviderStatus> {
     const api = this.getPromptApi()
     if (!api) return { available: false, status: 'unsupported', message: 'API not found' }
     

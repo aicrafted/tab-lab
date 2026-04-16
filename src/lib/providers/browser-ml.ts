@@ -1,4 +1,4 @@
-import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
+import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
 import type { LlmSettings, ClassificationMethod } from '../types'
 import { webllmChat, isWebllmModelCached } from '../webllm-provider'
 import { webgpuEmbed, isTransformersEmbeddingModelCached } from '../webgpu-provider'
@@ -41,7 +41,7 @@ export class BrowserMlProvider extends LlmProvider {
     return webgpuEmbed(text, model)
   }
 
-  async checkStatus(settings: LlmSettings): Promise<ProviderStatus> {
+  async checkStatus(settings: LlmSettings, _options?: CheckStatusOptions): Promise<ProviderStatus> {
     const chatModel = this.getChatModel(settings)
     const embedModel = this.getEmbeddingModel(settings)
 

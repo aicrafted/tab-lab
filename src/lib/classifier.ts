@@ -239,8 +239,35 @@ export async function classifyItems(
   const chatProviderId = settings.tasks.chat.provider
   const embedProviderId = settings.tasks.embedding.provider
   const embedProvider = getEmbeddingProvider(embedProviderId)
-  
   const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
+
+  // Ensure the required provider is ready
+  const activeProviderId = useNli ? embedProviderId : chatProviderId
+  const activeProvider = getChatProvider(activeProviderId as any)
+  
+  let ready = false
+  let attempts = 0
+  const maxAttempts = 10
+  
+  while (!ready && attempts < maxAttempts) {
+    const status = await activeProvider.checkStatus(settings, { deep: true })
+    if (status.status === 'ready') {
+      ready = true
+    } else if (status.status === 'loading') {
+      classifierLog.info(`Provider ${activeProviderId} is loading, waiting...`, { 
+        attempt: attempts + 1, 
+        message: status.message 
+      })
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      attempts++
+    } else {
+      throw new Error(`Provider ${activeProviderId} unavailable: ${status.message || status.status}`)
+    }
+  }
+  
+  if (!ready) {
+    throw new Error(`Provider ${activeProviderId} failed to become ready in time. Please check your local LLM server.`)
+  }
   
   const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProviderId })
   const format = 'json' as const

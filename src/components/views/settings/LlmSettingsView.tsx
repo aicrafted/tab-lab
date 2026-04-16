@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags, Settings2 } from 'lucide-react'
+import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -77,7 +77,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const [loadingEmbeddingModel, setLoadingEmbeddingModel] = useState(false)
   const [embeddingModelCached, setEmbeddingModelCached] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<'providers' | 'advanced'>('providers')
 
   const checkGemini = useCallback(async () => {
     setGeminiStatus('checking')

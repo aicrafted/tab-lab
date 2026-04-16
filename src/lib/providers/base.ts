@@ -24,6 +24,14 @@ export interface ProviderStatus {
   message?: string
 }
 
+export interface CheckStatusOptions {
+  /** 
+   * If true, performs a deeper check that might trigger model loading or warm-up.
+   * Useful before starting intensive tasks.
+   */
+  deep?: boolean
+}
+
 export abstract class LlmProvider {
   /** Unique ID for the provider (e.g. 'gemini-nano', 'lmstudio'). */
   abstract readonly id: string
@@ -57,7 +65,10 @@ export abstract class LlmProvider {
     signal?: AbortSignal
   ): Promise<number[]>
 
-  abstract checkStatus(settings: LlmSettings): Promise<ProviderStatus>
+  abstract checkStatus(
+    settings: LlmSettings, 
+    options?: CheckStatusOptions
+  ): Promise<ProviderStatus>
 
   /** Optional: specific NLI classification if supported natively or via prompt */
   async classify(

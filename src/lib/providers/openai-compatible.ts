@@ -1,4 +1,4 @@
-import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus } from './base'
+import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
 import type { LlmSettings, ClassificationMethod } from '../types'
 
 async function fetchRemote(
@@ -94,10 +94,39 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
     return data.data[0].embedding
   }
 
-  async checkStatus(settings: LlmSettings): Promise<ProviderStatus> {
+  async checkStatus(settings: LlmSettings, _options?: CheckStatusOptions): Promise<ProviderStatus> {
     const url = this.getBaseUrl(settings)
     if (!url) return { available: false, status: 'unavailable', message: 'Base URL not configured' }
-    return { available: true, status: 'ready' }
+
+    try {
+      // Basic connectivity check: ping /models
+      const res = await fetch(`${url}/models`, {
+        method: 'GET',
+        headers: this.getApiKey(settings) ? { Authorization: `Bearer ${this.getApiKey(settings)}` } : {},
+        signal: AbortSignal.timeout(3000),
+      })
+
+      if (!res.ok) {
+        return { available: false, status: 'unavailable', message: `Server returned ${res.status}` }
+      }
+
+      const data = await res.json()
+      const chatModel = this.getChatModel(settings)
+      if (chatModel) {
+        const exists = data.data?.some((m: any) => m.id === chatModel)
+        if (!exists) {
+          return { available: false, status: 'unavailable', message: `Model "${chatModel}" not found on server` }
+        }
+      }
+
+      return { available: true, status: 'ready' }
+    } catch (err) {
+      return {
+        available: false,
+        status: 'unavailable',
+        message: err instanceof Error ? err.message : 'Connection failed',
+      }
+    }
   }
 }
 
@@ -109,6 +138,51 @@ export class LmStudioProvider extends OpenAiCompatibleProvider {
   getTemperature(settings: LlmSettings) { return settings.providers.lmstudio.temperature }
   protected getBaseUrl(settings: LlmSettings) { return settings.providers.lmstudio.baseUrl }
   protected getApiKey(settings: LlmSettings) { return settings.providers.lmstudio.apiKey }
+
+  async checkStatus(settings: LlmSettings, options?: CheckStatusOptions): Promise<ProviderStatus> {
+    const baseStatus = await super.checkStatus(settings, options)
+    if (!baseStatus.available || baseStatus.status === 'unavailable') return baseStatus
+
+    // If we only need a light check (e.g. for Settings UI), stop here.
+    if (!options?.deep) return baseStatus
+
+    const model = this.getChatModel(settings)
+    if (!model) return baseStatus
+
+    try {
+      // LM Studio specific: check if model is actually ready/loaded
+      // We send a minimal request. If it's auto-loading, it will wait or return 500.
+      const res = await fetch(`${this.getBaseUrl(settings)}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.getApiKey(settings) ? { Authorization: `Bearer ${this.getApiKey(settings)}` } : {}),
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: '' }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(5000), // Wait up to 5s for readiness
+      })
+
+      if (res.ok) return { available: true, status: 'ready' }
+      if (res.status === 500) {
+        const text = await res.text().catch(() => '')
+        return { 
+          available: true, 
+          status: 'loading', 
+          message: text.includes('loading') ? 'Model is currently loading...' : 'Model not loaded or busy' 
+        }
+      }
+      return { available: false, status: 'unavailable', message: `Model error ${res.status}` }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        return { available: true, status: 'loading', message: 'Readiness check timed out (model might be loading)' }
+      }
+      return { available: false, status: 'unavailable', message: 'LM Studio unreachable or busy' }
+    }
+  }
 }
 
 export class OpenRouterProvider extends OpenAiCompatibleProvider {
