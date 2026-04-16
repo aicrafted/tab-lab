@@ -99,7 +99,6 @@ export type IntentUpdate = { url: string; intent: PageIntent }
 
 export async function classifyIntent(
   items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
   domainMap?: Map<string, DomainInfo>,
@@ -114,7 +113,7 @@ export async function classifyIntent(
         ?? detectStaticIntent(item.url)
         ?? intentFromPlatform(detectPlatform(item.domain, domainMap), item.url)
       if (staticIntent) return
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       if (entry?.intent) cached.push({ url: item.url, intent: entry.intent })
       else uncached.push(item)
     }),
@@ -163,8 +162,8 @@ export async function classifyIntent(
             intent = classifyIntentContract.parseResponse(raw, format)
           }
         }
-        const existing = await getCached(prefix, item.url)
-        await setCached(prefix, item.url, {
+        const existing = await getCached(item.url)
+        await setCached(item.url, {
           category: existing?.category ?? 'Other',
           parentCategory: existing?.parentCategory,
           clusterId: existing?.clusterId,
@@ -184,13 +183,11 @@ export async function classifyIntent(
 
 export async function classifyIntentGeminiNano(
   items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
-  prefix: 'tab' | 'bm',
   onProgress: (updates: IntentUpdate[]) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   await classifyIntent(
     items,
-    prefix,
     {
       ...DEFAULT_LLM_SETTINGS,
       tasks: {
@@ -210,11 +207,10 @@ export async function classifyIntentGeminiNano(
 
 export async function classifyIntentLmStudio(
   items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
 ): Promise<void> {
-  await classifyIntent(items, prefix, settings, onProgress, domainMap, signal)
+  await classifyIntent(items, settings, onProgress, domainMap, signal)
 }

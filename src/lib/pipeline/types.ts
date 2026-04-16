@@ -37,10 +37,10 @@ export type PipelineEvent =
   | { type: 'pipeline-cancelled'; runId: number }
 
 export interface PipelineCallbacks {
-  onCategoryUpdate: (updates: { url: string; category: string }[], prefix: 'tab' | 'bm') => void
-  onTagsUpdate: (updates: { url: string; tags: string[] }[], prefix: 'tab' | 'bm') => void
-  onIntentUpdate: (updates: { url: string; intent: PageIntent }[], prefix: 'tab' | 'bm') => void
-  onClusterUpdate: (updates: { url: string; clusterId: number }[], prefix: 'tab' | 'bm') => void
+  onCategoryUpdate: (updates: { url: string; category: string }[]) => void
+  onTagsUpdate: (updates: { url: string; tags: string[] }[]) => void
+  onIntentUpdate: (updates: { url: string; intent: PageIntent }[]) => void
+  onClusterUpdate: (updates: { url: string; clusterId: number }[]) => void
   onClusterNames: (names: Map<number, string>) => void
   onProjectedPoints: (points: Map<string, [number, number]>) => void
   onDomainMap: (domainMap: Map<string, DomainInfo>) => void

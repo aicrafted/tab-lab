@@ -38,18 +38,16 @@ export async function clearAllAICache(): Promise<void> {
 }
 
 export async function getCached(
-  prefix: 'bm' | 'tab',
   url: string,
 ): Promise<CacheEntry | null> {
-  return cacheDb.getCached(prefix, url)
+  return cacheDb.getCached(url)
 }
 
 export async function setCached(
-  prefix: 'bm' | 'tab',
   url: string,
   entry: CacheEntry,
 ): Promise<void> {
-  return cacheDb.setCached(prefix, url, entry)
+  return cacheDb.setCached(url, entry)
 }
 
 export async function getLlmSettings(): Promise<LlmSettings> {

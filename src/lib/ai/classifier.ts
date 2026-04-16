@@ -140,7 +140,6 @@ type ClusterInputItem = ClassifiedItem & { embedding: number[] }
 
 export async function classifyItems(
   items: ClassifiedItem[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
@@ -153,7 +152,7 @@ export async function classifyItems(
 
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       const cachedCategory = entry?.category?.trim()
       if (cachedCategory && !classifyItem.isInvalidResponse(cachedCategory)) {
         cached.push({ url: item.url, category: cachedCategory })
@@ -266,8 +265,8 @@ export async function classifyItems(
             category = classifyItem.parseResponse(raw)
           }
         }
-        const existing = await getCached(prefix, item.url)
-        await setCached(prefix, item.url, {
+        const existing = await getCached(item.url)
+        await setCached(item.url, {
           ...existing,
           category,
           parentCategory: existing?.parentCategory ?? category,
@@ -293,12 +292,11 @@ export async function classifyItems(
 /** Load cached categories for a set of items. Returns url → category map. */
 export async function loadCachedCategories(
   items: { url: string }[],
-  prefix: 'tab' | 'bm',
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       const cachedCategory = entry?.category?.trim()
       if (cachedCategory && !classifyItem.isInvalidResponse(cachedCategory)) {
         map.set(item.url, cachedCategory)
@@ -311,12 +309,11 @@ export async function loadCachedCategories(
 /** Load cached category hierarchy for a set of items. Returns url → { category, parentCategory }. */
 export async function loadCachedCategoryData(
   items: { url: string }[],
-  prefix: 'tab' | 'bm',
 ): Promise<Map<string, { category: string; parentCategory?: string }>> {
   const map = new Map<string, { category: string; parentCategory?: string }>()
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       const cachedCategory = entry?.category?.trim()
       if (!cachedCategory || classifyItem.isInvalidResponse(cachedCategory)) return
       const parentCategory = entry?.parentCategory?.trim()
@@ -332,12 +329,11 @@ export async function loadCachedCategoryData(
 /** Load cached tags for a set of items. Returns url → tags map. */
 export async function loadCachedTags(
   items: { url: string }[],
-  prefix: 'tab' | 'bm',
 ): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>()
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       if (entry?.tags?.length) map.set(item.url, entry.tags)
     }),
   )
@@ -347,12 +343,11 @@ export async function loadCachedTags(
 /** Load cached intents for a set of items. Returns url → intent map. */
 export async function loadCachedIntents(
   items: { url: string }[],
-  prefix: 'tab' | 'bm',
 ): Promise<Map<string, import('../core/types').PageIntent>> {
   const map = new Map<string, import('../core/types').PageIntent>()
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       if (entry?.intent) map.set(item.url, entry.intent)
     }),
   )
@@ -402,7 +397,6 @@ export async function normalizeCategoryLabels(
 
 export async function groupRareCategories(
   items: { url: string; category: string }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   maxPasses = 3,
 ): Promise<{ url: string; category: string }[]> {
@@ -491,11 +485,12 @@ export async function groupRareCategories(
   const updates = [...allUpdates.entries()].map(([url, category]) => ({ url, category }))
 
   await Promise.all(updates.map(async (update) => {
-    const existing = await getCached(prefix, update.url)
+    const existing = await getCached(update.url)
     if (!existing) return
-    await setCached(prefix, update.url, {
+    await setCached(update.url, {
       ...existing,
       category: update.category,
+      parentCategory: update.category,
       processedAt: Date.now(),
     })
   }))
@@ -507,7 +502,6 @@ export async function groupRareCategories(
 /** Re-classifies items in categories that have too many members. */
 export async function splitLargeClusters(
   items: { url: string; title: string; domain: string; category: string }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
@@ -548,7 +542,6 @@ export async function splitLargeClusters(
       await classifyByClusters(
         membersWithEmbeddings,
         subClusters,
-        prefix,
         settings,
         (updates) => {
           onProgress(updates.map((update) => ({ url: update.url, category: update.category })))
@@ -599,8 +592,8 @@ export async function splitLargeClusters(
           const category = useJsonOutput
             ? (classifyItem.parseResponse(raw, parentCategory) || parentCategory)
             : classifyItem.parseResponse(raw, parentCategory)
-          const existing = await getCached(prefix, item.url)
-          await setCached(prefix, item.url, {
+          const existing = await getCached(item.url)
+          await setCached(item.url, {
             ...existing,
             category,
             parentCategory,
@@ -633,7 +626,6 @@ function inferClusterNameFromRepresentative(title: string, category: string): st
 export async function classifyByClusters(
   items: ClusterInputItem[],
   clusters: ClusterResult[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string; parentCategory?: string; clusterId: number }[]) => void,
   domainMap?: Map<string, DomainInfo>,
@@ -701,9 +693,9 @@ export async function classifyByClusters(
 
     const updates: { url: string; category: string; parentCategory?: string; clusterId: number }[] = []
     for (const url of cluster.members) {
-      const existing = await getCached(prefix, url)
+      const existing = await getCached(url)
       const finalParent = parentCategory || category
-      await setCached(prefix, url, {
+      await setCached(url, {
         category,
         parentCategory: finalParent,
         clusterId: cluster.clusterId,

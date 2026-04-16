@@ -266,7 +266,7 @@ export function App() {
     { key: 'reintent', label: 'Re-Intent', icon: Tag, title: 'Clear only intent cache and classify intent again', onClick: handleReintent },
     { key: 'embeddings', label: 'Embeddings', icon: Brain, title: 'Run embeddings + 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
     { key: 'reembed', label: 'Re-embed', icon: Brain, title: 'Clear embedding cache and re-embed all pages', onClick: handleReembedAll },
-    { key: 'cluster-trace', label: 'Cluster Trace', icon: Database, title: 'Check cluster merge efficiency (logs to console)', onClick: async () => { await window.tablab?.ai.clusterTest('tab'); await window.tablab?.ai.clusterTest('bm') } },
+    { key: 'cluster-trace', label: 'Cluster Trace', icon: Database, title: 'Check cluster merge efficiency (logs to console)', onClick: async () => { await window.tablab?.ai.clusterTest() } },
     { key: 'full-pipeline', label: 'Run full pipeline', icon: Wand2, title: 'Run full AI pipeline (domains, classify, post-process, tags, intent, embeddings)', onClick: () => runAutoAiPipeline(tabs, bookmarks, tabs) },
     { key: 'clear', label: 'Clear', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
   ]

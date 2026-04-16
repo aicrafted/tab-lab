@@ -4,9 +4,8 @@ import { clearAllAICache, getCached, getLlmSettings, setCached } from './storage
 import { getAll, type CacheEntry } from '../db/cacheDb'
 import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from '../ai/cluster'
 import { loadEmbeddingsForCurrentModel } from '../ai/embedder'
+import { normalizeUrlForCache } from './url-utils'
 import type { LlmSettings } from './types'
-
-type CachePrefix = 'tab' | 'bm'
 
 export interface TablabDebugApi {
   getCategories(): Promise<{ category: string; count: number }[]>
@@ -18,9 +17,9 @@ export interface TablabDebugApi {
   ai: {
     normalizeCategories(labels: string[]): Promise<Record<string, string>>
     classifyUrl(url: string, title: string): Promise<string>
-    groupRare(prefix?: CachePrefix): Promise<{ url: string; category: string }[]>
+    groupRare(): Promise<{ url: string; category: string }[]>
     chat(userMessage: string, systemPrompt?: string, maxTokens?: number): Promise<string>
-    clusterTest(prefix?: CachePrefix): Promise<any>
+    clusterTest(): Promise<any>
   }
   cache: {
     clear(): Promise<void>
@@ -29,10 +28,9 @@ export interface TablabDebugApi {
   }
 }
 
-function parseCacheRef(raw: string): { prefix: CachePrefix; url: string } {
-  if (raw.startsWith('bm:')) return { prefix: 'bm', url: raw.slice(3) }
-  if (raw.startsWith('tab:')) return { prefix: 'tab', url: raw.slice(4) }
-  return { prefix: 'tab', url: raw }
+function parseCacheRef(raw: string): string {
+  const url = raw.replace(/^(tab|bm):/, '')
+  return normalizeUrlForCache(url)
 }
 
 function normalizeDomain(url: string): string {
@@ -85,8 +83,7 @@ function createDebugApi(): TablabDebugApi {
     },
 
     async getCache(url: string) {
-      const { prefix, url: normalizedUrl } = parseCacheRef(url)
-      return getCached(prefix, normalizedUrl)
+      return getCached(parseCacheRef(url))
     },
 
     /** May return a large object for big caches. */
@@ -111,23 +108,22 @@ function createDebugApi(): TablabDebugApi {
         let result = 'Other'
         await classifyItems(
           [{ url, title, domain }],
-          'tab',
           settings,
           (updates) => { result = updates[0]?.category ?? result },
         )
         return result
       },
 
-      async groupRare(prefix: CachePrefix = 'tab') {
+      async groupRare() {
         const settings = await getLlmSettings()
         const all = await getAll()
         const items = [...all.entries()]
-          .filter(([key, entry]) => key.startsWith(`${prefix}:`) && entry.category?.trim())
+          .filter(([, entry]) => entry.category?.trim())
           .map(([key, entry]) => ({
-            url: key.slice(prefix.length + 1),
+            url: key,
             category: entry.category.trim(),
           }))
-        return groupRareCategories(items, prefix, settings)
+        return groupRareCategories(items, settings)
       },
 
       async chat(
@@ -145,7 +141,7 @@ function createDebugApi(): TablabDebugApi {
         return raw
       },
 
-      async clusterTest(prefix: CachePrefix = 'tab') {
+      async clusterTest() {
         const [allCache, allEmbeddings] = await Promise.all([
           getAll(),
           loadEmbeddingsForCurrentModel(await getLlmSettings()),
@@ -156,9 +152,8 @@ function createDebugApi(): TablabDebugApi {
         
         if (allCache.size > 0) {
           items = [...allCache.entries()]
-            .filter(([key]) => key.startsWith(`${prefix}:`))
             .map(([key, entry]) => {
-              const url = key.slice(prefix.length + 1)
+              const url = key
               const embedding = allEmbeddings.get(url)
               return { url, title: entry.category || normalizeDomain(url) || 'Unknown', embedding }
             })
@@ -176,7 +171,7 @@ function createDebugApi(): TablabDebugApi {
         }
 
         if (items.length === 0) {
-          console.warn('[tablab] no items with embeddings found', { prefix, cacheSize: allCache.size, embeddingSize: allEmbeddings.size })
+          console.warn('[tablab] no items with embeddings found', { cacheSize: allCache.size, embeddingSize: allEmbeddings.size })
           return `No items with embeddings found (Cache: ${allCache.size}, Embeddings: ${allEmbeddings.size})`
         }
 
@@ -209,13 +204,13 @@ function createDebugApi(): TablabDebugApi {
       },
 
       async clearUrl(url: string) {
-        const { prefix, url: normalizedUrl } = parseCacheRef(url)
-        const existing = await getCached(prefix, normalizedUrl)
+        const normalizedUrl = parseCacheRef(url)
+        const existing = await getCached(normalizedUrl)
         if (!existing) {
-          console.warn('[tablab] no cache entry for', `${prefix}:${normalizedUrl}`)
+          console.warn('[tablab] no cache entry for', normalizedUrl)
           return
         }
-        await setCached(prefix, normalizedUrl, {
+        await setCached(normalizedUrl, {
           ...existing,
           category: '',
           parentCategory: undefined,
@@ -225,14 +220,14 @@ function createDebugApi(): TablabDebugApi {
           intent: undefined,
           processedAt: Date.now(),
         })
-        console.info('[tablab] cleared cache for', `${prefix}:${normalizedUrl}`)
+        console.info('[tablab] cleared cache for', normalizedUrl)
       },
 
       async setCategory(url: string, category: string) {
-        const { prefix, url: normalizedUrl } = parseCacheRef(url)
-        const existing = await getCached(prefix, normalizedUrl)
+        const normalizedUrl = parseCacheRef(url)
+        const existing = await getCached(normalizedUrl)
         const normalizedCategory = category.trim() || 'Other'
-        await setCached(prefix, normalizedUrl, {
+        await setCached(normalizedUrl, {
           category: normalizedCategory,
           parentCategory: existing?.parentCategory ?? normalizedCategory,
           clusterId: existing?.clusterId,
@@ -241,7 +236,7 @@ function createDebugApi(): TablabDebugApi {
           intent: existing?.intent,
           processedAt: Date.now(),
         })
-        console.info('[tablab] set category', { url: `${prefix}:${normalizedUrl}`, category: normalizedCategory })
+        console.info('[tablab] set category', { url: normalizedUrl, category: normalizedCategory })
       },
     },
   }

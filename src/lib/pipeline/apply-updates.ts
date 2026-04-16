@@ -1,6 +1,7 @@
 import { detectPlatformFromUrl, intentFromPlatform } from '../core/platform-detection'
 import { detectStaticIntent } from '../ai/static-intent'
 import type { KnownPlatform, PageIntent } from '../core/types'
+import { normalizeUrlForCache } from '../core/url-utils'
 
 export interface UrlUpdate {
   url: string
@@ -24,7 +25,7 @@ export interface ClusterIdUpdate extends UrlUpdate {
 }
 
 function buildUpdateMap<U extends UrlUpdate>(updates: U[]): Map<string, U> {
-  return new Map(updates.map((update) => [update.url, update]))
+  return new Map(updates.map((update) => [normalizeUrlForCache(update.url), update]))
 }
 
 export function applyUpdatesByUrl<T extends { url: string; staticIntent?: PageIntent; platform?: KnownPlatform }, U extends UrlUpdate>(
@@ -44,7 +45,7 @@ export function applyUpdatesByUrl<T extends { url: string; staticIntent?: PageIn
   return items.map((item) => {
     const platform = item.platform ?? detectPlatformFromUrl(item.url)
     const staticIntent = item.staticIntent ?? detectStaticIntent(item.url) ?? intentFromPlatform(platform)
-    const update = updatesByUrl.get(item.url)
+    const update = updatesByUrl.get(normalizeUrlForCache(item.url))
     const next = update ? mapper(item, update) : item
     const nextPlatform = next.platform ?? platform
     const nextStaticIntent = next.staticIntent ?? staticIntent

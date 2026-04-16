@@ -5,6 +5,7 @@ import { clearEmbeddingCache } from '@/lib/ai/embedder'
 import { PipelineOrchestrator } from '@/lib/pipeline/pipeline-orchestrator'
 import { detectPlatform } from '@/lib/core/platform-detection'
 import { clearAllAICache, getCached, setCached } from '@/lib/core/storage'
+import { normalizeUrlForCache } from '@/lib/core/url-utils'
 import type { BookmarkItem, CacheEntry, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
 
 interface UseAiPipelinesArgs {
@@ -123,21 +124,21 @@ export function useAiPipelines({
 
   useEffect(() => {
     const orchestrator = new PipelineOrchestrator({
-      onCategoryUpdate: (updates, prefix) => {
-        if (prefix === 'tab') applyTabCategoryBatch(updates)
-        else applyBookmarkCategoryBatch(updates)
+      onCategoryUpdate: (updates) => {
+        applyTabCategoryBatch(updates)
+        applyBookmarkCategoryBatch(updates)
       },
-      onTagsUpdate: (updates, prefix) => {
-        if (prefix === 'tab') applyTabTagsBatch(updates)
-        else applyBookmarkTagsBatch(updates)
+      onTagsUpdate: (updates) => {
+        applyTabTagsBatch(updates)
+        applyBookmarkTagsBatch(updates)
       },
-      onIntentUpdate: (updates, prefix) => {
-        if (prefix === 'tab') applyTabIntentBatch(updates)
-        else applyBookmarkIntentBatch(updates)
+      onIntentUpdate: (updates) => {
+        applyTabIntentBatch(updates)
+        applyBookmarkIntentBatch(updates)
       },
-      onClusterUpdate: (updates, prefix) => {
-        if (prefix === 'tab') applyTabClusterBatch(updates)
-        else applyBookmarkClusterBatch(updates)
+      onClusterUpdate: (updates) => {
+        applyTabClusterBatch(updates)
+        applyBookmarkClusterBatch(updates)
       },
       onClusterNames: (names) => {
         setClusterNames((prev) => {
@@ -238,25 +239,16 @@ export function useAiPipelines({
     bookmarkItems: { url: string }[],
     fields: Partial<CacheEntry>,
   ) => {
-    const clearPrefix = async (
-      prefix: 'tab' | 'bm',
-      items: { url: string }[],
-    ) => {
-      await Promise.all(items.map(async (item) => {
-        const existing = await getCached(prefix, item.url)
-        if (!existing) return
-        await setCached(prefix, item.url, {
-          ...existing,
-          ...fields,
-          processedAt: Date.now(),
-        })
-      }))
-    }
-
-    await Promise.all([
-      clearPrefix('tab', tabItems),
-      clearPrefix('bm', bookmarkItems),
-    ])
+    const urls = [...new Set([...tabItems, ...bookmarkItems].map((item) => normalizeUrlForCache(item.url)))]
+    await Promise.all(urls.map(async (url) => {
+      const existing = await getCached(url)
+      if (!existing) return
+      await setCached(url, {
+        ...existing,
+        ...fields,
+        processedAt: Date.now(),
+      })
+    }))
   }, [])
 
   const clearCategoryCache = useCallback(async () => {

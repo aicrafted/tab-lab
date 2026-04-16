@@ -4,6 +4,7 @@ import type { DomainInfo } from '../ai/domain-enricher'
 import { aiPipelineLog } from '../core/logger'
 import { detectPlatform } from '../core/platform-detection'
 import type { KnownPlatform, LlmSettings } from '../core/types'
+import { normalizeUrlForCache } from '../core/url-utils'
 import type { PipelineCallbacks, TaskHandle } from './types'
 
 export class ClusteringStrategy {
@@ -15,32 +16,31 @@ export class ClusteringStrategy {
   async runTwoPassClustering(
     runId: number,
     items: { url: string; title: string; domain: string; embedding: number[] }[],
-    prefix: 'tab' | 'bm',
     settings: LlmSettings,
     task: TaskHandle,
     domainMap: Map<string, DomainInfo>,
-    clusterIdOffset = 0,
     signal?: AbortSignal,
   ): Promise<void> {
     // Pass 1: Global clustering (L1 - Parent categories)
     const uniquePlatformCount = new Set(
       items.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
     ).size
+    const itemsByNormalizedUrl = new Map(items.map((item) => [normalizeUrlForCache(item.url), item]))
     const k1 = Math.max(3, Math.min(150, Math.max(Math.ceil(items.length / 8), uniquePlatformCount)))
 
-    aiPipelineLog.info('two-pass clustering P1 start', { prefix, total: items.length, k1 })
+    aiPipelineLog.info('two-pass clustering P1 start', { total: items.length, k1 })
     const vectorItems = items.map(({ url, embedding }) => ({ url, embedding }))
     const rawClustersP1 = kMeans(vectorItems, k1)
     const clustersP1 = mergeSmallClusters(rawClustersP1, vectorItems, MIN_CLUSTER_SIZE)
 
-    const parentNames = await classifyByClusters(items, clustersP1, prefix, settings, (updates) => {
+    const parentNames = await classifyByClusters(items, clustersP1, settings, (updates) => {
       if (!this.isRunActive(runId)) return
       task.progress(updates.length / 2) // Pass 1 is 50% of the work
-      this.callbacks.onCategoryUpdate(updates, prefix)
-      this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
+      this.callbacks.onCategoryUpdate(updates)
+      this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })))
     }, domainMap, signal)
 
-    this.callbacks.onClusterNames(new Map([...parentNames].map(([id, name]) => [id + clusterIdOffset, name])))
+    this.callbacks.onClusterNames(parentNames)
 
     // Pass 2: Refinement of large clusters (L2 - Child categories)
     aiPipelineLog.info('two-pass clustering P2 starting refinement')
@@ -57,7 +57,7 @@ export class ClusteringStrategy {
 
       const parentCategory = parentNames.get(cluster.clusterId) || 'Other'
       const clusterItems = cluster.members
-        .map((url) => items.find((it) => it.url === url))
+        .map((url) => itemsByNormalizedUrl.get(normalizeUrlForCache(url)))
         .filter((it): it is typeof items[0] => Boolean(it))
 
       if (clusterItems.length < MIN_CLUSTER_SIZE * 2) {
@@ -82,26 +82,24 @@ export class ClusteringStrategy {
         subClusters: subClusters.length,
       })
 
-      const subClusterOffset = (cluster.clusterId + 1) * 1000
       const subNames = await classifyByClusters(
         clusterItems,
-        subClusters.map(sc => ({ ...sc, clusterId: sc.clusterId + subClusterOffset })),
-        prefix,
+        subClusters.map((sc) => ({ ...sc, clusterId: sc.clusterId + (cluster.clusterId + 1) * 1000 })),
         settings,
         (updates) => {
           if (!this.isRunActive(runId)) return
           task.progress(updates.length / 2) // Pass 2 is the other 50%
-          this.callbacks.onCategoryUpdate(updates, prefix)
-          this.callbacks.onClusterUpdate(updates.map(u => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
+          this.callbacks.onCategoryUpdate(updates)
+          this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })))
         },
         domainMap,
         signal,
         parentCategory,
       )
 
-      this.callbacks.onClusterNames(new Map([...subNames].map(([id, name]) => [id + clusterIdOffset, name])))
+      this.callbacks.onClusterNames(subNames)
     }
 
-    aiPipelineLog.info('two-pass clustering done', { prefix })
+    aiPipelineLog.info('two-pass clustering done')
   }
 }

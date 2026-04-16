@@ -43,7 +43,6 @@ function urlPathSnippet(url: string): string {
 
 export async function tagItems(
   items: { url: string; title: string; domain: string }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
   signal?: AbortSignal,
@@ -53,7 +52,7 @@ export async function tagItems(
 
   await Promise.all(
     items.map(async (item) => {
-      const entry = await getCached(prefix, item.url)
+      const entry = await getCached(item.url)
       if (entry?.tags?.length) cached.push({ url: item.url, tags: entry.tags })
       else uncached.push(item)
     }),
@@ -88,8 +87,8 @@ export async function tagItems(
         if (useJsonOutput) trackTagParse(parsed.strict)
         const tags = parsed.tags
         if (tags.length > 0) {
-          const existing = await getCached(prefix, item.url)
-          await setCached(prefix, item.url, {
+          const existing = await getCached(item.url)
+          await setCached(item.url, {
             category: existing?.category ?? 'Other',
             parentCategory: existing?.parentCategory,
             clusterId: existing?.clusterId,
@@ -110,13 +109,11 @@ export async function tagItems(
 
 export async function tagWithGeminiNano(
   items: { url: string; title: string; domain: string }[],
-  prefix: 'tab' | 'bm',
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   await tagItems(
     items,
-    prefix,
     {
       ...DEFAULT_LLM_SETTINGS,
       tasks: {
@@ -135,10 +132,9 @@ export async function tagWithGeminiNano(
 
 export async function tagWithLmStudio(
   items: { url: string; title: string; domain: string }[],
-  prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  await tagItems(items, prefix, settings, onProgress, signal)
+  await tagItems(items, settings, onProgress, signal)
 }

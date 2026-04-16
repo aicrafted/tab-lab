@@ -2,7 +2,7 @@ import { openDB, STORES } from './tab-lab-db'
 import type { PageIntent } from '../core/types'
 
 export interface PageCacheRow {
-  key: string // prefix:url
+  key: string // normalized URL (query/hash stripped)
   category?: string
   parentCategory?: string
   clusterId?: number
@@ -46,6 +46,16 @@ export async function clearPageCache(): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.PAGE_CACHE, 'readwrite')
     tx.objectStore(STORES.PAGE_CACHE).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function deletePageCache(key: string): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.PAGE_CACHE, 'readwrite')
+    tx.objectStore(STORES.PAGE_CACHE).delete(key)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })

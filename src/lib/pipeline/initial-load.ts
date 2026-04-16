@@ -3,6 +3,7 @@ import { loadCachedCategoryData, loadCachedIntents, loadCachedTags } from '../ai
 import { crossLink } from '../core/crosslink'
 import { detectPlatform, intentFromPlatform } from '../core/platform-detection'
 import { detectStaticIntent } from '../ai/static-intent'
+import { migratePageCacheKeys } from '../db/cacheDb'
 import type { BookmarkItem, TabItem } from '../core/types'
 import { getAllTabs } from '../browser/tabs'
 
@@ -19,6 +20,11 @@ export interface HydratedData {
 }
 
 export async function loadHydratedData(): Promise<HydratedData> {
+  try {
+    await migratePageCacheKeys()
+  } catch (err) {
+    console.warn('[initial-load] page cache migration failed', err)
+  }
 
   const [rawBookmarks, rawTabs] = await Promise.all([
     getAllBookmarks(),
@@ -44,12 +50,9 @@ export async function loadHydratedData(): Promise<HydratedData> {
     }),
   }
 
-  const [tabCache, bmCache] = await Promise.all([
-    loadCachedCategoryData(linked.tabs, 'tab'),
-    loadCachedCategoryData(linked.bookmarks, 'bm'),
-  ])
+  const categoryCache = await loadCachedCategoryData([...linked.tabs, ...linked.bookmarks])
   const bookmarksWithCategories = linked.bookmarks.map((bookmark) => {
-    const cached = bmCache.get(bookmark.url)
+    const cached = categoryCache.get(bookmark.url)
     if (!cached) return bookmark
     return {
       ...bookmark,
@@ -58,7 +61,7 @@ export async function loadHydratedData(): Promise<HydratedData> {
     }
   })
   const tabsWithCategories = linked.tabs.map((tab) => {
-    const cached = tabCache.get(tab.url)
+    const cached = categoryCache.get(tab.url)
     if (!cached) return tab
     return {
       ...tab,
@@ -67,29 +70,23 @@ export async function loadHydratedData(): Promise<HydratedData> {
     }
   })
 
-  const [tabTagCache, bmTagCache] = await Promise.all([
-    loadCachedTags(linked.tabs, 'tab'),
-    loadCachedTags(linked.bookmarks, 'bm'),
-  ])
+  const tagCache = await loadCachedTags([...linked.tabs, ...linked.bookmarks])
   const bookmarksWithTags = bookmarksWithCategories.map((bookmark) => {
-    const tags = bmTagCache.get(bookmark.url)
+    const tags = tagCache.get(bookmark.url)
     return tags ? { ...bookmark, tags } : bookmark
   })
   const tabsWithTags = tabsWithCategories.map((tab) => {
-    const tags = tabTagCache.get(tab.url)
+    const tags = tagCache.get(tab.url)
     return tags ? { ...tab, tags } : tab
   })
 
-  const [tabIntentCache, bmIntentCache] = await Promise.all([
-    loadCachedIntents(linked.tabs, 'tab'),
-    loadCachedIntents(linked.bookmarks, 'bm'),
-  ])
+  const intentCache = await loadCachedIntents([...linked.tabs, ...linked.bookmarks])
   const bookmarksFinal = bookmarksWithTags.map((bookmark) => {
-    const intent = bmIntentCache.get(bookmark.url)
+    const intent = intentCache.get(bookmark.url)
     return intent ? { ...bookmark, intent } : bookmark
   })
   const tabsFinal = tabsWithTags.map((tab) => {
-    const intent = tabIntentCache.get(tab.url)
+    const intent = intentCache.get(tab.url)
     return intent ? { ...tab, intent } : tab
   })
 
