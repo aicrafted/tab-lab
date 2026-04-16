@@ -768,9 +768,10 @@ export async function classifyByClusters(
   onProgress: (updates: { url: string; category: string; parentCategory?: string; clusterId: number }[]) => void,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
+  parentCategory?: string, // NEW
 ): Promise<Map<number, string>> {
   const totalMembers = clusters.reduce((sum, cluster) => sum + cluster.members.length, 0)
-  const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length })
+  const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length, parentCategory })
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
   const embedProviderId = settings.tasks.embedding.provider
@@ -806,7 +807,7 @@ export async function classifyByClusters(
         classifyCluster.user(representativeItems.map((item) => {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
-          return classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
+          return classifyItem.user({ title: item.title, domain: item.domain, path, siteLine, parentCategory })
         })),
         settings,
         200,
@@ -831,16 +832,17 @@ export async function classifyByClusters(
     const updates: { url: string; category: string; parentCategory?: string; clusterId: number }[] = []
     for (const url of cluster.members) {
       const existing = await getCached(prefix, url)
+      const finalParent = parentCategory || category
       await setCached(prefix, url, {
         category,
-        parentCategory: category,
+        parentCategory: finalParent,
         clusterId: cluster.clusterId,
         processedAt: Date.now(),
         tags: existing?.tags,
         embedding: existing?.embedding,
         intent: existing?.intent,
       })
-      updates.push({ url, category, parentCategory: category, clusterId: cluster.clusterId })
+      updates.push({ url, category, parentCategory: finalParent, clusterId: cluster.clusterId })
     }
     if (updates.length > 0) onProgress(updates)
     tracker.tick(cluster.members.length, { clusterId: cluster.clusterId })

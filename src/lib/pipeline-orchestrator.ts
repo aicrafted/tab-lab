@@ -1,5 +1,5 @@
-import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE, type ClusterResult } from './cluster'
-import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, groupRareCategories, splitLargeClusters } from './classifier'
+import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from './cluster'
+import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, groupRareCategories, SPLIT_THRESHOLD, splitLargeClusters } from './classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from './domain-enricher'
 import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, reprojectAllEmbeddings } from './embedder'
 import { aiPipelineLog } from './logger'
@@ -423,43 +423,18 @@ export class PipelineOrchestrator {
     const tabItems = tabs
       .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
       .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+
     if (tabItems.length > 0) {
-      const uniquePlatformCount = new Set(
-        tabItems.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
-      ).size
-      const k = Math.max(3, Math.min(150, Math.max(Math.ceil(tabItems.length / 8), uniquePlatformCount)))
-      const vectorItems = tabItems.map(({ url, embedding }) => ({ url, embedding }))
-      const rawClusters = kMeans(vectorItems, k)
-      const clusters = mergeSmallClusters(rawClusters, vectorItems, MIN_CLUSTER_SIZE)
-      const names = await classifyByClusters(tabItems, clusters, 'tab', settings, (updates) => {
-        if (!this.isRunActive(runId)) return
-        tabsTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'tab')
-        this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })), 'tab')
-      }, domainMap, this.currentRun?.abortController.signal)
-      this.callbacks.onClusterNames(names)
+      await this.runTwoPassClustering(runId, tabItems, 'tab', settings, tabsTask, domainMap)
     }
     tabsTask.done()
 
     const bookmarkItems = bookmarks
       .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
       .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
+
     if (bookmarkItems.length > 0) {
-      const uniquePlatformCount = new Set(
-        bookmarkItems.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
-      ).size
-      const k = Math.max(3, Math.min(150, Math.max(Math.ceil(bookmarkItems.length / 8), uniquePlatformCount)))
-      const vectorItems = bookmarkItems.map(({ url, embedding }) => ({ url, embedding }))
-      const rawClusters = kMeans(vectorItems, k)
-      const clusters = mergeSmallClusters(rawClusters, vectorItems, MIN_CLUSTER_SIZE)
-      const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({ ...cluster, clusterId: cluster.clusterId + BOOKMARK_CLUSTER_OFFSET }))
-      const names = await classifyByClusters(bookmarkItems, bookmarkClusters, 'bm', settings, (updates) => {
-        if (!this.isRunActive(runId)) return
-        bookmarksTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'bm')
-        this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })), 'bm')
-      }, domainMap, this.currentRun?.abortController.signal)
-      this.callbacks.onClusterNames(names)
+      await this.runTwoPassClustering(runId, bookmarkItems, 'bm', settings, bookmarksTask, domainMap, BOOKMARK_CLUSTER_OFFSET)
     }
     bookmarksTask.done()
 
@@ -469,6 +444,100 @@ export class PipelineOrchestrator {
     normalizeTask.done()
 
     await this.runTagsAndIntents(runId, tabs, bookmarks, settings, domainMap)
+  }
+
+  private async runTwoPassClustering(
+    runId: number,
+    items: { url: string; title: string; domain: string; embedding: number[] }[],
+    prefix: 'tab' | 'bm',
+    settings: LlmSettings,
+    task: TaskHandle,
+    domainMap: Map<string, DomainInfo>,
+    clusterIdOffset = 0,
+  ): Promise<void> {
+    const signal = this.currentRun?.abortController.signal
+
+    // Pass 1: Global clustering (L1 - Parent categories)
+    const uniquePlatformCount = new Set(
+      items.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
+    ).size
+    const k1 = Math.max(3, Math.min(150, Math.max(Math.ceil(items.length / 8), uniquePlatformCount)))
+
+    aiPipelineLog.info('two-pass clustering P1 start', { prefix, total: items.length, k1 })
+    const vectorItems = items.map(({ url, embedding }) => ({ url, embedding }))
+    const rawClustersP1 = kMeans(vectorItems, k1)
+    const clustersP1 = mergeSmallClusters(rawClustersP1, vectorItems, MIN_CLUSTER_SIZE)
+
+    const parentNames = await classifyByClusters(items, clustersP1, prefix, settings, (updates) => {
+      if (!this.isRunActive(runId)) return
+      task.progress(updates.length / 2) // Pass 1 is 50% of the work
+      this.callbacks.onCategoryUpdate(updates, prefix)
+      this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
+    }, domainMap, signal)
+
+    this.callbacks.onClusterNames(new Map([...parentNames].map(([id, name]) => [id + clusterIdOffset, name])))
+
+    // Pass 2: Refinement of large clusters (L2 - Child categories)
+    aiPipelineLog.info('two-pass clustering P2 starting refinement')
+
+    for (const cluster of clustersP1) {
+      if (!this.isRunActive(runId)) break
+
+      const shouldRefine = cluster.members.length >= SPLIT_THRESHOLD
+      if (!shouldRefine) {
+        // Small clusters don't get Pass 2, so we mark them as complete
+        task.progress(cluster.members.length / 2)
+        continue
+      }
+
+      const parentCategory = parentNames.get(cluster.clusterId) || 'Other'
+      const clusterItems = cluster.members
+        .map((url) => items.find((it) => it.url === url))
+        .filter((it): it is typeof items[0] => Boolean(it))
+
+      if (clusterItems.length < MIN_CLUSTER_SIZE * 2) {
+        task.progress(cluster.members.length / 2)
+        continue
+      }
+
+      const k2 = Math.min(10, Math.ceil(clusterItems.length / 4))
+      const vectorItems2 = clusterItems.map(({ url, embedding }) => ({ url, embedding }))
+      const rawClustersP2 = kMeans(vectorItems2, k2)
+      const subClusters = mergeSmallClusters(rawClustersP2, vectorItems2, MIN_CLUSTER_SIZE)
+
+      if (subClusters.length <= 1) {
+        task.progress(cluster.members.length / 2)
+        continue
+      }
+
+      aiPipelineLog.info('two-pass clustering refinement cluster', {
+        parent: parentCategory,
+        clusterId: cluster.clusterId,
+        size: clusterItems.length,
+        subClusters: subClusters.length,
+      })
+
+      const subClusterOffset = (cluster.clusterId + 1) * 1000
+      const subNames = await classifyByClusters(
+        clusterItems,
+        subClusters.map(sc => ({ ...sc, clusterId: sc.clusterId + subClusterOffset })),
+        prefix,
+        settings,
+        (updates) => {
+          if (!this.isRunActive(runId)) return
+          task.progress(updates.length / 2) // Pass 2 is the other 50%
+          this.callbacks.onCategoryUpdate(updates, prefix)
+          this.callbacks.onClusterUpdate(updates.map(u => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
+        },
+        domainMap,
+        signal,
+        parentCategory,
+      )
+
+      this.callbacks.onClusterNames(new Map([...subNames].map(([id, name]) => [id + clusterIdOffset, name])))
+    }
+
+    aiPipelineLog.info('two-pass clustering done', { prefix })
   }
 
   private async runAutoGeminiFlow(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
@@ -606,7 +675,7 @@ export class PipelineOrchestrator {
       const to = mergeMap[from] ?? from
       if (to === from) continue
       tabUpdates.push({ url, category: to })
-      cacheWrites.push(setCached('tab', url, { ...entry, category: to, parentCategory: to, processedAt: Date.now() }))
+      cacheWrites.push(setCached('tab', url, { ...entry, category: to, processedAt: Date.now() }))
     }
     for (const { url, entry } of bookmarkEntries) {
       const from = entry?.category
@@ -614,7 +683,7 @@ export class PipelineOrchestrator {
       const to = mergeMap[from] ?? from
       if (to === from) continue
       bookmarkUpdates.push({ url, category: to })
-      cacheWrites.push(setCached('bm', url, { ...entry, category: to, parentCategory: to, processedAt: Date.now() }))
+      cacheWrites.push(setCached('bm', url, { ...entry, category: to, processedAt: Date.now() }))
     }
 
     await Promise.all(cacheWrites)
@@ -895,7 +964,7 @@ export class PipelineOrchestrator {
         })
         .filter((item): item is { url: string; category: string } => Boolean(item))
       const writes = updates.map((u) =>
-        setCached('tab', u.url, { category: u.category, parentCategory: u.category, processedAt: Date.now() }),
+        setCached('tab', u.url, { category: u.category, processedAt: Date.now() }),
       )
       await Promise.all(writes)
       if (updates.length > 0) this.callbacks.onCategoryUpdate(updates, 'tab')

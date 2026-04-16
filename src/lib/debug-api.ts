@@ -151,18 +151,33 @@ function createDebugApi(): TablabDebugApi {
           loadCachedEmbeddings(),
         ])
         
-        const items = [...allCache.entries()]
-          .filter(([key]) => key.startsWith(`${prefix}:`))
-          .map(([key, entry]) => {
-            const url = key.slice(prefix.length + 1)
-            const embedding = allEmbeddings.get(url)
-            return { url, title: entry.category, embedding }
-          })
-          .filter((item): item is { url: string; title: string; embedding: number[] } => !!item.embedding)
+        // Better fallback: if cache is empty, use all URLs that have embeddings
+        let items: { url: string; title: string; embedding: number[] }[] = []
+        
+        if (allCache.size > 0) {
+          items = [...allCache.entries()]
+            .filter(([key]) => key.startsWith(`${prefix}:`))
+            .map(([key, entry]) => {
+              const url = key.slice(prefix.length + 1)
+              const embedding = allEmbeddings.get(url)
+              return { url, title: entry.category || normalizeDomain(url) || 'Unknown', embedding }
+            })
+            .filter((item): item is { url: string; title: string; embedding: number[] } => !!item.embedding)
+        } 
         
         if (items.length === 0) {
-          console.warn('[tablab] no items with embeddings found for cluster test', { prefix, cacheSize: allCache.size, embeddingSize: allEmbeddings.size })
-          return `No items with embeddings found for ${prefix} in cache (Cache: ${allCache.size}, Embeddings: ${allEmbeddings.size})`
+          // Absolute fallback: just use what we have in embeddings
+          console.info('[tablab] cache empty or no matches, using raw embeddings')
+          items = [...allEmbeddings.entries()].map(([url, vector]) => ({
+            url,
+            title: normalizeDomain(url) || url,
+            embedding: vector
+          }))
+        }
+
+        if (items.length === 0) {
+          console.warn('[tablab] no items with embeddings found', { prefix, cacheSize: allCache.size, embeddingSize: allEmbeddings.size })
+          return `No items with embeddings found (Cache: ${allCache.size}, Embeddings: ${allEmbeddings.size})`
         }
 
         const k = Math.max(3, Math.min(150, Math.max(Math.ceil(items.length / 8), 3)))
@@ -170,20 +185,18 @@ function createDebugApi(): TablabDebugApi {
         const merged = mergeSmallClusters(raw, items, MIN_CLUSTER_SIZE)
 
         console.info('[tablab] Cluster Test Result:', {
+          totalItems: items.length,
           rawCount: raw.length,
           mergedCount: merged.length,
           savings: raw.length - merged.length,
           rawSizes: raw.map(c => c.members.length),
           mergedSizes: merged.map(c => c.members.length)
         })
-        console.info('[tablab] Raw Clusters:', raw)
-        console.info('[tablab] Merged Clusters:', merged)
 
         return {
+          totalItems: items.length,
           rawCount: raw.length,
           mergedCount: merged.length,
-          savings: raw.length - merged.length,
-          rawSizes: raw.map(c => c.members.length),
           mergedSizes: merged.map(c => c.members.length)
         }
       },
