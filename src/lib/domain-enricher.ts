@@ -4,7 +4,8 @@ import { getChatProvider } from './providers/factory'
 import { enrichDomain } from './prompts'
 import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
 import { getPrefilledDomain } from './domain-prefill'
-import { setDomainKnowledge, getAllDomainKnowledge, clearDomainKnowledge } from './db/domain-knowledge-repo'
+import { isLocalHost } from './local-network'
+import { setDomainRow, getAllDomainRows, clearDomains } from './db/domain-repo'
 
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4
@@ -66,8 +67,12 @@ function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase()
 }
 
-export function getParentDomain(domain: string): string | null {
+export function getParentDomain(domain: string, localNetworks: string[]): string | null {
   const normalized = normalizeDomain(domain)
+  
+  // Skip parents for local domains
+  if (isLocalHost(normalized, localNetworks)) return null
+
   const parts = normalized.split('.')
   if (parts.length <= 2) return null
 
@@ -80,6 +85,7 @@ export function getParentDomain(domain: string): string | null {
 export function getDomainInfo(
   domain: string,
   cache: Map<string, DomainInfo>,
+  localNetworks: string[],
 ): DomainInfo | undefined {
   const normalized = normalizeDomain(domain)
 
@@ -96,13 +102,24 @@ export function getDomainInfo(
     }
   }
 
-  // 2. Check Match in Cache
+  // 2. Local domains
+  if (isLocalHost(normalized, localNetworks)) {
+    return {
+      domain: normalized,
+      known: true,
+      category: 'reference',
+      description: 'Local development or network resource',
+      fetchedAt: 0,
+    }
+  }
+
+  // 3. Check Match in Cache
   const exact = cache.get(normalized)
   if (exact?.known) return exact
 
-  const parent = getParentDomain(normalized)
+  const parent = getParentDomain(normalized, localNetworks)
   if (parent) {
-    // 3. Check Parent in Prefill
+    // 4. Check Parent in Prefill
     const parentPrefilled = getPrefilledDomain(parent)
     if (parentPrefilled) {
       return {
@@ -115,7 +132,7 @@ export function getDomainInfo(
       }
     }
 
-    // 4. Check Parent in Cache
+    // 5. Check Parent in Cache
     const parentInfo = cache.get(parent)
     if (parentInfo?.known) return parentInfo
   }
@@ -134,20 +151,15 @@ function isUnknownStillFresh(info: DomainInfo, now = Date.now()): boolean {
   return !info.known && now - info.fetchedAt < UNKNOWN_TTL_MS
 }
 
-async function getAllDomainRows(): Promise<DomainInfo[]> {
-  const rows = await getAllDomainKnowledge()
-  return rows as DomainInfo[]
-}
-
 async function putDomainRows(rows: DomainInfo[]): Promise<void> {
   for (const row of rows) {
-    await setDomainKnowledge(row)
+    await setDomainRow(row)
   }
 }
 
 export async function clearDomainKnowledgeCache(): Promise<void> {
   try {
-    await clearDomainKnowledge()
+    await clearDomains()
   } catch (err) {
     domainEnricherLog.warn('failed to clear domain cache', {
       err: err instanceof Error ? err.message : String(err),
@@ -308,16 +320,17 @@ export async function loadCachedDomains(): Promise<Map<string, DomainInfo>> {
   }
 }
 
-export async function estimateDomainEnrichmentWork(domains: string[]): Promise<number> {
+export async function estimateDomainEnrichmentWork(domains: string[], settings: LlmSettings): Promise<number> {
   const uniqueDomains = [...new Set(domains.map(normalizeDomain).filter(Boolean))]
   if (uniqueDomains.length === 0) return 0
 
   const cache = await loadCachedDomains()
   const now = Date.now()
   const toQuery = new Set<string>()
+  const localNetworks = settings.localNetworks
 
   for (const domain of uniqueDomains) {
-    if (getPrefilledDomain(domain)) continue
+    if (getPrefilledDomain(domain) || isLocalHost(domain, localNetworks)) continue
     const cached = cache.get(domain)
     if (!cached || (!cached.known && !isUnknownStillFresh(cached, now))) {
       toQuery.add(domain)
@@ -325,9 +338,9 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
   }
 
   for (const domain of toQuery) {
-    const parent = getParentDomain(domain)
+    const parent = getParentDomain(domain, localNetworks)
     if (!parent || toQuery.has(parent)) continue
-    if (getPrefilledDomain(parent)) continue
+    if (getPrefilledDomain(parent) || isLocalHost(parent, localNetworks)) continue
     const parentCached = cache.get(parent)
     if (!parentCached || (!parentCached.known && !isUnknownStillFresh(parentCached, now))) {
       toQuery.add(parent)
@@ -352,6 +365,7 @@ export async function enrichDomains(
     const toQuery = new Set<string>()
     const now = Date.now()
 
+    const localNetworks = settings.localNetworks
     for (const domain of uniqueDomains) {
       const prefilled = getPrefilledDomain(domain)
       if (prefilled) {
@@ -361,6 +375,17 @@ export async function enrichDomains(
           category: prefilled.category,
           description: prefilled.description,
           platform: prefilled.platform,
+          fetchedAt: 0,
+        })
+        continue
+      }
+
+      if (isLocalHost(domain, localNetworks)) {
+        result.set(domain, {
+          domain,
+          known: true,
+          category: 'reference',
+          description: 'Local development or network resource',
           fetchedAt: 0,
         })
         continue
@@ -376,7 +401,7 @@ export async function enrichDomains(
 
     if (toQuery.size > 0) {
       for (const domain of toQuery) {
-        const parent = getParentDomain(domain)
+        const parent = getParentDomain(domain, localNetworks)
         if (!parent || toQuery.has(parent) || result.has(parent)) continue
         const prefilled = getPrefilledDomain(parent)
         if (prefilled) {
@@ -390,6 +415,18 @@ export async function enrichDomains(
           })
           continue
         }
+
+        if (isLocalHost(parent, localNetworks)) {
+          result.set(parent, {
+            domain: parent,
+            known: true,
+            category: 'reference',
+            description: 'Local development or network resource',
+            fetchedAt: 0,
+          })
+          continue
+        }
+
         const cached = cache.get(parent)
         if (cached && (cached.known || isUnknownStillFresh(cached, now))) {
           result.set(parent, cached)

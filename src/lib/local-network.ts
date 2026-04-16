@@ -118,16 +118,20 @@ function matchesPattern(host: string, patternRaw: string): boolean {
   return host === pattern
 }
 
+export function isLocalHost(hostname: string, patterns: string[]): boolean {
+  const normalized = normalizeHost(hostname)
+  if (!normalized) return false
+  for (const pattern of patterns) {
+    if (matchesPattern(normalized, pattern)) return true
+  }
+  return false
+}
+
 export function isLocalUrl(url: string, patterns: string[]): boolean {
-  let hostname = ''
   try {
-    hostname = normalizeHost(new URL(url).hostname)
+    const { hostname } = new URL(url)
+    return isLocalHost(hostname, patterns)
   } catch {
     return false
   }
-  if (!hostname) return false
-  for (const pattern of patterns) {
-    if (matchesPattern(hostname, pattern)) return true
-  }
-  return false
 }

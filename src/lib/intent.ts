@@ -151,7 +151,7 @@ export async function classifyIntent(
           intent = await classifyIntentNLI(item, settings, signal)
         } else {
           const path = urlPathSnippet(item.url)
-          const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
+          const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
           const siteLine = domainDesc ? `Site: ${domainDesc}` : undefined
           const userMsg = classifyIntentContract.user({ title: item.title, domain: item.domain, path, siteLine })
           const raw = await chatComplete(prompt, userMsg, settings, 15, { ...options, signal })

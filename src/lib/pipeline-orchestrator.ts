@@ -395,7 +395,7 @@ export class PipelineOrchestrator {
       ...bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
     ]
     const allDomains = [...new Set(allItems.map((item) => item.domain).filter(Boolean))]
-    const estimatedDomainWork = await estimateDomainEnrichmentWork(allDomains)
+    const estimatedDomainWork = await estimateDomainEnrichmentWork(allDomains, settings)
     const domainsTask = this.createTaskTracker(TASK_IDS.DOMAINS, 'Auto domain knowledge', Math.max(estimatedDomainWork, 1))
     const embeddingsTask = this.createTaskTracker(TASK_IDS.EMBEDDINGS, 'Auto embeddings', allItems.length)
     const tabsTask = this.createTaskTracker(TASK_IDS.CLASSIFY_TABS, 'Auto cluster tabs', tabs.length)
@@ -1089,7 +1089,7 @@ export class PipelineOrchestrator {
     this.currentRun = { runId, kind: 'domain', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
-    const estimatedWork = await estimateDomainEnrichmentWork(domains)
+    const estimatedWork = await estimateDomainEnrichmentWork(domains, settings)
     const task = this.createTaskTracker(TASK_IDS.DOMAINS, 'LLM domain knowledge', Math.max(estimatedWork, 1))
     try {
       if (!hasDomainKnowledgeProviderConfig(settings)) throw new Error('Domain enrichment provider unavailable')

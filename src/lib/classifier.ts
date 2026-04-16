@@ -153,9 +153,9 @@ async function getTopCandidates(
   return scores.slice(0, topK).map((s) => s.label)
 }
 
-function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined): string {
+function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined, localNetworks: string[]): string {
   if (!domainMap) return ''
-  const info = getDomainInfo(domain, domainMap)
+  const info = getDomainInfo(domain, domainMap, localNetworks)
   if (!info?.known) return ''
   if (info.description && info.category) return `\nSite: ${info.description} (${info.category})`
   if (info.description) return `\nSite: ${info.description}`
@@ -173,7 +173,7 @@ async function classifyItemNLI(
   const provider = getEmbeddingProvider(providerId)
   
   const path = urlPathSnippet(item.url)
-  const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
+  const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
   const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
   const queryEmbedding = await provider.embed(text, settings, signal)
   const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
@@ -320,12 +320,12 @@ export async function classifyItems(
           category = result
         } else {
           const path = urlPathSnippet(item.url)
-          const siteLine = domainSiteLine(item.domain, domainMap)
+          const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
 
           let itemCandidates = candidates
           if (taxonomyCentroids && taxonomyCentroids.size > 0 && !!embedProvider.getEmbeddingModel(settings)) {
             try {
-              const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
+              const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
               const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
               const queryEmbedding = await embedProvider.embed(text, settings, signal)
               itemCandidates = await getTopCandidates(queryEmbedding, taxonomyCentroids)
@@ -668,7 +668,7 @@ export async function splitLargeClusters(
       for (const item of batch) {
         try {
           const path = urlPathSnippet(item.url)
-          const siteLine = domainSiteLine(item.domain, domainMap)
+          const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
           const userMsg = classifyItem.user({
             title: item.title,
             domain: item.domain,
@@ -853,7 +853,7 @@ export async function classifyByClusters(
         classifyCluster.system(),
         classifyCluster.user(representativeItems.map((item) => {
           const path = urlPathSnippet(item.url)
-          const siteLine = domainSiteLine(item.domain, domainMap)
+          const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
           return classifyItem.user({ title: item.title, domain: item.domain, path, siteLine, parentCategory })
         })),
         settings,

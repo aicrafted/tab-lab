@@ -177,7 +177,7 @@ export async function fetchAndCacheEmbeddings(
   for (const item of uncached) {
     try {
       const path = urlPathSnippet(item.url)
-      const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap) : undefined
+      const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks) : undefined
       const domainLabel = domainInfo?.category && domainInfo?.description
         ? `${domainInfo.category}: ${domainInfo.description}`
         : (domainInfo?.description ?? domainInfo?.category)

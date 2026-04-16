@@ -7,7 +7,7 @@ export const DB_VERSION = 1
 
 export const STORES = {
   PAGE_CACHE: 'page-cache',
-  DOMAIN_KNOWLEDGE: 'domain-knowledge',
+  DOMAINS: 'domains',
   EMBEDDINGS: 'embeddings',
   PROJECTION_2D: 'projection2d',
   META: 'meta',
@@ -26,9 +26,9 @@ export function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.PAGE_CACHE, { keyPath: 'key' })
       }
 
-      // 2. Domain Knowledge (formerly tabmind-domains)
-      if (!db.objectStoreNames.contains(STORES.DOMAIN_KNOWLEDGE)) {
-        db.createObjectStore(STORES.DOMAIN_KNOWLEDGE, { keyPath: 'domain' })
+      // 2. Domains (formerly domain-knowledge)
+      if (!db.objectStoreNames.contains(STORES.DOMAINS)) {
+        db.createObjectStore(STORES.DOMAINS, { keyPath: 'domain' })
       }
 
       // 3. Embeddings (formerly tabmind-embeddings)
