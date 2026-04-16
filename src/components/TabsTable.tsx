@@ -57,6 +57,7 @@ function makeColumns(
   onActivate: (id: number) => void,
   semanticScores: Map<string, number>,
   localUrlSet: Set<string>,
+  currentWindowId: number | null,
   expanded: Set<string>,
   onToggleExpanded: (url: string) => void,
 ): ColumnDef<TabGroupRow>[] {
@@ -71,7 +72,7 @@ function makeColumns(
         const isExpanded = expanded.has(group.url)
         const hasDuplicates = group.tabs.length > 1
         const intent = effectiveIntent(top)
-        const isLocal = localUrlSet.has(top.url)
+        const isCurrentWindow = currentWindowId == null || top.windowId === currentWindowId
 
         return (
           <div className="min-w-0 space-y-1">
@@ -103,15 +104,24 @@ function makeColumns(
               </button>
             </div>
             <div className="text-xs text-muted-foreground/65">
-              <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex min-w-0 items-center gap-1.5">
                 <span title={intent ?? ''}>
                   <IntentIcon intent={intent} className="h-3 w-3" />
                 </span>
-                <span>#{top.windowId}</span>
-                <span>{top.domain}</span>
-                {isLocal && (
-                  <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+                <span className={cn(!isCurrentWindow && 'text-muted-foreground/45')}>#{top.windowId}</span>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                {localUrlSet.has(top.url) && (
+                  <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>
                 )}
+                <a
+                  href={top.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate hover:text-foreground hover:underline"
+                  title={top.url}
+                >
+                  {top.domain}
+                </a>
               </span>
             </div>
             {hasDuplicates && isExpanded && (
@@ -126,7 +136,13 @@ function makeColumns(
                     >
                       {tab.title}
                     </button>
-                    <span className="shrink-0 text-muted-foreground/70">#{tab.windowId}</span>
+                    <span className={cn(
+                      'shrink-0',
+                      currentWindowId != null && tab.windowId !== currentWindowId ? 'text-muted-foreground/40' : 'text-muted-foreground/70',
+                    )}
+                    >
+                      #{tab.windowId}
+                    </span>
                     <button
                       type="button"
                       onClick={() => onClose(tab.id)}
@@ -144,40 +160,26 @@ function makeColumns(
       },
     },
     {
-      id: 'category',
-      accessorFn: (row) => row.representative.category ?? '',
-      header: 'Category',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.representative.category ?? <span className="opacity-30">—</span>}
-        </span>
-      ),
-    },
-    {
       id: 'status',
       header: 'Status',
       enableSorting: false,
       cell: ({ row }) => {
         const tab = row.original.representative
         const isZombie = Date.now() - tab.lastAccessed > ZOMBIE_DAYS * 86_400_000
-        const isLocal = localUrlSet.has(tab.url)
         return (
-          <div className="flex flex-wrap gap-1">
-            {isLocal && (
-              <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
-            )}
+          <div className="flex gap-1 whitespace-nowrap">
             {tab.isBookmarked && (
-              <Badge variant="primary" className="text-[10px]" title={tab.bookmarkFolder}>
+              <Badge variant="primary" className="rounded text-[10px]" title={tab.bookmarkFolder}>
                 saved
               </Badge>
             )}
             {row.original.duplicateCount > 0 && (
-              <Badge variant="muted" className="text-[10px]">
+              <Badge variant="muted" className="rounded text-[10px]">
                 ×{row.original.tabs.length}
               </Badge>
             )}
             {isZombie && (
-              <Badge variant="outline" className="text-[10px] opacity-60">zombie</Badge>
+              <Badge variant="outline" className="rounded text-[10px] opacity-60">zombie</Badge>
             )}
           </div>
         )
@@ -190,6 +192,16 @@ function makeColumns(
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
           {formatAge(row.original.representative.lastAccessed)}
+        </span>
+      ),
+    },
+    {
+      id: 'category',
+      accessorFn: (row) => row.representative.category ?? '',
+      header: 'Category',
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.representative.category ?? <span className="opacity-30">—</span>}
         </span>
       ),
     },
@@ -263,6 +275,7 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
+  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null)
   const { results, state, error, search, clear } = useSemanticSearch(settings)
 
   useEffect(() => {
@@ -275,6 +288,33 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
     }, 400)
     return () => clearTimeout(timer)
   }, [semanticEnabled, query, search, clear])
+
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.windows?.getCurrent) return
+    let cancelled = false
+    const syncCurrentWindow = (windowId: number | null | undefined) => {
+      if (cancelled) return
+      if (windowId == null || windowId === chrome.windows.WINDOW_ID_NONE) {
+        setCurrentWindowId(null)
+        return
+      }
+      setCurrentWindowId(windowId)
+    }
+    void chrome.windows.getCurrent()
+      .then((win) => {
+        syncCurrentWindow(win?.id)
+      })
+      .catch(() => undefined)
+    if (chrome.windows.onFocusChanged) {
+      chrome.windows.onFocusChanged.addListener(syncCurrentWindow)
+    }
+    return () => {
+      cancelled = true
+      if (chrome.windows.onFocusChanged) {
+        chrome.windows.onFocusChanged.removeListener(syncCurrentWindow)
+      }
+    }
+  }, [])
 
   const semanticScores = useMemo(() => {
     const map = new Map<string, number>()
@@ -314,8 +354,8 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
   }
 
   const columns = useMemo(
-    () => makeColumns(onClose, onActivate, semanticScores, localUrlSet, expandedUrls, onToggleExpanded),
-    [onClose, onActivate, semanticScores, localUrlSet, expandedUrls],
+    () => makeColumns(onClose, onActivate, semanticScores, localUrlSet, currentWindowId, expandedUrls, onToggleExpanded),
+    [onClose, onActivate, semanticScores, localUrlSet, currentWindowId, expandedUrls],
   )
 
   const toolbar = (

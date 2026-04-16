@@ -245,7 +245,7 @@ export function CombinedListTable({
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <span>{row.original.domain}</span>
           {localUrlSet.has(row.original.url) && (
-            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
+            <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>
           )}
         </span>
       ),
@@ -287,7 +287,7 @@ export function CombinedListTable({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
-          {localUrlSet.has(row.original.url) && <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>}
+          {localUrlSet.has(row.original.url) && <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>}
           {row.original.tabIds.length > 0 && <Badge variant="accent" className="text-[10px]">open</Badge>}
           {row.original.bookmarkIds.length > 0 && <Badge variant="primary" className="text-[10px]">saved</Badge>}
           {row.original.isDuplicate && <Badge variant="muted" className="text-[10px]">dup</Badge>}

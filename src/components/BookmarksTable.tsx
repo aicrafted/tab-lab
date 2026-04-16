@@ -47,13 +47,6 @@ function makeColumns(
 ): ColumnDef<BookmarkGroupRow>[] {
   return [
     {
-      id: 'favicon',
-      header: '',
-      enableSorting: false,
-      size: 24,
-      cell: ({ row }) => <Favicon domain={row.original.representative.domain} />,
-    },
-    {
       id: 'title',
       header: 'Title',
       accessorFn: (row) => row.representative.title,
@@ -63,6 +56,7 @@ function makeColumns(
         const isExpanded = expanded.has(group.url)
         const hasDuplicates = group.bookmarks.length > 1
         const isLocal = localUrlSet.has(top.url)
+        const intent = effectiveIntent(top)
 
         return (
           <div className="min-w-0 space-y-1">
@@ -77,6 +71,7 @@ function makeColumns(
                   {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 </button>
               ) : null}
+              <Favicon domain={top.domain} />
               <a
                 href={top.url}
                 target="_blank"
@@ -92,9 +87,29 @@ function makeColumns(
                 )}
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
               </a>
-              {isLocal && (
-                <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
-              )}
+            </div>
+            <div className="text-xs text-muted-foreground/65">
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span title={intent ?? ''}>
+                  <IntentIcon intent={intent} className="h-3 w-3" />
+                </span>
+                {isLocal && (
+                  <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>
+                )}
+                <a
+                  href={top.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="max-w-[220px] truncate hover:text-foreground hover:underline"
+                  title={top.url}
+                >
+                  {top.domain}
+                </a>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <span className="max-w-[220px] truncate" title={top.folder}>
+                  {top.folder || '—'}
+                </span>
+              </span>
             </div>
             {hasDuplicates && isExpanded && (
               <div className="ml-7 space-y-1 rounded border border-border/60 bg-card/30 p-2">
@@ -127,66 +142,16 @@ function makeColumns(
       },
     },
     {
-      id: 'domain',
-      accessorFn: (row) => row.representative.domain,
-      header: 'Domain',
-      cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <span>{row.original.representative.domain}</span>
-          {localUrlSet.has(row.original.representative.url) && (
-            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
-          )}
-        </span>
-      ),
-    },
-    {
-      id: 'folder',
-      accessorFn: (row) => row.representative.folder,
-      header: 'Folder',
-      cell: ({ row }) => (
-        <span className="max-w-[160px] truncate text-xs text-muted-foreground" title={row.original.representative.folder}>
-          {row.original.representative.folder || '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'category',
-      accessorFn: (row) => row.representative.category ?? '',
-      header: 'Category',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.representative.category ?? <span className="opacity-30">—</span>}
-        </span>
-      ),
-    },
-    {
-      id: 'intent',
-      header: 'Intent',
-      accessorFn: (row) => effectiveIntent(row.representative) ?? '',
-      enableSorting: false,
-      cell: ({ row }) => {
-        const intent = effectiveIntent(row.original.representative)
-        return (
-          <span className="text-sm" title={intent ?? ''}>
-            {intent ? <IntentIcon intent={intent} /> : <span className="opacity-30">—</span>}
-          </span>
-        )
-      },
-    },
-    {
       id: 'status',
       header: 'Status',
       enableSorting: false,
       cell: ({ row }) => (
-        <div className="flex gap-1">
-          {localUrlSet.has(row.original.representative.url) && (
-            <Badge variant="outline" className="text-[10px] opacity-70">LAN</Badge>
-          )}
+        <div className="flex gap-1 whitespace-nowrap">
           {row.original.representative.isOpen && (
-            <Badge variant="accent" className="text-[10px]">open</Badge>
+            <Badge variant="accent" className="rounded text-[10px]">open</Badge>
           )}
           {row.original.duplicateCount > 0 && (
-            <Badge variant="muted" className="text-[10px]">×{row.original.bookmarks.length}</Badge>
+            <Badge variant="muted" className="rounded text-[10px]">×{row.original.bookmarks.length}</Badge>
           )}
         </div>
       ),
@@ -220,6 +185,16 @@ function makeColumns(
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
           {row.original.representative.visitCount ?? <span className="opacity-30">—</span>}
+        </span>
+      ),
+    },
+    {
+      id: 'category',
+      accessorFn: (row) => row.representative.category ?? '',
+      header: 'Category',
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.representative.category ?? <span className="opacity-30">—</span>}
         </span>
       ),
     },

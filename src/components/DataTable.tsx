@@ -97,6 +97,9 @@ export function DataTable<TData, TValue>({
       )}
       {toolbar}
       <div className="ml-auto flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">
+          {pageStart}-{pageEnd} of {filteredCount}
+        </span>
         <button
           type="button"
           onClick={() => table.previousPage()}
@@ -116,9 +119,6 @@ export function DataTable<TData, TValue>({
         >
           Next
         </button>
-        <span className="text-xs text-muted-foreground">
-          {pageStart}-{pageEnd} of {filteredCount} (total {data.length})
-        </span>
       </div>
     </div>
   )
@@ -187,6 +187,7 @@ export function DataTable<TData, TValue>({
                     <TableCell
                       key={cell.id}
                       className={cn(
+                        'align-top',
                         isFavicon && 'w-8 min-w-8 px-2',
                         isTitle && 'w-1/2 min-w-[250px] max-w-0',
                         isTags && 'w-1/2 max-w-0',
