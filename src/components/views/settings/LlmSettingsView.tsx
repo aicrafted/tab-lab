@@ -199,8 +199,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories])
 
   return (
-    <div className="max-w-4xl space-y-10 py-4">
-      <div className="grid gap-6 lg:grid-cols-2">
+    <div className="max-w-7xl mx-auto space-y-10 py-4 px-4 overflow-x-hidden">
+      <div className="grid gap-6 xl:grid-cols-3 lg:grid-cols-2">
         {/* PROVIDERS COLUMN */}
         <div className="space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
@@ -531,69 +531,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
             </div>
 
-            {/* NLI Categories Section */}
-            <div className="space-y-4 pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-primary">
-                  <Tags className="h-4 w-4" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">NLI Taxonomy</h3>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-[10px] gap-1.5 border-dashed"
-                  onClick={() => setNliCategories([...nliCategories, { label: 'New Category', descriptor: '' }])}
-                >
-                  <Plus className="h-3 w-3" />
-                  Add Category
-                </Button>
-              </div>
-
-              <p className="text-[10px] text-muted-foreground leading-relaxed px-1">
-                Custom labels used for semantic bucketing. The descriptor should contain keywords that describe the typical content of this category.
-              </p>
-
-              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                {nliCategories.map((cat, idx) => (
-                  <div key={idx} className="group relative rounded-lg border border-border/40 bg-card/10 p-3 space-y-2 hover:border-border/80 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={cat.label}
-                        onChange={(e) => {
-                          const next = [...nliCategories]
-                          next[idx] = { ...cat, label: e.target.value }
-                          setNliCategories(next)
-                        }}
-                        placeholder="Label (e.g. Science)"
-                        className="h-7 text-xs font-semibold bg-background/50 flex-1"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => {
-                          const next = nliCategories.filter((_, i) => i !== idx)
-                          setNliCategories(next)
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <textarea
-                      value={cat.descriptor}
-                      onChange={(e) => {
-                        const next = [...nliCategories]
-                        next[idx] = { ...cat, descriptor: e.target.value }
-                        setNliCategories(next)
-                      }}
-                      placeholder="Semantic descriptor (keywords, examples...)"
-                      className="w-full min-h-[40px] text-[11px] bg-background/30 rounded-md border border-input p-2 focus:ring-1 focus:ring-primary outline-none resize-none leading-relaxed"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="pt-4 flex flex-col items-stretch gap-3">
               <Button onClick={handleSave} disabled={!canSave} className="w-full shadow-lg shadow-primary/10">
                 Save & Apply Configuration
@@ -693,6 +630,74 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     <span className="text-foreground">{geminiInfo.caps.message}</span>
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* NLI TAXONOMY COLUMN */}
+        <div className="space-y-6">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Taxonomy</h3>
+          <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-primary">
+                  <Tags className="h-4 w-4" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">NLI Categories</h3>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[10px] gap-1.5 border-dashed"
+                  onClick={() => setNliCategories([...nliCategories, { label: 'New Category', descriptor: '' }])}
+                >
+                  <Plus className="h-3 w-3" />
+                  Add Category
+                </Button>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground leading-relaxed px-1">
+                Custom labels used for semantic bucketing. The descriptor should contain keywords that describe the typical content.
+              </p>
+
+              <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
+                {nliCategories.map((cat, idx) => (
+                  <div key={idx} className="group relative rounded-lg border border-border/40 bg-card/10 p-3 space-y-2 hover:border-border/80 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={cat.label}
+                        onChange={(e) => {
+                          const next = [...nliCategories]
+                          next[idx] = { ...cat, label: e.target.value }
+                          setNliCategories(next)
+                        }}
+                        placeholder="Label (e.g. Science)"
+                        className="h-7 text-xs font-semibold bg-background/50 flex-1"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => {
+                          const next = nliCategories.filter((_, i) => i !== idx)
+                          setNliCategories(next)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <textarea
+                      value={cat.descriptor}
+                      onChange={(e) => {
+                        const next = [...nliCategories]
+                        next[idx] = { ...cat, descriptor: e.target.value }
+                        setNliCategories(next)
+                      }}
+                      placeholder="Semantic descriptor (keywords, examples...)"
+                      className="w-full min-h-[40px] text-[11px] bg-background/30 rounded-md border border-input p-2 focus:ring-1 focus:ring-primary outline-none resize-none leading-relaxed"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </div>
