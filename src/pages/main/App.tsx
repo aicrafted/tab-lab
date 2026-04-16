@@ -791,7 +791,7 @@ export function App() {
           </a>
           <span>·</span>
           <a
-            href="https://github.io/aicrafted/tab-lab/privacy"
+            href="https://aicrafted.github.io/tab-lab/privacy.html"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-muted-foreground transition-colors"

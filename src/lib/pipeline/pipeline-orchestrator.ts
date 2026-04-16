@@ -1,213 +1,31 @@
-import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from '../ai/cluster'
-import { checkLlmAvailability, classifyByClusters, classifyItems, normalizeCategoryLabels, groupRareCategories, SPLIT_THRESHOLD, splitLargeClusters } from '../ai/classifier'
-import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
-import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadEmbeddingsForCurrentModel, reprojectAllEmbeddings } from '../ai/embedder'
-import { aiPipelineLog } from '../core/logger'
-import { classifyIntentGeminiNano, classifyIntentLmStudio } from '../ai/intent'
-import { detectPlatform } from '../core/platform-detection'
-import { getChatProvider, getEmbeddingProvider } from '../ai/providers/factory'
-import { getAllCached, getCached, setCached } from '../core/storage'
-import { tagWithGeminiNano, tagWithLmStudio } from '../ai/tagger'
-import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from '../core/types'
+import type { BookmarkItem, LlmSettings, TabItem } from '../core/types'
+import { PipelineRunner } from './pipeline-runner'
+import { TaskRegistry } from './task-registry'
+import type { AutoRunRequest, PipelineCallbacks, PipelineListener, RunContext, TaskId, TaskState } from './types'
 
-export type TaskId = string
-
-export const TASK_IDS = {
-  DOMAINS: 'domains',
-  EMBEDDINGS: 'embeddings',
-  CLASSIFY_TABS: 'classify-tabs',
-  CLASSIFY_BOOKMARKS: 'classify-bookmarks',
-  NORMALIZE_CATEGORIES: 'normalize-categories',
-  TAGS_TABS: 'tags-tabs',
-  TAGS_BOOKMARKS: 'tags-bookmarks',
-  INTENT_TABS: 'intent-tabs',
-  INTENT_BOOKMARKS: 'intent-bookmarks',
-} as const
-
-export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
-
-export interface TaskState {
-  id: TaskId
-  label: string
-  status: TaskStatus
-  done: number
-  total: number
-  percent: number
-  error?: string
-  startedAt?: number
-  finishedAt?: number
-}
-
-export type PipelineEvent =
-  | { type: 'task-update'; task: TaskState }
-  | { type: 'pipeline-start'; runId: number }
-  | { type: 'pipeline-done'; runId: number }
-  | { type: 'pipeline-failed'; runId: number; error: string }
-  | { type: 'pipeline-cancelled'; runId: number }
-
-export interface PipelineCallbacks {
-  onCategoryUpdate: (updates: { url: string; category: string }[], prefix: 'tab' | 'bm') => void
-  onTagsUpdate: (updates: { url: string; tags: string[] }[], prefix: 'tab' | 'bm') => void
-  onIntentUpdate: (updates: { url: string; intent: PageIntent }[], prefix: 'tab' | 'bm') => void
-  onClusterUpdate: (updates: { url: string; clusterId: number }[], prefix: 'tab' | 'bm') => void
-  onClusterNames: (names: Map<number, string>) => void
-  onProjectedPoints: (points: Map<string, [number, number]>) => void
-  onDomainMap: (domainMap: Map<string, DomainInfo>) => void
-}
-
-export interface TaskHandle {
-  progress: (delta: number) => void
-  done: (extra?: Record<string, unknown>) => void
-  failed: (error: unknown) => void
-  cancel: () => void
-}
-
-type Listener = (event: PipelineEvent) => void
-
-interface AutoRunRequest {
-  runId: number
-  tabs: TabItem[]
-  bookmarks: BookmarkItem[]
-  settings: LlmSettings
-}
-
-interface RunContext {
-  runId: number
-  cancelled: boolean
-  kind: 'auto' | 'domain' | 'embedding' | 'classify' | 'tags' | 'intent' | 'normalize' | 'split' | 'postprocess'
-  abortController: AbortController
-}
-
-const BOOKMARK_CLUSTER_OFFSET = 10_000
-
-function hasChatProviderConfig(settings: LlmSettings): boolean {
-  const providerId = settings.tasks.chat.provider
-  try {
-    const provider = getChatProvider(providerId)
-    return Boolean(provider.getChatModel(settings))
-  } catch { return false }
-}
-
-function hasDomainKnowledgeProviderConfig(settings: LlmSettings): boolean {
-  const providerId = settings.tasks.chat.provider
-  try {
-    const provider = getChatProvider(providerId)
-    return provider.supportsDomainEnrichment && Boolean(provider.getChatModel(settings))
-  } catch { return false }
-}
-
-function hasEmbeddingProviderConfig(settings: LlmSettings): boolean {
-  const providerId = settings.tasks.embedding.provider
-  try {
-    const provider = getEmbeddingProvider(providerId)
-    return Boolean(provider.getEmbeddingModel(settings))
-  } catch { return false }
-}
+export * from './types'
 
 export class PipelineOrchestrator {
-  private readonly callbacks: PipelineCallbacks
-  private readonly listeners = new Set<Listener>()
-  private readonly tasks = new Map<TaskId, TaskState>()
+  private readonly registry = new TaskRegistry()
+  private readonly runner: PipelineRunner
   private currentRun: RunContext | null = null
   private runSeq = 0
   private pendingAuto: AutoRunRequest | null = null
 
   constructor(callbacks: PipelineCallbacks) {
-    this.callbacks = callbacks
+    this.runner = new PipelineRunner(this.registry, callbacks)
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+  subscribe(listener: PipelineListener): () => void {
+    return this.registry.subscribe(listener)
   }
 
   getTasks(): TaskState[] {
-    return [...this.tasks.values()]
+    return this.registry.getTasks()
   }
 
   getTask(id: TaskId): TaskState | undefined {
-    return this.tasks.get(id)
-  }
-
-  registerTask(id: TaskId, label: string, total: number): TaskHandle {
-    const safeTotal = Math.max(1, total)
-    const startedAt = Date.now()
-    let done = 0
-    let closed = false
-    let lastLoggedPercent = -1
-    this.setTask({
-      id,
-      label,
-      status: 'running',
-      done,
-      total: safeTotal,
-      percent: 0,
-      startedAt,
-    })
-    aiPipelineLog.info(`${id} start`, { label, total: safeTotal })
-
-    const emitProgress = () => {
-      const rawPct = (done / safeTotal) * 100
-      const uiPct = Math.round(rawPct * 10) / 10
-      const logPct = Math.floor(rawPct)
-      while (lastLoggedPercent < logPct) {
-        lastLoggedPercent += 1
-        if (lastLoggedPercent >= 0) {
-          aiPipelineLog.debug(`${id} progress`, { done, total: safeTotal, pct: lastLoggedPercent })
-        }
-      }
-      this.updateTask(id, { done, total: safeTotal, percent: uiPct })
-    }
-    emitProgress()
-
-    return {
-      progress: (delta: number) => {
-        if (closed) return
-        const safeDelta = Math.max(0, Math.floor(delta))
-        if (safeDelta === 0) {
-          emitProgress()
-          return
-        }
-        for (let i = 0; i < safeDelta && done < safeTotal; i += 1) {
-          done += 1
-          emitProgress()
-        }
-      },
-      done: (extra?: Record<string, unknown>) => {
-        if (closed) return
-        closed = true
-        done = safeTotal
-        this.updateTask(id, {
-          done,
-          total: safeTotal,
-          percent: 100,
-          status: 'done',
-          finishedAt: Date.now(),
-        })
-        aiPipelineLog.info(`${id} done`, {
-          label,
-          elapsedMs: Date.now() - startedAt,
-          ...extra,
-        })
-      },
-      failed: (error: unknown) => {
-        if (closed) return
-        closed = true
-        const msg = error instanceof Error ? error.message : String(error)
-        this.updateTask(id, {
-          status: 'failed',
-          finishedAt: Date.now(),
-          error: msg,
-        })
-        aiPipelineLog.error(`${id} failed`, { label, err: msg })
-      },
-      cancel: () => {
-        if (closed) return
-        closed = true
-        this.updateTask(id, { status: 'cancelled', finishedAt: Date.now() })
-        aiPipelineLog.warn(`${id} cancelled`, { label })
-      },
-    }
+    return this.registry.getTask(id)
   }
 
   enqueueAutoRun(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
@@ -221,62 +39,75 @@ export class PipelineOrchestrator {
     return runId
   }
 
-  enqueueEmbeddingPass(
-    items: { url: string; title: string; domain: string; category?: string }[],
-    settings: LlmSettings,
-  ): number {
+  enqueueEmbeddingPass(items: { url: string; title: string; domain: string; category?: string }[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneEmbeddingRun(runId, items, settings)
+    void this.startStandaloneRun('embedding', runId, async () => {
+      await this.runner.startStandaloneEmbeddingRun(runId, items, settings)
+    })
     return runId
   }
 
   enqueueDomainPass(domains: string[], settings: LlmSettings, force = false): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneDomainRun(runId, domains, settings, force)
+    void this.startStandaloneRun('domain', runId, async () => {
+      await this.runner.startStandaloneDomainRun(runId, domains, settings, force)
+    })
     return runId
   }
 
   enqueueClassifyPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneClassifyRun(runId, tabs, bookmarks, settings)
+    void this.startStandaloneRun('classify', runId, async () => {
+      await this.runner.startStandaloneClassifyRun(runId, tabs, bookmarks, settings)
+    })
     return runId
   }
 
   enqueueTagsPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneTagsRun(runId, tabs, bookmarks, settings)
+    void this.startStandaloneRun('tags', runId, async () => {
+      await this.runner.startStandaloneTagsRun(runId, tabs, bookmarks, settings)
+    })
     return runId
   }
 
   enqueueIntentPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneIntentRun(runId, tabs, bookmarks, settings)
+    void this.startStandaloneRun('intent', runId, async () => {
+      await this.runner.startStandaloneIntentRun(runId, tabs, bookmarks, settings)
+    })
     return runId
   }
 
   enqueueNormalizePass(tabs: TabItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneNormalizeRun(runId, tabs, settings)
+    void this.startStandaloneRun('normalize', runId, async () => {
+      await this.runner.startStandaloneNormalizeRun(runId, tabs, settings)
+    })
     return runId
   }
 
   enqueueSplitPass(tabs: TabItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandaloneSplitRun(runId, tabs, settings)
+    void this.startStandaloneRun('split', runId, async () => {
+      await this.runner.startStandaloneSplitRun(runId, tabs, settings)
+    })
     return runId
   }
 
   enqueuePostProcessPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
-    void this.startStandalonePostProcessRun(runId, tabs, bookmarks, settings)
+    void this.startStandaloneRun('postprocess', runId, async () => {
+      await this.runner.startStandalonePostProcessRun(runId, tabs, bookmarks, settings)
+    })
     return runId
   }
 
@@ -289,835 +120,66 @@ export class PipelineOrchestrator {
     if (!this.currentRun || this.currentRun.runId !== runId) return
     this.currentRun.cancelled = true
     this.currentRun.abortController.abort()
-    for (const task of this.tasks.values()) {
-      if (task.status === 'running' || task.status === 'pending') {
-        this.updateTask(task.id, { status: 'cancelled', finishedAt: Date.now() })
-      }
-    }
-    this.emit({ type: 'pipeline-cancelled', runId })
-  }
-
-  private emit(event: PipelineEvent): void {
-    for (const listener of this.listeners) {
-      listener(event)
-    }
-  }
-
-  private isRunActive(runId: number): boolean {
-    return Boolean(this.currentRun && this.currentRun.runId === runId && !this.currentRun.cancelled)
-  }
-
-  private clearTasks(): void {
-    this.tasks.clear()
-  }
-
-  private setTask(task: TaskState): void {
-    this.tasks.set(task.id, task)
-    this.emit({ type: 'task-update', task })
-  }
-
-  private updateTask(id: TaskId, patch: Partial<TaskState>): void {
-    const existing = this.tasks.get(id)
-    if (!existing) return
-    const next = { ...existing, ...patch }
-    this.tasks.set(id, next)
-    this.emit({ type: 'task-update', task: next })
-  }
-
-  private createTaskTracker(id: TaskId, label: string, total: number) {
-    return this.registerTask(id, label, total)
+    this.registry.cancelAllActive()
+    this.registry.emit({ type: 'pipeline-cancelled', runId })
   }
 
   private async startAutoRun(req: AutoRunRequest): Promise<void> {
     const { runId, tabs, bookmarks, settings } = req
     this.currentRun = { runId, kind: 'auto', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
+    this.runner.setCurrentRun(this.currentRun)
+    this.registry.clear()
+    this.registry.emit({ type: 'pipeline-start', runId })
     try {
-      await this.executeAutoPipeline(runId, tabs, bookmarks, settings)
+      await this.runner.executeAutoPipeline(runId, tabs, bookmarks, settings)
       if (this.isRunActive(runId)) {
-        this.emit({ type: 'pipeline-done', runId })
+        this.registry.emit({ type: 'pipeline-done', runId })
       }
     } catch (err) {
-      if (this.currentRun?.cancelled) {
-        this.emit({ type: 'pipeline-cancelled', runId })
-      } else {
-        const error = err instanceof Error ? err.message : String(err)
-        for (const task of this.tasks.values()) {
-          if (task.status === 'running' || task.status === 'pending') {
-            this.updateTask(task.id, { status: 'failed', finishedAt: Date.now(), error })
-          }
-        }
-        this.emit({ type: 'pipeline-failed', runId, error })
-      }
+      this.handleRunError(runId, err)
     } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
+      this.cleanupRun(runId)
       const pending = this.pendingAuto
       this.pendingAuto = null
       if (pending) void this.startAutoRun(pending)
     }
   }
 
-  private async executeAutoPipeline(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    const nanoStatus = await checkLlmAvailability(settings)
-    aiPipelineLog.info('orchestrator auto evaluate provider', {
-      provider: settings.tasks.chat.provider,
-      status: nanoStatus,
-      tabs: tabs.length,
-      bookmarks: bookmarks.length,
-    })
-
-    const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
-
-    if (useNli) {
-      await this.runAutoClusterFlow(runId, tabs, bookmarks, settings)
-      return
-    }
-    if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-      await this.runAutoGeminiFlow(runId, tabs, bookmarks, settings)
-      return
-    }
-    if (hasChatProviderConfig(settings)) {
-      await this.runAutoClusterFlow(runId, tabs, bookmarks, settings)
-      return
-    }
-    throw new Error('LLM unavailable')
-  }
-
-  private async runAutoClusterFlow(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
-    const allItems = [
-      ...tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      ...bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-    ]
-    const allDomains = [...new Set(allItems.map((item) => item.domain).filter(Boolean))]
-    const estimatedDomainWork = await estimateDomainEnrichmentWork(allDomains, settings)
-    const domainsTask = this.createTaskTracker(TASK_IDS.DOMAINS, 'Auto domain knowledge', Math.max(estimatedDomainWork, 1))
-    const embeddingsTask = this.createTaskTracker(TASK_IDS.EMBEDDINGS, 'Auto embeddings', allItems.length)
-    const tabsTask = this.createTaskTracker(TASK_IDS.CLASSIFY_TABS, 'Auto cluster tabs', tabs.length)
-    const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'Auto cluster bookmarks', bookmarks.length)
-
-    const domainMap = await enrichDomains(allDomains, settings, (delta) => {
-      if (!this.isRunActive(runId)) return
-      domainsTask.progress(delta)
-    }, this.currentRun?.abortController.signal)
-    if (!this.isRunActive(runId)) {
-      domainsTask.cancel(); embeddingsTask.cancel(); tabsTask.cancel(); bookmarksTask.cancel()
-      return
-    }
-    domainsTask.done()
-    this.callbacks.onDomainMap(domainMap)
-
-    const embeddings = await fetchAndCacheEmbeddings(allItems, settings, (updates) => {
-      if (!this.isRunActive(runId)) return
-      embeddingsTask.progress(updates.length)
-    }, domainMap, this.currentRun?.abortController.signal)
-    if (!this.isRunActive(runId)) {
-      embeddingsTask.cancel(); tabsTask.cancel(); bookmarksTask.cancel()
-      return
-    }
-    embeddingsTask.done()
-
-    const tabItems = tabs
-      .map((t) => ({ url: t.url, title: t.title, domain: t.domain, embedding: embeddings.get(t.url) }))
-      .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
-
-    if (tabItems.length > 0) {
-      await this.runTwoPassClustering(runId, tabItems, 'tab', settings, tabsTask, domainMap)
-    }
-    tabsTask.done()
-
-    const bookmarkItems = bookmarks
-      .map((b) => ({ url: b.url, title: b.title, domain: b.domain, embedding: embeddings.get(b.url) }))
-      .filter((item): item is { url: string; title: string; domain: string; embedding: number[] } => Boolean(item.embedding))
-
-    if (bookmarkItems.length > 0) {
-      await this.runTwoPassClustering(runId, bookmarkItems, 'bm', settings, bookmarksTask, domainMap, BOOKMARK_CLUSTER_OFFSET)
-    }
-    bookmarksTask.done()
-
-    const normalizeTask = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-    await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-    normalizeTask.progress(2)
-    normalizeTask.done()
-
-    await this.runTagsAndIntents(runId, tabs, bookmarks, settings, domainMap)
-  }
-
-  private async runTwoPassClustering(
-    runId: number,
-    items: { url: string; title: string; domain: string; embedding: number[] }[],
-    prefix: 'tab' | 'bm',
-    settings: LlmSettings,
-    task: TaskHandle,
-    domainMap: Map<string, DomainInfo>,
-    clusterIdOffset = 0,
-  ): Promise<void> {
-    const signal = this.currentRun?.abortController.signal
-
-    // Pass 1: Global clustering (L1 - Parent categories)
-    const uniquePlatformCount = new Set(
-      items.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
-    ).size
-    const k1 = Math.max(3, Math.min(150, Math.max(Math.ceil(items.length / 8), uniquePlatformCount)))
-
-    aiPipelineLog.info('two-pass clustering P1 start', { prefix, total: items.length, k1 })
-    const vectorItems = items.map(({ url, embedding }) => ({ url, embedding }))
-    const rawClustersP1 = kMeans(vectorItems, k1)
-    const clustersP1 = mergeSmallClusters(rawClustersP1, vectorItems, MIN_CLUSTER_SIZE)
-
-    const parentNames = await classifyByClusters(items, clustersP1, prefix, settings, (updates) => {
-      if (!this.isRunActive(runId)) return
-      task.progress(updates.length / 2) // Pass 1 is 50% of the work
-      this.callbacks.onCategoryUpdate(updates, prefix)
-      this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
-    }, domainMap, signal)
-
-    this.callbacks.onClusterNames(new Map([...parentNames].map(([id, name]) => [id + clusterIdOffset, name])))
-
-    // Pass 2: Refinement of large clusters (L2 - Child categories)
-    aiPipelineLog.info('two-pass clustering P2 starting refinement')
-
-    for (const cluster of clustersP1) {
-      if (!this.isRunActive(runId)) break
-
-      const shouldRefine = cluster.members.length >= SPLIT_THRESHOLD
-      if (!shouldRefine) {
-        // Small clusters don't get Pass 2, so we mark them as complete
-        task.progress(cluster.members.length / 2)
-        continue
-      }
-
-      const parentCategory = parentNames.get(cluster.clusterId) || 'Other'
-      const clusterItems = cluster.members
-        .map((url) => items.find((it) => it.url === url))
-        .filter((it): it is typeof items[0] => Boolean(it))
-
-      if (clusterItems.length < MIN_CLUSTER_SIZE * 2) {
-        task.progress(cluster.members.length / 2)
-        continue
-      }
-
-      const k2 = Math.min(10, Math.ceil(clusterItems.length / 4))
-      const vectorItems2 = clusterItems.map(({ url, embedding }) => ({ url, embedding }))
-      const rawClustersP2 = kMeans(vectorItems2, k2)
-      const subClusters = mergeSmallClusters(rawClustersP2, vectorItems2, MIN_CLUSTER_SIZE)
-
-      if (subClusters.length <= 1) {
-        task.progress(cluster.members.length / 2)
-        continue
-      }
-
-      aiPipelineLog.info('two-pass clustering refinement cluster', {
-        parent: parentCategory,
-        clusterId: cluster.clusterId,
-        size: clusterItems.length,
-        subClusters: subClusters.length,
-      })
-
-      const subClusterOffset = (cluster.clusterId + 1) * 1000
-      const subNames = await classifyByClusters(
-        clusterItems,
-        subClusters.map(sc => ({ ...sc, clusterId: sc.clusterId + subClusterOffset })),
-        prefix,
-        settings,
-        (updates) => {
-          if (!this.isRunActive(runId)) return
-          task.progress(updates.length / 2) // Pass 2 is the other 50%
-          this.callbacks.onCategoryUpdate(updates, prefix)
-          this.callbacks.onClusterUpdate(updates.map(u => ({ url: u.url, clusterId: u.clusterId + clusterIdOffset })), prefix)
-        },
-        domainMap,
-        signal,
-        parentCategory,
-      )
-
-      this.callbacks.onClusterNames(new Map([...subNames].map(([id, name]) => [id + clusterIdOffset, name])))
-    }
-
-    aiPipelineLog.info('two-pass clustering done', { prefix })
-  }
-
-  private async runAutoGeminiFlow(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
-    const tabsTask = this.createTaskTracker(TASK_IDS.CLASSIFY_TABS, 'Auto classify tabs', tabs.length)
-    const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'Auto classify bookmarks', bookmarks.length)
-
-    const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
-
-    await classifyItems(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tabsTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'tab')
-      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-    if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-    tabsTask.done()
-
-    await classifyItems(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        bookmarksTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates, 'bm')
-      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-    if (!this.isRunActive(runId)) { bookmarksTask.cancel(); return }
-    bookmarksTask.done()
-
-    const normalizeTask = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-    await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-    normalizeTask.progress(2)
-    normalizeTask.done()
-
-    await this.runTagsAndIntents(runId, tabs, bookmarks, settings)
-  }
-
-  private async runTagsAndIntents(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-    domainMap?: Map<string, DomainInfo>,
-  ): Promise<void> {
-    const tagsTabsTask = this.createTaskTracker(TASK_IDS.TAGS_TABS, 'Tags tabs', tabs.length)
-    const tagsBookmarksTask = this.createTaskTracker(TASK_IDS.TAGS_BOOKMARKS, 'Tags bookmarks', bookmarks.length)
-    const intentTabsTask = this.createTaskTracker(TASK_IDS.INTENT_TABS, 'Intent tabs', tabs.length)
-    const intentBookmarksTask = this.createTaskTracker(TASK_IDS.INTENT_BOOKMARKS, 'Intent bookmarks', bookmarks.length)
-
-    if (settings.tasks.chat.provider === 'gemini-nano') {
-      await tagWithGeminiNano(tabs, 'tab', (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsTabsTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-      tagsTabsTask.done()
-      await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsBookmarksTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-      tagsBookmarksTask.done()
-
-      await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentTabsTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-      intentTabsTask.done()
-      await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentBookmarksTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-      intentBookmarksTask.done()
-      return
-    }
-
-    await tagWithLmStudio(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsTabsTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'tab')
-      }, this.currentRun?.abortController.signal)
-    tagsTabsTask.done()
-    await tagWithLmStudio(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        tagsBookmarksTask.progress(updates.length)
-        this.callbacks.onTagsUpdate(updates, 'bm')
-      }, this.currentRun?.abortController.signal)
-    tagsBookmarksTask.done()
-
-    await classifyIntentLmStudio(
-      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-      'tab',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentTabsTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'tab')
-      }, domainMap, this.currentRun?.abortController.signal)
-    intentTabsTask.done()
-    await classifyIntentLmStudio(
-      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-      'bm',
-      settings,
-      (updates) => {
-        if (!this.isRunActive(runId)) return
-        intentBookmarksTask.progress(updates.length)
-        this.callbacks.onIntentUpdate(updates, 'bm')
-      }, domainMap, this.currentRun?.abortController.signal)
-    intentBookmarksTask.done()
-  }
-
-  private async normalizeCategoriesAfterClassification(tabItems: { url: string }[], bookmarkItems: { url: string }[], settings: LlmSettings): Promise<void> {
-    const [tabEntries, bookmarkEntries] = await Promise.all([
-      Promise.all(tabItems.map(async (item) => ({ url: item.url, entry: await getCached('tab', item.url) }))),
-      Promise.all(bookmarkItems.map(async (item) => ({ url: item.url, entry: await getCached('bm', item.url) }))),
-    ])
-
-    const labels = [...new Set([
-      ...tabEntries.map(({ entry }) => entry?.category).filter(Boolean),
-      ...bookmarkEntries.map(({ entry }) => entry?.category).filter(Boolean),
-    ] as string[])]
-    if (labels.length <= 1) return
-
-    const mergeMap = await normalizeCategoryLabels(labels, settings)
-    const tabUpdates: { url: string; category: string }[] = []
-    const bookmarkUpdates: { url: string; category: string }[] = []
-    const cacheWrites: Promise<void>[] = []
-
-    for (const { url, entry } of tabEntries) {
-      const from = entry?.category
-      if (!from) continue
-      const to = mergeMap[from] ?? from
-      if (to === from) continue
-      tabUpdates.push({ url, category: to })
-      cacheWrites.push(setCached('tab', url, { ...entry, category: to, processedAt: Date.now() }))
-    }
-    for (const { url, entry } of bookmarkEntries) {
-      const from = entry?.category
-      if (!from) continue
-      const to = mergeMap[from] ?? from
-      if (to === from) continue
-      bookmarkUpdates.push({ url, category: to })
-      cacheWrites.push(setCached('bm', url, { ...entry, category: to, processedAt: Date.now() }))
-    }
-
-    await Promise.all(cacheWrites)
-    if (tabUpdates.length > 0) this.callbacks.onCategoryUpdate(tabUpdates, 'tab')
-    if (bookmarkUpdates.length > 0) this.callbacks.onCategoryUpdate(bookmarkUpdates, 'bm')
-
-    const tabCategoryItems = tabEntries
-      .map(({ url, entry }) => (entry?.category ? ({ url, category: mergeMap[entry.category] ?? entry.category }) : null))
-      .filter((item): item is { url: string; category: string } => Boolean(item))
-    const bookmarkCategoryItems = bookmarkEntries
-      .map(({ url, entry }) => (entry?.category ? ({ url, category: mergeMap[entry.category] ?? entry.category }) : null))
-      .filter((item): item is { url: string; category: string } => Boolean(item))
-
-    const [rareTabUpdates, rareBookmarkUpdates] = await Promise.all([
-      groupRareCategories(tabCategoryItems, 'tab', settings),
-      groupRareCategories(bookmarkCategoryItems, 'bm', settings),
-    ])
-    if (rareTabUpdates.length > 0) this.callbacks.onCategoryUpdate(rareTabUpdates, 'tab')
-    if (rareBookmarkUpdates.length > 0) this.callbacks.onCategoryUpdate(rareBookmarkUpdates, 'bm')
-  }
-
-  private async startStandaloneClassifyRun(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    this.currentRun = { runId, kind: 'classify', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-
-    const tabsTask = this.createTaskTracker(TASK_IDS.CLASSIFY_TABS, 'LLM classifying tabs', tabs.length)
-    const bookmarksTask = this.createTaskTracker(TASK_IDS.CLASSIFY_BOOKMARKS, 'LLM classifying bookmarks', bookmarks.length)
+  private async startStandaloneRun(kind: RunContext['kind'], runId: number, task: () => Promise<void>): Promise<void> {
+    this.currentRun = { runId, kind, cancelled: false, abortController: new AbortController() }
+    this.runner.setCurrentRun(this.currentRun)
+    this.registry.clear()
+    this.registry.emit({ type: 'pipeline-start', runId })
     try {
-      const nanoStatus = await checkLlmAvailability(settings)
-      const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
-
-      const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
-
-      if (useNli || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) || hasChatProviderConfig(settings)) {
-        await classifyItems(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-        
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        
-        await classifyItems(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-      } else {
-        throw new Error('LLM unavailable')
+      await task()
+      if (this.isRunActive(runId)) {
+        this.registry.emit({ type: 'pipeline-done', runId })
       }
-
-      if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-      tabsTask.done()
-      bookmarksTask.done()
-
-      const normalizeTask = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-      normalizeTask.progress(2)
-      normalizeTask.done()
-
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
     } catch (err) {
-      tabsTask.failed(err)
-      bookmarksTask.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
+      this.handleRunError(runId, err)
     } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
+      this.cleanupRun(runId)
     }
   }
 
-  private async startStandaloneTagsRun(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    this.currentRun = { runId, kind: 'tags', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const tabsTask = this.createTaskTracker(TASK_IDS.TAGS_TABS, 'LLM tagging tabs', tabs.length)
-    const bookmarksTask = this.createTaskTracker(TASK_IDS.TAGS_BOOKMARKS, 'LLM tagging bookmarks', bookmarks.length)
-    try {
-      const nanoStatus = await checkLlmAvailability(settings)
-      if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-        await tagWithGeminiNano(tabs, 'tab', (updates) => {
-          if (!this.isRunActive(runId)) return
-          tabsTask.progress(updates.length)
-          this.callbacks.onTagsUpdate(updates, 'tab')
-        }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-          if (!this.isRunActive(runId)) return
-          bookmarksTask.progress(updates.length)
-          this.callbacks.onTagsUpdate(updates, 'bm')
-        }, this.currentRun?.abortController.signal)
-      } else if (hasChatProviderConfig(settings)) {
-        await tagWithLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'tab')
-          }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await tagWithLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'bm')
-          }, this.currentRun?.abortController.signal)
-      } else {
-        throw new Error('LLM unavailable')
-      }
-
-      if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-      tabsTask.done()
-      bookmarksTask.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      tabsTask.failed(err)
-      bookmarksTask.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
+  private handleRunError(runId: number, err: unknown) {
+    if (this.currentRun?.cancelled) {
+      this.registry.emit({ type: 'pipeline-cancelled', runId })
+    } else {
+      const error = err instanceof Error ? err.message : String(err)
+      this.registry.failAllActive(error)
+      this.registry.emit({ type: 'pipeline-failed', runId, error })
     }
   }
 
-  private async startStandaloneIntentRun(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    this.currentRun = { runId, kind: 'intent', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const tabsTask = this.createTaskTracker(TASK_IDS.INTENT_TABS, 'LLM intent tabs', tabs.length)
-    const bookmarksTask = this.createTaskTracker(TASK_IDS.INTENT_BOOKMARKS, 'LLM intent bookmarks', bookmarks.length)
-    try {
-      const nanoStatus = await checkLlmAvailability(settings)
-      const embedProvider = getEmbeddingProvider(settings.tasks.embedding.provider)
-      const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
-      
-      if (useNli) {
-        await classifyIntentLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
-      } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-        await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-          if (!this.isRunActive(runId)) return
-          tabsTask.progress(updates.length)
-          this.callbacks.onIntentUpdate(updates, 'tab')
-        }, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-          if (!this.isRunActive(runId)) return
-          bookmarksTask.progress(updates.length)
-          this.callbacks.onIntentUpdate(updates, 'bm')
-        }, this.currentRun?.abortController.signal)
-      } else if (hasChatProviderConfig(settings)) {
-        await classifyIntentLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyIntentLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal)
-      } else {
-        throw new Error('LLM unavailable')
-      }
-
-      if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-      tabsTask.done()
-      bookmarksTask.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      tabsTask.failed(err)
-      bookmarksTask.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
+  private cleanupRun(runId: number) {
+    if (this.currentRun?.runId === runId) {
+      this.currentRun = null
+      this.runner.setCurrentRun(null)
     }
   }
 
-  private async startStandaloneNormalizeRun(runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
-    this.currentRun = { runId, kind: 'normalize', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const task = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 1)
-    try {
-      if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
-
-      const allLabels = [...new Set(tabs.map((t) => t.category).filter(Boolean) as string[])]
-      if (allLabels.length <= 1) {
-        task.done()
-        if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-        return
-      }
-
-      aiPipelineLog.info('pass2 merge categories start', { totalLabels: allLabels.length, labels: allLabels })
-      const mergeMap = await normalizeCategoryLabels(allLabels, settings)
-      const updates = tabs
-        .filter((t) => Boolean(t.category))
-        .map((t) => {
-          const from = t.category as string
-          const to = mergeMap[from] ?? from
-          return from === to ? null : { url: t.url, category: to }
-        })
-        .filter((item): item is { url: string; category: string } => Boolean(item))
-      const writes = updates.map((u) =>
-        setCached('tab', u.url, { category: u.category, processedAt: Date.now() }),
-      )
-      await Promise.all(writes)
-      if (updates.length > 0) this.callbacks.onCategoryUpdate(updates, 'tab')
-      aiPipelineLog.info('pass2 merge categories done', { changes: updates.length })
-      task.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      task.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
-    }
-  }
-
-  private async startStandaloneSplitRun(runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
-    this.currentRun = { runId, kind: 'split', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const task = this.createTaskTracker('split-large-categories', 'Split large categories', 1)
-    try {
-      if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
-      const allDomains = [...new Set(tabs.map((item) => item.domain).filter(Boolean))]
-      const domainMap = await enrichDomains(allDomains, settings)
-      const embeddings = await loadEmbeddingsForCurrentModel(settings)
-      await splitLargeClusters(
-        tabs.map((t) => ({
-          url: t.url,
-          title: t.title,
-          domain: t.domain,
-          category: t.category ?? '',
-        })),
-        'tab',
-        settings,
-        (updates) => {
-          if (!this.isRunActive(runId)) return
-          this.callbacks.onCategoryUpdate(updates, 'tab')
-        },
-        domainMap,
-        embeddings,
-        this.currentRun?.abortController.signal,
-      )
-
-      const tabCategoryItems = (await Promise.all(
-        tabs.map(async (tab) => {
-          const entry = await getCached('tab', tab.url)
-          const category = entry?.category?.trim()
-          return category ? { url: tab.url, category } : null
-        }),
-      )).filter((item): item is { url: string; category: string } => Boolean(item))
-      const rareUpdates = await groupRareCategories(tabCategoryItems, 'tab', settings)
-      if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates, 'tab')
-
-      task.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      task.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
-    }
-  }
-
-  private async startStandalonePostProcessRun(
-    runId: number,
-    tabs: TabItem[],
-    bookmarks: BookmarkItem[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    this.currentRun = { runId, kind: 'postprocess', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const task = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Post-process categories', 1)
-    try {
-      if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
-      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-      task.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      task.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
-    }
-  }
-
-  private async startStandaloneEmbeddingRun(
-    runId: number,
-    items: { url: string; title: string; domain: string; category?: string }[],
-    settings: LlmSettings,
-  ): Promise<void> {
-    this.currentRun = { runId, kind: 'embedding', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const task = this.createTaskTracker(TASK_IDS.EMBEDDINGS, 'LLM calc embeddings', items.length)
-    try {
-      if (!hasEmbeddingProviderConfig(settings)) throw new Error('Embedding provider unavailable')
-      await fetchEmbeddingsBatch(items, settings, (updates) => task.progress(updates.length), this.currentRun?.abortController.signal)
-      const points = await reprojectAllEmbeddings(settings)
-      this.callbacks.onProjectedPoints(points)
-      task.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      task.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
-    }
-  }
-
-  private async startStandaloneDomainRun(runId: number, domains: string[], settings: LlmSettings, force: boolean): Promise<void> {
-    this.currentRun = { runId, kind: 'domain', cancelled: false, abortController: new AbortController() }
-    this.clearTasks()
-    this.emit({ type: 'pipeline-start', runId })
-    const estimatedWork = await estimateDomainEnrichmentWork(domains, settings)
-    const task = this.createTaskTracker(TASK_IDS.DOMAINS, 'LLM domain knowledge', Math.max(estimatedWork, 1))
-    try {
-      if (!hasDomainKnowledgeProviderConfig(settings)) throw new Error('Domain enrichment provider unavailable')
-      if (force) await clearDomainKnowledgeCache()
-      const domainMap = await enrichDomains(domains, settings, (delta) => task.progress(delta), this.currentRun?.abortController.signal)
-      this.callbacks.onDomainMap(domainMap)
-      task.done()
-      if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })
-    } catch (err) {
-      task.failed(err)
-      this.emit({ type: 'pipeline-failed', runId, error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      if (this.currentRun?.runId === runId) this.currentRun = null
-    }
-  }
-
-  private async getTaxonomyContext(): Promise<{ candidates: string[]; taxonomyCentroidsMap: Map<string, number[]> }> {
-    const all = await getAllCached()
-    const labels = new Set<string>()
-    const labelEmbeddings = new Map<string, number[][]>()
-
-    for (const entry of all.values()) {
-      if (entry.category) {
-        labels.add(entry.category)
-        if (entry.embedding) {
-          if (!labelEmbeddings.has(entry.category)) labelEmbeddings.set(entry.category, [])
-          labelEmbeddings.get(entry.category)!.push(entry.embedding)
-        }
-      }
-    }
-
-    const taxonomyCentroidsMap = new Map<string, number[]>()
-    for (const [label, embeddings] of labelEmbeddings.entries()) {
-      if (embeddings.length === 0) continue
-      const dim = embeddings[0].length
-      const centroid = new Array(dim).fill(0)
-      for (const emb of embeddings) {
-        for (let i = 0; i < dim; i++) {
-          centroid[i] += emb[i]
-        }
-      }
-      for (let i = 0; i < dim; i++) {
-        centroid[i] /= embeddings.length
-      }
-      taxonomyCentroidsMap.set(label, centroid)
-    }
-
-    return {
-      candidates: [...labels].sort(),
-      taxonomyCentroidsMap,
-    }
+  private isRunActive(runId: number): boolean {
+    return Boolean(this.currentRun && this.currentRun.runId === runId && !this.currentRun.cancelled)
   }
 }
