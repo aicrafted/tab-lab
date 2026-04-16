@@ -10,6 +10,15 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v))
 }
 
+/** Simple seeded random (LCG) to keep UMAP stable. */
+function makeRandom(seed: number) {
+  let s = seed
+  return () => {
+    s = (s * 48271) % 2147483647
+    return (s - 1) / 2147483646
+  }
+}
+
 /**
  * Symmetric log transform: preserves sign, compresses magnitude.
  * log(1 + |v|) keeps nearby points separated while pulling outliers inward.
@@ -19,6 +28,12 @@ function logScale(v: number): number {
   return Math.sign(v) * Math.log1p(Math.abs(v))
 }
 
+export interface UmapParams {
+  nNeighbors?: number
+  minDist?: number
+  spread?: number
+}
+
 /**
  * Project N-dimensional embeddings to 2D via UMAP.
  * Returns normalised [0,1] coordinates sorted to match input order.
@@ -26,6 +41,7 @@ function logScale(v: number): number {
  */
 export function projectTo2D(
   items: { url: string; embedding: number[] }[],
+  params?: UmapParams,
 ): Point2D[] {
   if (items.length < 4) {
     return items.map((item, i) => ({
@@ -36,12 +52,13 @@ export function projectTo2D(
   }
 
   const n = items.length
-  const nNeighbors = Math.min(clamp(Math.floor(n * 0.05), 10, 50), n - 1)
+  const nNeighbors = params?.nNeighbors ?? Math.min(clamp(Math.floor(n * 0.05), 10, 50), n - 1)
   const umap = new UMAP({
     nComponents: 2,
-    nNeighbors,
-    minDist: 0.25,
-    spread: 1.5,
+    nNeighbors: Math.min(nNeighbors, n - 1),
+    minDist: params?.minDist ?? 0.25,
+    spread: params?.spread ?? 1.5,
+    random: makeRandom(42), // Fixed seed for stability
   })
   const raw = umap.fit(items.map(i => i.embedding))
 

@@ -16,6 +16,7 @@ import {
   LAST_SCAN_KEY,
   SETTINGS_KEY,
   SOURCE_FILTER_KEY,
+  MAP_SETTINGS_KEY,
   STORAGE_KEEP_KEYS,
 } from './storage-keys'
 
@@ -115,6 +116,27 @@ export async function setBookmarkScopeFilter(filter: BookmarkScopeFilter): Promi
     }
     : { mode: 'root' }
   await safeLocalSet({ [BOOKMARK_SCOPE_FILTER_KEY]: payload })
+}
+
+export interface MapSettings {
+  umapParams?: {
+    nNeighbors?: number
+    minDist?: number
+    spread?: number
+  }
+}
+
+export async function getMapSettings(): Promise<MapSettings> {
+  const result = await chrome.storage.local.get(MAP_SETTINGS_KEY)
+  const raw = result[MAP_SETTINGS_KEY]
+  if (raw && typeof raw === 'object') {
+    return raw as MapSettings
+  }
+  return {}
+}
+
+export async function setMapSettings(settings: MapSettings): Promise<void> {
+  await safeLocalSet({ [MAP_SETTINGS_KEY]: settings })
 }
 
 async function safeLocalSet(payload: Record<string, unknown>): Promise<void> {

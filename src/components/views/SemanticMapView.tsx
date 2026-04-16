@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
 import { colorFromKey, urlToCoords } from '@/components/views/stubs'
 import { effectiveIntent } from '@/lib/ai/static-intent'
 import type { PageIntent } from '@/lib/core/types'
+import { getMapSettings, setMapSettings } from '@/lib/core/storage'
+import { type UmapParams, projectTo2D } from '@/lib/core/project'
+import { loadEmbeddingsForCurrentModel, saveCached2D } from '@/lib/ai/embedder'
+import { getEmbeddingProvider } from '@/lib/ai/providers/factory'
+import { Check, Loader2, RotateCcw } from 'lucide-react'
 
 type ColorMode = 'category' | 'domain' | 'intent'
 
@@ -35,7 +40,7 @@ const WIDTH = 1000
 const HEIGHT = 620
 const PADDING = 40
 
-export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clusterNames, onRunEmbeddings }: ViewProps) {
+export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clusterNames, onRunEmbeddings, llmSettings }: ViewProps) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
@@ -43,6 +48,35 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
   const [hover, setHover] = useState<HoverState | null>(null)
   const [colorMode, setColorMode] = useState<ColorMode>('category')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
+
+  // UMAP Controls State
+  const [umapParams, setUmapParams] = useState<UmapParams>({ nNeighbors: undefined, minDist: 0.25, spread: 1.5 })
+  const [localEmbeddings, setLocalEmbeddings] = useState<Map<string, number[]> | null>(null)
+  const [localPoints, setLocalPoints] = useState<Map<string, [number, number]> | null>(null)
+  const [embeddingsLoading, setEmbeddingsLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Load saved settings
+  useEffect(() => {
+    void getMapSettings().then((s) => {
+      if (s.umapParams) {
+        setUmapParams({
+          nNeighbors: s.umapParams.nNeighbors,
+          minDist: s.umapParams.minDist ?? 0.25,
+          spread: s.umapParams.spread ?? 1.5,
+        })
+      }
+    })
+  }, [])
+
+  // Cleanup embeddings on unmount
+  useEffect(() => {
+    return () => setLocalEmbeddings(null)
+  }, [])
+
+  const activeProjectedPoints = localPoints ?? projectedPoints
 
   const toCanvas = (value: number, axis: 'x' | 'y') => {
     const range = axis === 'x' ? WIDTH : HEIGHT
@@ -52,7 +86,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
   const points = useMemo<SemanticPoint[]>(() => {
     const bookmarkPoints = bookmarks.map((bookmark) => {
       const category = bookmark.category?.trim() || bookmark.domain
-      const projected = projectedPoints?.get(bookmark.url)
+      const projected = activeProjectedPoints?.get(bookmark.url)
       const [x, y] = projected ?? urlToCoords(bookmark.url, category)
       return {
         id: `bm-${bookmark.id}`,
@@ -71,7 +105,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
 
     const tabPoints = tabs.map((tab) => {
       const category = tab.category?.trim() || tab.domain
-      const projected = projectedPoints?.get(tab.url)
+      const projected = activeProjectedPoints?.get(tab.url)
       const [x, y] = projected ?? urlToCoords(tab.url, category)
       return {
         id: `tab-${tab.id}`,
@@ -92,7 +126,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
     })
 
     return [...bookmarkPoints, ...tabPoints]
-  }, [bookmarks, tabs, projectedPoints])
+  }, [bookmarks, tabs, activeProjectedPoints])
 
   useEffect(() => {
     if (colorMode !== 'category' && activeCategory != null) {
@@ -210,6 +244,60 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
     setPan({ x: 0, y: 0 })
   }
 
+  // UMAP Parameter handling
+  const triggerReprojection = useCallback(async (params: UmapParams) => {
+    let embeddings = localEmbeddings
+    if (!embeddings) {
+      setEmbeddingsLoading(true)
+      try {
+        if (!llmSettings) return
+        embeddings = await loadEmbeddingsForCurrentModel(llmSettings)
+        setLocalEmbeddings(embeddings)
+      } finally {
+        setEmbeddingsLoading(false)
+      }
+    }
+
+    if (!embeddings || embeddings.size < 4) return
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      const items = Array.from(embeddings!.entries()).map(([url, embedding]) => ({ url, embedding }))
+      const points = projectTo2D(items, params)
+      setLocalPoints(new Map(points.map(p => [p.url, [p.x, p.y] as [number, number]])))
+    }, 400)
+  }, [localEmbeddings, llmSettings])
+
+  const onParamChange = (patch: Partial<UmapParams>) => {
+    const next = { ...umapParams, ...patch }
+    setUmapParams(next)
+    void triggerReprojection(next)
+  }
+
+  const handleSave = async () => {
+    if (!localPoints || !llmSettings) return
+    setSaving(true)
+    try {
+      await setMapSettings({ umapParams })
+      const providerId = llmSettings.tasks.embedding.provider
+      const provider = getEmbeddingProvider(providerId)
+      const dim = await provider.getEmbeddingDim(llmSettings)
+      if (dim) {
+        const pointsArray = Array.from(localPoints.entries()).map(([url, [x, y]]) => ({ url, x, y }))
+        await saveCached2D(pointsArray, dim)
+      }
+      setSavedAt(Date.now())
+      setTimeout(() => setSavedAt(null), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = () => {
+    setUmapParams({ nNeighbors: undefined, minDist: 0.25, spread: 1.5 })
+    setLocalPoints(null)
+  }
+
   if (loading) {
     return <div className="p-8 text-sm text-muted-foreground">Loading semantic map...</div>
   }
@@ -248,6 +336,98 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
           {projectedPoints && projectedPoints.size > 0 && (
             <span className="text-xs text-muted-foreground">Re-embed required after text format change.</span>
           )}
+        </div>
+
+        {/* UMAP Controls */}
+        <div className="flex flex-wrap items-center gap-6 rounded-md border border-border bg-card/20 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">nNeighbors</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="umap-auto-neighbors"
+                checked={umapParams.nNeighbors === undefined}
+                onChange={(e) => onParamChange({ nNeighbors: e.target.checked ? undefined : 15 })}
+                className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer"
+              />
+              <label htmlFor="umap-auto-neighbors" className="text-xs text-muted-foreground cursor-pointer select-none">auto</label>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="100"
+              step="1"
+              disabled={umapParams.nNeighbors === undefined}
+              value={umapParams.nNeighbors ?? 15}
+              onChange={(e) => onParamChange({ nNeighbors: parseInt(e.target.value, 10) })}
+              className="h-1.5 w-24 cursor-pointer appearance-none rounded-full bg-border accent-primary disabled:opacity-30"
+            />
+            <span className="min-w-[2ch] text-[10px] font-mono text-muted-foreground">
+              {umapParams.nNeighbors ?? 'auto'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">minDist</span>
+            <input
+              type="range"
+              min="0.01"
+              max="0.99"
+              step="0.01"
+              value={umapParams.minDist ?? 0.25}
+              onChange={(e) => onParamChange({ minDist: parseFloat(e.target.value) })}
+              className="h-1.5 w-24 cursor-pointer appearance-none rounded-full bg-border accent-primary"
+            />
+            <span className="min-w-[4ch] text-[10px] font-mono text-muted-foreground">
+              {(umapParams.minDist ?? 0.25).toFixed(2)}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">spread</span>
+            <input
+              type="range"
+              min="0.1"
+              max="5.0"
+              step="0.1"
+              value={umapParams.spread ?? 1.5}
+              onChange={(e) => onParamChange({ spread: parseFloat(e.target.value) })}
+              className="h-1.5 w-24 cursor-pointer appearance-none rounded-full bg-border accent-primary"
+            />
+            <span className="min-w-[3ch] text-[10px] font-mono text-muted-foreground">
+              {(umapParams.spread ?? 1.5).toFixed(1)}
+            </span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <Button 
+              type="button" 
+              size="sm" 
+              variant="ghost" 
+              className="h-8 gap-1.5 px-2 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              onClick={handleReset}
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset
+            </Button>
+            <Button 
+              type="button" 
+              size="sm" 
+              disabled={!localPoints || saving}
+              className="h-8 min-w-[80px] gap-1.5 px-3 text-[10px] uppercase tracking-wider"
+              onClick={() => void handleSave()}
+            >
+              {saving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : savedAt ? (
+                <Check className="h-3 w-3 text-emerald-400" />
+              ) : (
+                'Save'
+              )}
+              {savedAt ? 'Saved' : ''}
+            </Button>
+            {embeddingsLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin text-primary" />}
+          </div>
         </div>
 
         <div className="relative overflow-hidden rounded-md border border-border bg-card/30">
