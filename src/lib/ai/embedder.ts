@@ -2,6 +2,7 @@ import { projectTo2D, type Point2D } from '../core/project'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { embedderLog } from '../core/logger'
 import type { LlmSettings } from '../core/types'
+import { cleanTitle } from '../core/text-utils'
 import { getEmbeddingProvider } from './providers/factory'
 
 import { setEmbedding, getEmbeddingsByDim, clearEmbeddings } from '../db/embeddings-repo'
@@ -181,14 +182,38 @@ export async function fetchAndCacheEmbeddings(
       if (signal?.aborted) throw new Error('Aborted')
 
       const texts = chunk.map(item => {
-        const path = urlPathSnippet(item.url)
-        const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks) : undefined
+        const cfg = settings.tasks.embedding
+        const path = cfg.includePath ? urlPathSnippet(item.url) : ''
+        
+        const domainInfo = (cfg.includeDomainLabel && domainMap) 
+          ? getDomainInfo(item.domain, domainMap, settings.localNetworks) 
+          : undefined
+        
         const domainLabel = domainInfo?.category && domainInfo?.description
           ? `${domainInfo.category}: ${domainInfo.description}`
           : (domainInfo?.description ?? domainInfo?.category)
-        const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
+        
+        const displayTitle = cfg.includeTitle ? cleanTitle(item.title, item.domain) : ''
+        const displayDomain = cfg.includeDomain ? item.domain : ''
+
+        // Build base text: [Title]\n[Domain][Path]
+        let baseText = displayTitle
+        if (displayDomain) {
+          baseText = baseText ? `${baseText}\n${displayDomain}` : displayDomain
+        }
+        if (path) {
+          // If we have domain, append path to it. If not, treat path as separate line.
+          if (displayDomain) baseText += path
+          else baseText = baseText ? `${baseText}\n${path}` : path
+        }
+
         const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
-        return item.category ? `${item.category}\n${enrichedText}` : enrichedText
+        return (cfg.includeCategory && item.category) ? `${item.category}\n${enrichedText}` : enrichedText
+      })
+
+      embedderLog.info('fetching embeddings batch', {
+        count: texts.length,
+        samples: texts.slice(0, 3).map(t => t.slice(0, 100) + (t.length > 100 ? '...' : '')),
       })
 
       const embeddings = await provider.embedBatch(texts, settings, signal)

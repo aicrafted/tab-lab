@@ -190,7 +190,14 @@ export interface LlmSettings {
   }
   tasks: {
     chat: { provider: ChatProvider }
-    embedding: { provider: EmbeddingProvider }
+    embedding: { 
+      provider: EmbeddingProvider
+      includeTitle: boolean
+      includeDomain: boolean
+      includePath: boolean
+      includeDomainLabel: boolean
+      includeCategory: boolean
+    }
     classification: { method: ClassificationMethod }
   }
 }
@@ -273,7 +280,14 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   nliConfidenceThreshold: 0.25,
   tasks: {
     chat: { provider: 'lmstudio' },
-    embedding: { provider: 'lmstudio' },
+    embedding: { 
+      provider: 'lmstudio',
+      includeTitle: true,
+      includeDomain: true,
+      includePath: true,
+      includeDomainLabel: true,
+      includeCategory: true,
+    },
     classification: { method: 'llm' },
   },
 }
@@ -330,6 +344,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         },
         embedding: {
           provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
+          includeTitle: typeof embedding.includeTitle === 'boolean' ? embedding.includeTitle : true,
+          includeDomain: typeof embedding.includeDomain === 'boolean' ? embedding.includeDomain : true,
+          includePath: typeof embedding.includePath === 'boolean' ? embedding.includePath : true,
+          includeDomainLabel: typeof embedding.includeDomainLabel === 'boolean' ? embedding.includeDomainLabel : true,
+          includeCategory: typeof embedding.includeCategory === 'boolean' ? embedding.includeCategory : true,
         },
         classification: {
           method: toClassificationMethod(classification.method, legacyMethod),
@@ -372,6 +391,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       },
       embedding: {
         provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'lmstudio'),
+        includeTitle: true,
+        includeDomain: true,
+        includePath: true,
+        includeDomainLabel: true,
+        includeCategory: true,
       },
       classification: {
         method: toClassificationMethod(old.classificationMethod, 'llm'),
