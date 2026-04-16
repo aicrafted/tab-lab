@@ -1,5 +1,5 @@
 import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from '../ai/cluster'
-import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, groupRareCategories, SPLIT_THRESHOLD, splitLargeClusters } from '../ai/classifier'
+import { checkLlmAvailability, classifyByClusters, classifyItems, normalizeCategoryLabels, groupRareCategories, SPLIT_THRESHOLD, splitLargeClusters } from '../ai/classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
 import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadEmbeddingsForCurrentModel, reprojectAllEmbeddings } from '../ai/embedder'
 import { aiPipelineLog } from '../core/logger'
@@ -548,19 +548,27 @@ export class PipelineOrchestrator {
 
     const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
 
-    await classifyTabs(tabs, (updates) => {
-      if (!this.isRunActive(runId)) return
-      tabsTask.progress(updates.length)
-      this.callbacks.onCategoryUpdate(updates, 'tab')
-    }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
+    await classifyItems(
+      tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
+      'tab',
+      settings,
+      (updates) => {
+        if (!this.isRunActive(runId)) return
+        tabsTask.progress(updates.length)
+        this.callbacks.onCategoryUpdate(updates, 'tab')
+      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
     if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
     tabsTask.done()
 
-    await classifyBookmarks(bookmarks, (updates) => {
-      if (!this.isRunActive(runId)) return
-      bookmarksTask.progress(updates.length)
-      this.callbacks.onCategoryUpdate(updates, 'bm')
-    }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
+    await classifyItems(
+      bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
+      'bm',
+      settings,
+      (updates) => {
+        if (!this.isRunActive(runId)) return
+        bookmarksTask.progress(updates.length)
+        this.callbacks.onCategoryUpdate(updates, 'bm')
+      }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
     if (!this.isRunActive(runId)) { bookmarksTask.cancel(); return }
     bookmarksTask.done()
 
@@ -727,8 +735,8 @@ export class PipelineOrchestrator {
 
       const { candidates, taxonomyCentroidsMap } = await this.getTaxonomyContext()
 
-      if (useNli) {
-        await classifyWithLmStudio(
+      if (useNli || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) || hasChatProviderConfig(settings)) {
+        await classifyItems(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
           'tab',
           settings,
@@ -737,40 +745,10 @@ export class PipelineOrchestrator {
             tabsTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'tab')
           }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
+        
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyWithLmStudio(
-          bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-          'bm',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            bookmarksTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'bm')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-      } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
-        await classifyTabs(tabs, (updates) => {
-          if (!this.isRunActive(runId)) return
-          tabsTask.progress(updates.length)
-          this.callbacks.onCategoryUpdate(updates, 'tab')
-        }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyBookmarks(bookmarks, (updates) => {
-          if (!this.isRunActive(runId)) return
-          bookmarksTask.progress(updates.length)
-          this.callbacks.onCategoryUpdate(updates, 'bm')
-        }, settings, this.currentRun?.abortController.signal, candidates, taxonomyCentroidsMap)
-      } else if (hasChatProviderConfig(settings)) {
-        await classifyWithLmStudio(
-          tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-          'tab',
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates, 'tab')
-          }, undefined, this.currentRun?.abortController.signal, taxonomyCentroidsMap, candidates)
-        if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-        await classifyWithLmStudio(
+        
+        await classifyItems(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
           'bm',
           settings,

@@ -1,13 +1,14 @@
+import { kMeans, type ClusterResult } from './cluster'
 import { chatComplete } from './llm'
 import { getChatProvider, getEmbeddingProvider } from './providers/factory'
-import { cosineSimilarity } from './embedder'
-import { kMeans, type ClusterResult } from './cluster'
-import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { classifierLog } from '../core/logger'
-import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
 import { getCached, setCached } from '../core/storage'
-import type { BookmarkItem, LlmSettings, TabItem } from '../core/types'
-import { DEFAULT_LLM_SETTINGS } from '../core/types'
+import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
+import type { LlmSettings } from '../core/types'
+import { classifierLog } from '../core/logger'
+import { createLoggerProgress } from '../core/progress'
+import { getDomainInfo, type DomainInfo } from './domain-enricher'
+import { cosineSimilarity } from './embedder'
+import { classifyVectorNli } from './nli-engine'
 
 const classifierParseMetrics = {
   strict: 0,
@@ -26,40 +27,6 @@ function trackClassifierParse(strict: boolean): void {
   }
 }
 
-function createProgressTracker(operation: string, total: number, context?: Record<string, unknown>) {
-  const startedAt = Date.now()
-  const safeTotal = Math.max(total, 1)
-  let done = 0
-  let lastPct = -1
-  let lastLoggedDone = 0
-
-  classifierLog.info(`${operation} start`, { total: safeTotal, ...context })
-
-  return {
-    tick(delta = 1, extra?: Record<string, unknown>) {
-      const nextDone = Math.min(safeTotal, done + Math.max(0, Math.floor(delta)))
-      for (let current = done + 1; current <= nextDone; current += 1) {
-        const pct = Math.floor((current / safeTotal) * 100)
-        const shouldLog =
-          pct > lastPct
-          || current === safeTotal
-          || (safeTotal < 100 && current - lastLoggedDone >= 5)
-        if (!shouldLog) continue
-        lastPct = pct
-        lastLoggedDone = current
-        classifierLog.debug(`${operation} progress`, { done: current, total: safeTotal, pct, ...extra })
-      }
-      done = nextDone
-    },
-    finish(extra?: Record<string, unknown>) {
-      classifierLog.info(`${operation} done`, {
-        total: safeTotal,
-        durationMs: Date.now() - startedAt,
-        ...extra,
-      })
-    },
-  }
-}
 const CATEGORY_RESPONSE_SCHEMA = {
   name: 'category_response',
   schema: {
@@ -99,33 +66,6 @@ export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 const RARE_THRESHOLD = 3
 
-let categoryLabelEmbeddingsPromise: Promise<Map<string, number[]>> | null = null
-let lastUsedCategoryHash: string | null = null
-
-async function getCategoryLabelEmbeddings(settings: LlmSettings): Promise<Map<string, number[]>> {
-  const providerId = settings.tasks.embedding.provider
-  const provider = getEmbeddingProvider(providerId)
-  const model = provider.getEmbeddingModel(settings) || 'default'
-  
-  // Create a simple hash/key to detect changes in categories or descriptors
-  const categoryHash = `${model}:${JSON.stringify(settings.nliCategories)}`
-
-  if (categoryLabelEmbeddingsPromise && categoryHash === lastUsedCategoryHash) {
-    return categoryLabelEmbeddingsPromise
-  }
-
-  categoryLabelEmbeddingsPromise = (async () => {
-    classifierLog.info('re-embedding NLI categories', { count: settings.nliCategories.length })
-    const map = new Map<string, number[]>()
-    for (const cat of settings.nliCategories) {
-      map.set(cat.label, await provider.embed(cat.descriptor || cat.label, settings))
-    }
-    return map
-  })()
-
-  lastUsedCategoryHash = categoryHash
-  return categoryLabelEmbeddingsPromise
-}
 
 function urlPathSnippet(url: string): string {
   try {
@@ -163,37 +103,6 @@ function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | und
   return ''
 }
 
-async function classifyItemNLI(
-  item: ClassifiedItem,
-  settings: LlmSettings,
-  domainMap?: Map<string, DomainInfo>,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const providerId = settings.tasks.embedding.provider
-  const provider = getEmbeddingProvider(providerId)
-  
-  const path = urlPathSnippet(item.url)
-  const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
-  const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
-  const queryEmbedding = await provider.embed(text, settings, signal)
-  const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
-  let bestLabel = 'Other'
-  let bestScore = -Infinity
-
-  for (const [label, embedding] of labelEmbeddings.entries()) {
-    const score = cosineSimilarity(queryEmbedding, embedding)
-    if (score > bestScore) {
-      bestScore = score
-      bestLabel = label
-    }
-  }
-  if (bestScore < settings.nliConfidenceThreshold) {
-    classifierLog.debug('nli low confidence (item)', { url: item.url, score: bestScore, label: bestLabel })
-    return null
-  }
-
-  return bestLabel
-}
 
 export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmAvailability> {
   if (!settings) return 'unavailable'
@@ -290,7 +199,7 @@ export async function classifyItems(
     throw new Error(`Provider ${activeProviderId} failed to become ready in time. Please check your local LLM server.`)
   }
   
-  const tracker = createProgressTracker('classifyItems', uncached.length, { provider: chatProviderId })
+  const tracker = createLoggerProgress('classifyItems', uncached.length, { provider: chatProviderId })
   const format = 'json' as const
   const useJsonOutput = true
   const systemPrompt = classifyItem.system(format)
@@ -312,12 +221,16 @@ export async function classifyItems(
       try {
         let category = 'Other'
         if (useNli) {
-          const result = await classifyItemNLI(item, settings, domainMap)
-          if (result === null) {
-            tracker.tick(1, { url: item.url, skipped: 'low-confidence' })
+          const path = urlPathSnippet(item.url)
+          const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
+          const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
+          const queryEmbedding = await embedProvider.embed(text, settings, signal)
+          const result = await classifyVectorNli(queryEmbedding, settings)
+          if (!result) {
+            tracker.progress(1, { url: item.url, skipped: 'low-confidence' })
             continue
           }
-          category = result
+          category = result.label
         } else {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
@@ -369,12 +282,12 @@ export async function classifyItems(
           err: err instanceof Error ? err.message : String(err),
         })
       } finally {
-        tracker.tick(1)
+        tracker.progress(1)
       }
     }
     if (results.length > 0) onProgress(results)
   }
-  tracker.finish({ failed })
+  tracker.done({ failed })
 }
 
 /** Load cached categories for a set of items. Returns url → category map. */
@@ -452,7 +365,7 @@ export async function normalizeCategoryLabels(
   settings: LlmSettings,
 ): Promise<Record<string, string>> {
   if (labels.length <= 1) return Object.fromEntries(labels.map((label) => [label, label]))
-  const tracker = createProgressTracker('normalizeCategoryLabels', labels.length)
+  const tracker = createLoggerProgress('normalizeCategoryLabels', labels.length)
 
   const prompt = normalizeCategories.user(labels)
 
@@ -474,15 +387,15 @@ export async function normalizeCategoryLabels(
 
   try {
     const parsed = normalizeCategories.parseResponse(raw, labels)
-    tracker.tick(labels.length)
-    tracker.finish()
+    tracker.progress(labels.length)
+    tracker.done()
     return parsed
   } catch (err) {
-    tracker.tick(labels.length)
+    tracker.progress(labels.length)
     classifierLog.warn('normalizeCategoryLabels JSON parse failed, keeping originals', {
       err: err instanceof Error ? err.message : String(err),
     })
-    tracker.finish({ fallback: true })
+    tracker.done({ fallback: true })
     return Object.fromEntries(labels.map((label) => [label, label]))
   }
 }
@@ -497,7 +410,7 @@ export async function groupRareCategories(
     .map((item) => ({ url: item.url, category: item.category.trim() }))
     .filter((item) => item.category.length > 0)
   if (current.length === 0) return []
-  const tracker = createProgressTracker('groupRareCategories', current.length * Math.max(1, maxPasses), { maxPasses })
+  const tracker = createLoggerProgress('groupRareCategories', current.length * Math.max(1, maxPasses), { maxPasses })
 
   const allUpdates = new Map<string, string>() // url → final category
 
@@ -555,7 +468,7 @@ export async function groupRareCategories(
 
     let changed = false
     current = current.map((item) => {
-      tracker.tick(1)
+      tracker.progress(1)
       const targetRaw = mergeMap[item.category]
       const target = typeof targetRaw === 'string' ? targetRaw.trim().slice(0, 40) : ''
       if (!target || target === item.category) return item
@@ -571,7 +484,7 @@ export async function groupRareCategories(
   }
 
   if (allUpdates.size === 0) {
-    tracker.finish({ updates: 0 })
+    tracker.done({ updates: 0 })
     return []
   }
 
@@ -587,7 +500,7 @@ export async function groupRareCategories(
     })
   }))
 
-  tracker.finish({ updates: updates.length })
+  tracker.done({ updates: updates.length })
   return updates
 }
 
@@ -611,7 +524,7 @@ export async function splitLargeClusters(
   const totalWork = [...groups.values()]
     .filter((members) => members.length > SPLIT_THRESHOLD)
     .reduce((sum, members) => sum + members.length, 0)
-  const tracker = createProgressTracker('splitLargeClusters', Math.max(totalWork, 1), {
+  const tracker = createLoggerProgress('splitLargeClusters', Math.max(totalWork, 1), {
     groups: groups.size,
     totalItems: items.length,
   })
@@ -643,7 +556,7 @@ export async function splitLargeClusters(
         domainMap,
         signal,
       )
-      tracker.tick(members.length, { parentCategory, strategy: 'kmeans' })
+      tracker.progress(members.length, { parentCategory, strategy: 'kmeans' })
       continue
     }
 
@@ -702,109 +615,19 @@ export async function splitLargeClusters(
             err: err instanceof Error ? err.message : String(err),
           })
         } finally {
-          tracker.tick(1, { parentCategory, strategy: 'batch-llm' })
+          tracker.progress(1, { parentCategory, strategy: 'batch-llm' })
         }
       }
       if (updates.length > 0) onProgress(updates)
     }
   }
-  tracker.finish()
-}
-
-export async function classifyTabs(
-  tabs: TabItem[],
-  onProgress: (updates: { url: string; category: string }[]) => void,
-  settings?: LlmSettings,
-  signal?: AbortSignal,
-  candidates?: string[],
-  taxonomyCentroids?: Map<string, number[]>,
-): Promise<void> {
-  const activeSettings = settings ?? {
-    ...DEFAULT_LLM_SETTINGS,
-    tasks: {
-      ...DEFAULT_LLM_SETTINGS.tasks,
-      chat: { provider: 'gemini-nano' },
-      embedding: { provider: 'browser-ml' },
-    },
-  }
-  await classifyItems(
-    tabs.map((tab) => ({ url: tab.url, title: tab.title, domain: tab.domain })),
-    'tab',
-    activeSettings,
-    onProgress,
-    undefined,
-    signal,
-    taxonomyCentroids,
-    candidates,
-  )
-}
-
-export async function classifyBookmarks(
-  bookmarks: BookmarkItem[],
-  onProgress: (updates: { url: string; category: string }[]) => void,
-  settings?: LlmSettings,
-  signal?: AbortSignal,
-  candidates?: string[],
-  taxonomyCentroids?: Map<string, number[]>,
-): Promise<void> {
-  const activeSettings = settings ?? {
-    ...DEFAULT_LLM_SETTINGS,
-    tasks: {
-      ...DEFAULT_LLM_SETTINGS.tasks,
-      chat: { provider: 'gemini-nano' },
-      embedding: { provider: 'browser-ml' },
-    },
-  }
-  await classifyItems(
-    bookmarks.map((bookmark) => ({ url: bookmark.id ?? bookmark.url, title: bookmark.title, domain: bookmark.domain })),
-    'bm',
-    activeSettings,
-    onProgress,
-    undefined,
-    signal,
-    taxonomyCentroids,
-    candidates,
-  )
-}
-
-export async function classifyWithLmStudio(
-  items: ClassifiedItem[],
-  prefix: 'tab' | 'bm',
-  settings: LlmSettings,
-  onProgress: (updates: { url: string; category: string }[]) => void,
-  domainMap?: Map<string, DomainInfo>,
-  signal?: AbortSignal,
-  taxonomyCentroids?: Map<string, number[]>,
-  candidates?: string[],
-): Promise<void> {
-  await classifyItems(items, prefix, settings, onProgress, domainMap, signal, taxonomyCentroids, candidates)
+  tracker.done()
 }
 
 function inferClusterNameFromRepresentative(title: string, category: string): string {
   const normalized = title.replace(/\s+/g, ' ').trim()
   if (!normalized) return category
   return normalized.split(' ').slice(0, 5).join(' ').slice(0, 60)
-}
-
-async function classifyClusterNli(
-  centroid: number[],
-  settings: LlmSettings
-): Promise<string | null> {
-  const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
-  let bestLabel = 'Other'
-  let bestScore = -Infinity
-  for (const [label, embedding] of labelEmbeddings.entries()) {
-    const score = cosineSimilarity(centroid, embedding)
-    if (score > bestScore) {
-      bestScore = score
-      bestLabel = label
-    }
-  }
-  if (bestScore < settings.nliConfidenceThreshold) {
-    classifierLog.debug('nli low confidence (cluster)', { score: bestScore, label: bestLabel })
-    return null
-  }
-  return bestLabel
 }
 
 export async function classifyByClusters(
@@ -818,7 +641,7 @@ export async function classifyByClusters(
   parentCategory?: string, // NEW
 ): Promise<Map<number, string>> {
   const totalMembers = clusters.reduce((sum, cluster) => sum + cluster.members.length, 0)
-  const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length, parentCategory })
+  const tracker = createLoggerProgress('classifyByClusters', totalMembers, { clusters: clusters.length, parentCategory })
   const byUrl = new Map(items.map((item) => [item.url, item]))
   const names = new Map<number, string>()
   const embedProviderId = settings.tasks.embedding.provider
@@ -832,7 +655,7 @@ export async function classifyByClusters(
       .filter((item): item is ClusterInputItem => Boolean(item))
 
     if (representativeItems.length === 0 || cluster.members.length === 0) {
-      tracker.tick(cluster.members.length, { clusterId: cluster.clusterId, skipped: true })
+      tracker.progress(cluster.members.length, { clusterId: cluster.clusterId, skipped: true })
       continue
     }
 
@@ -840,12 +663,12 @@ export async function classifyByClusters(
     let name = 'Other'
 
     if (useNli) {
-      const result = await classifyClusterNli(cluster.centroid, settings)
-      if (result === null) {
-        tracker.tick(cluster.members.length, { clusterId: cluster.clusterId, skipped: 'low-confidence' })
+      const result = await classifyVectorNli(cluster.centroid, settings)
+      if (!result) {
+        tracker.progress(cluster.members.length, { clusterId: cluster.clusterId, skipped: 'low-confidence' })
         continue
       }
-      category = result
+      category = result.label
       name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
     } else {
       const provider = settings.tasks.chat.provider
@@ -892,9 +715,9 @@ export async function classifyByClusters(
       updates.push({ url, category, parentCategory: finalParent, clusterId: cluster.clusterId })
     }
     if (updates.length > 0) onProgress(updates)
-    tracker.tick(cluster.members.length, { clusterId: cluster.clusterId })
+    tracker.progress(cluster.members.length, { clusterId: cluster.clusterId })
   }
 
-  tracker.finish({ namedClusters: names.size })
+  tracker.done({ namedClusters: names.size })
   return names
 }

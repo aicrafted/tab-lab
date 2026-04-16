@@ -6,31 +6,58 @@
   <title>TabLab — Privacy Policy</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       max-width: 720px;
       margin: 60px auto;
       padding: 0 24px;
-      color: #1e293b;
+      background: #111;
+      color: #f0e6d0;
       line-height: 1.7;
     }
     h1 { font-size: 1.75rem; margin-bottom: 4px; }
-    h2 { font-size: 1.1rem; margin-top: 2rem; color: #334155; }
-    p, li { color: #475569; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; color: #d4c9b8; }
+    p, li { color: #a89b85; }
     ul { padding-left: 1.4rem; }
-    .meta { color: #94a3b8; font-size: 0.875rem; margin-bottom: 2.5rem; }
+    .meta { color: #666; font-size: 0.875rem; margin-bottom: 2.5rem; }
     .highlight {
-      background: #f1f5f9;
-      border-left: 3px solid #6366f1;
+      background: #1a1a1a;
+      border-left: 3px solid #f0e6d0;
       padding: 12px 16px;
       border-radius: 0 6px 6px 0;
       margin: 1.5rem 0;
+      color: #d4c9b8;
     }
-    a { color: #6366f1; }
+    a { color: #f0e6d0; }
+    code { background: #1a1a1a; padding: 2px 6px; border-radius: 3px; }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .header img {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+    }
+    .header h1 { margin: 0; }
+    .warning {
+      background: #1a1500;
+      border-left: 3px solid #c8a060;
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 12px 0 0 0;
+      color: #c8a060;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
 
-  <h1>TabLab — Privacy Policy</h1>
+  <div class="header">
+    <img src="../public/icons/icon.svg" alt="TabLab">
+    <h1>TabLab — Privacy Policy</h1>
+  </div>
   <p class="meta">Effective date: April 12, 2025</p>
 
   <div class="highlight">
@@ -51,25 +78,39 @@
   on your device. It is never sent to TabLab's servers (TabLab has none).</p>
 
   <h2>AI processing and external providers</h2>
-  <p>TabLab supports two AI backends for classification and semantic search:</p>
+  <p>TabLab supports several AI backends for AI processing:</p>
   <ul>
     <li>
-      <strong>Gemini Nano (built-in)</strong> — runs entirely in the browser via
-      Chrome's on-device AI API. No data leaves your device.
+      <strong>Browser-local ML, Gemini Nano (built-in)</strong> — runs entirely in the browser via
+      Transformers.js and WEBLLM or Chrome's on-device AI API. No data leaves your device.
     </li>
     <li>
-      <strong>External provider (Ollama, LM Studio, or any OpenAI-compatible
+      <strong>Local provider (Ollama, LM Studio, or any OpenAI-compatible
       local server)</strong> — if you configure a custom endpoint in Settings,
       tab and bookmark titles/URLs will be sent to that endpoint to perform
       inference. TabLab sends the request and returns the result; it does not
       log, store, or forward this data itself. The privacy practices of the
-      external provider are governed solely by that provider. TabLab is not
-      responsible for how external providers handle your data.
+      local provider are governed solely by that provider. TabLab is not
+      responsible for how local providers handle your data.
+    </li>
+    <li>
+      <strong>Cloud provider (OpenRouter)</strong> — if you select this endpoint in Settings,
+      tab and bookmark titles/URLs will be sent to OpenRouter, which routes requests
+      to an upstream AI provider (such as OpenAI, Anthropic, Google, or others depending
+      on the model selected). TabLab sends the request and returns the result; it does not
+      log, store, or forward this data itself.
+      <div class="warning">
+        <strong>Important:</strong> cloud providers may log your requests and, depending on
+        their terms of service, use them to improve or train their models. Both OpenRouter
+        and the underlying upstream provider have access to the content of your requests.
+        Review the privacy policies of OpenRouter and your chosen upstream model provider
+        before use. TabLab is not responsible for how cloud providers handle your data.
+      </div>
     </li>
   </ul>
   <p>
-    By default, no external provider is configured. You opt in explicitly by
-    entering a custom API endpoint in the TabLab settings.
+    By default, TabLab uses Browser-local ML — no data leaves your device.
+    Cloud and local network providers must be opted into explicitly in the TabLab settings.
   </p>
 
   <h2>No tracking, analytics, or advertising</h2>

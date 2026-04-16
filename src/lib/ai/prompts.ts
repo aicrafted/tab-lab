@@ -1,4 +1,4 @@
-import { extractJson } from './llm'
+import { parseLlmJson } from './parsers'
 import type { DomainInfo } from './domain-enricher'
 import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from '../core/types'
 
@@ -112,19 +112,6 @@ Examples:
 
 Domains:`
 
-function extractJsonObject(text: string): string {
-  const start = text.indexOf('{')
-  if (start === -1) return ''
-  let depth = 0
-  for (let i = start; i < text.length; i += 1) {
-    if (text[i] === '{') depth += 1
-    else if (text[i] === '}') {
-      depth -= 1
-      if (depth === 0) return text.slice(start, i + 1)
-    }
-  }
-  return ''
-}
 
 function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
   const text = raw
@@ -153,14 +140,9 @@ function isInvalidCategoryLabel(label: string): boolean {
 }
 
 function parseCategoryJson(raw: string): { category: string; strict: boolean } {
-  try {
-    const jsonStr = extractJsonObject(raw) || extractJson(raw)
-    const parsed = JSON.parse(jsonStr) as { category?: unknown }
-    if (typeof parsed.category === 'string' && parsed.category.trim()) {
-      return { category: normalizeCategoryLabel(parsed.category), strict: true }
-    }
-  } catch {
-    // Intentionally fallback to text parsing.
+  const parsed = parseLlmJson<{ category?: string }>(raw, {})
+  if (parsed.category) {
+    return { category: normalizeCategoryLabel(parsed.category), strict: true }
   }
   return { category: 'Other', strict: false }
 }
@@ -178,18 +160,13 @@ function parseTagsText(raw: string): string[] {
 }
 
 function parseTagsJson(raw: string): { tags: string[]; strict: boolean } {
-  try {
-    const parsed = JSON.parse(extractJson(raw)) as { tags?: unknown }
-    if (Array.isArray(parsed.tags)) {
-      const tags = (parsed.tags as unknown[])
-        .filter((tag): tag is string => typeof tag === 'string')
-        .map(normalizeTagToken)
-        .filter((tag) => tag.length > 1 && tag.length < 30)
-        .slice(0, 5)
-      return { tags, strict: true }
-    }
-  } catch {
-    // Intentionally fallback to text parsing.
+  const parsed = parseLlmJson<{ tags?: string[] }>(raw, {})
+  if (Array.isArray(parsed.tags)) {
+    const tags = parsed.tags
+      .map(normalizeTagToken)
+      .filter((tag) => tag.length > 1 && tag.length < 30)
+      .slice(0, 5)
+    return { tags, strict: true }
   }
   return { tags: parseTagsText(raw), strict: false }
 }
@@ -200,14 +177,10 @@ function parseIntentText(raw: string): PageIntent {
 }
 
 function parseIntentJson(raw: string): { intent: PageIntent; strict: boolean } {
-  try {
-    const parsed = JSON.parse(extractJson(raw)) as { intent?: unknown }
-    if (typeof parsed.intent === 'string') {
-      const value = VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
-      return { intent: value, strict: true }
-    }
-  } catch {
-    // Intentionally fallback to text parsing.
+  const parsed = parseLlmJson<{ intent?: PageIntent }>(raw, {})
+  if (parsed.intent) {
+    const value = VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
+    return { intent: value, strict: true }
   }
   return { intent: parseIntentText(raw), strict: false }
 }
@@ -225,28 +198,6 @@ function normalizePlatform(value: unknown): KnownPlatform | undefined {
   return VALID_PLATFORMS.has(normalized) ? normalized as KnownPlatform : undefined
 }
 
-function parseJsonLenient(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    // Try repair pass below.
-  }
-
-  const repaired = text
-    .replace(/\uFEFF/g, '')
-    .replace(/,\s*([}\]])/g, '$1')
-    .replace(/([{,]\s*)'([^'\\]+)'\s*:/g, '$1"$2":')
-    .replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_m, value: string) => {
-      const safe = value.replace(/"/g, '\\"')
-      return `: "${safe}"`
-    })
-    .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_\- ]*)\s*:/g, (_m, prefix: string, key: string) => {
-      const safeKey = key.trim().replace(/"/g, '\\"')
-      return `${prefix}"${safeKey}":`
-    })
-
-  return JSON.parse(repaired)
-}
 
 function parseDomainResponseHeuristic(raw: string, sentDomains: Set<string>, fetchedAt: number): DomainInfo[] {
   const results: DomainInfo[] = []
@@ -342,20 +293,10 @@ export const classifyCluster = {
   },
 
   parseResponse(raw: string): { category: string; name: string } {
-    try {
-      const jsonStr = extractJsonObject(raw) || extractJson(raw)
-      if (!jsonStr) throw new Error('no JSON object found')
-      const parsed = JSON.parse(jsonStr) as { category?: unknown; name?: unknown }
-      const category = typeof parsed.category === 'string' && parsed.category.trim()
-        ? normalizeCategoryLabel(parsed.category)
-        : 'Other'
-      const name = typeof parsed.name === 'string' && parsed.name.trim()
-        ? parsed.name.trim().slice(0, 60)
-        : category
-      return { category, name }
-    } catch {
-      return { category: 'Other', name: 'Other' }
-    }
+    const parsed = parseLlmJson<{ category?: string; name?: string }>(raw, {})
+    const category = parsed.category?.trim() ? normalizeCategoryLabel(parsed.category) : 'Other'
+    const name = parsed.name?.trim() ? parsed.name.trim().slice(0, 60) : category
+    return { category, name }
   },
 }
 
@@ -372,15 +313,11 @@ ${NORMALIZE_CATEGORIES_USER_SUFFIX}`
   },
 
   parseResponse(raw: string, inputLabels: string[]): Record<string, string> {
-    try {
-      const parsed = JSON.parse(extractJson(raw)) as Record<string, string>
-      for (const label of inputLabels) {
-        if (!(label in parsed)) parsed[label] = label
-      }
-      return parsed
-    } catch {
-      return Object.fromEntries(inputLabels.map((label) => [label, label]))
+    const parsed = parseLlmJson<Record<string, string>>(raw, {})
+    for (const label of inputLabels) {
+      if (!(label in parsed)) parsed[label] = label
     }
+    return parsed
   },
 }
 
@@ -408,7 +345,7 @@ ${GROUP_RARE_CATEGORIES_USER_SUFFIX}`
   },
 
   parseResponse(raw: string): Record<string, string> {
-    return JSON.parse(extractJson(raw)) as Record<string, string>
+    return parseLlmJson<Record<string, string>>(raw, {})
   },
 }
 
@@ -474,8 +411,8 @@ ${domains.join('\n')}`
 
   parseResponseDetailed(raw: string, sentDomains: Set<string>, fetchedAt: number): { rows: DomainInfo[]; strict: boolean; heuristic: boolean } {
     try {
-      const jsonText = extractJson(raw)
-      const parsed = parseJsonLenient(jsonText)
+      const parsed = parseLlmJson<any>(raw, null)
+      if (!parsed) throw new Error('parsing failed')
       const rows = Array.isArray(parsed)
         ? parsed
         : (

@@ -20,31 +20,6 @@ export function sanitizeForLlm(text: string): string {
     .trim()
 }
 
-/**
- * Extract the first JSON object or array from arbitrary text.
- * Handles cases where the model wraps JSON in prose or code blocks.
- */
-export function extractJson(text: string): string {
-  // Strip markdown code blocks (```json ... ``` or ``` ... ```)
-  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (codeBlock) return codeBlock[1].trim()
-
-  // Find first { or [ and extract balanced JSON
-  const start = text.search(/[{[]/)
-  if (start === -1) return text
-
-  const open = text[start]
-  const close = open === '{' ? '}' : ']'
-  let depth = 0
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === open) depth++
-    else if (text[i] === close) {
-      depth--
-      if (depth === 0) return text.slice(start, i + 1)
-    }
-  }
-  return text.slice(start)
-}
 
 export interface ChatOptions {
   maxTokens?: number
