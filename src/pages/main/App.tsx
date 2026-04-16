@@ -27,6 +27,7 @@ import {
 import { useResizable } from '@/hooks/useResizable'
 import { useAiPipelines } from '@/hooks/useAiPipelines'
 import { useOrchestratorTasks } from '@/hooks/useOrchestratorTasks'
+import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
 import type { BookmarkItem, BookmarkScopeFilter, TabItem, LlmSettings } from '@/lib/types'
 import { DEFAULT_LLM_SETTINGS } from '@/lib/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
@@ -264,6 +265,9 @@ export function App() {
   })
 
   const { activeTasks, lastError } = useOrchestratorTasks(orchestrator)
+
+  // Sync data with browser events
+  useBrowserStateSync(doLoad)
 
   const aiActionItems: AiActionItem[] = [
     { key: 'domains', label: 'Domains', icon: Database, title: 'Save domain knowledge (site descriptions) to cache', onClick: handleRunDomainKnowledge },

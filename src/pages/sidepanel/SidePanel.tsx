@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
 import { PanelLeft, X } from 'lucide-react'
 import { Favicon } from '@/components/Favicon'
 import { Duplicates } from './sections/Duplicates'
@@ -42,16 +43,17 @@ export function SidePanel() {
     void loadData()
   }, [loadData])
 
+  useBrowserStateSync(loadData)
+
   useEffect(() => {
     const handler = (msg: { type: string; tabId: number }) => {
       if (msg.type === 'tabActivated') {
         setActiveTabId(msg.tabId)
-        void loadData()
       }
     }
     chrome.runtime.onMessage.addListener(handler)
     return () => { chrome.runtime.onMessage.removeListener(handler) }
-  }, [loadData])
+  }, [])
 
   const bookmarkItems = flattenBookmarks(data?.bookmarks ?? [])
 
