@@ -9,6 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/classifier'
 import { getChatProvider } from '@/lib/providers/factory'
 import { GeminiNanoProvider } from '@/lib/providers/gemini-nano'
@@ -199,10 +207,10 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories])
 
   return (
-    <div className="max-w-7xl mx-auto space-y-10 py-4 px-4 overflow-x-hidden">
-      <div className="grid gap-6 xl:grid-cols-3 lg:grid-cols-2">
+    <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
+      <div className="grid gap-8 xl:grid-cols-12 lg:grid-cols-2">
         {/* PROVIDERS COLUMN */}
-        <div className="space-y-6">
+        <div className="xl:col-span-4 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
 
           {/* Browser-local ML */}
@@ -486,7 +494,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         </div>
 
         {/* ASSIGNMENTS COLUMN */}
-        <div className="space-y-6">
+        <div className="xl:col-span-3 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Assignments</h3>
 
           <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
@@ -636,7 +644,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         </div>
 
         {/* NLI TAXONOMY COLUMN */}
-        <div className="space-y-6">
+        <div className="xl:col-span-5 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Taxonomy</h3>
           <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
             <div className="space-y-4">
@@ -660,44 +668,64 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 Custom labels used for semantic bucketing. The descriptor should contain keywords that describe the typical content.
               </p>
 
-              <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
-                {nliCategories.map((cat, idx) => (
-                  <div key={idx} className="group relative rounded-lg border border-border/40 bg-card/10 p-3 space-y-2 hover:border-border/80 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={cat.label}
-                        onChange={(e) => {
-                          const next = [...nliCategories]
-                          next[idx] = { ...cat, label: e.target.value }
-                          setNliCategories(next)
-                        }}
-                        placeholder="Label (e.g. Science)"
-                        className="h-7 text-xs font-semibold bg-background/50 flex-1"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => {
-                          const next = nliCategories.filter((_, i) => i !== idx)
-                          setNliCategories(next)
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <textarea
-                      value={cat.descriptor}
-                      onChange={(e) => {
-                        const next = [...nliCategories]
-                        next[idx] = { ...cat, descriptor: e.target.value }
-                        setNliCategories(next)
-                      }}
-                      placeholder="Semantic descriptor (keywords, examples...)"
-                      className="w-full min-h-[40px] text-[11px] bg-background/30 rounded-md border border-input p-2 focus:ring-1 focus:ring-primary outline-none resize-none leading-relaxed"
-                    />
+              <div className="rounded-md border border-border/40 bg-background/20">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[140px] px-2 h-8 text-[10px] uppercase tracking-wider">Label</TableHead>
+                      <TableHead className="px-2 h-8 text-[10px] uppercase tracking-wider">Descriptor</TableHead>
+                      <TableHead className="w-[40px] px-2 h-8"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {nliCategories.map((cat, idx) => (
+                      <TableRow key={idx} className="group hover:bg-card/40 border-border/40">
+                        <TableCell className="p-1 px-2">
+                          <Input
+                            value={cat.label}
+                            onChange={(e) => {
+                              const next = [...nliCategories]
+                              next[idx] = { ...cat, label: e.target.value }
+                              setNliCategories(next)
+                            }}
+                            placeholder="e.g. Science"
+                            className="h-7 text-[11px] font-medium bg-background/40 border-transparent focus:border-primary/30 transition-all px-2"
+                          />
+                        </TableCell>
+                        <TableCell className="p-1 px-2">
+                          <Input
+                            value={cat.descriptor}
+                            onChange={(e) => {
+                              const next = [...nliCategories]
+                              next[idx] = { ...cat, descriptor: e.target.value }
+                              setNliCategories(next)
+                            }}
+                            placeholder="keywords, examples..."
+                            className="h-7 text-[11px] bg-background/20 border-transparent focus:border-primary/30 transition-all px-2 w-full"
+                          />
+                        </TableCell>
+                        <TableCell className="p-1 px-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => {
+                              const next = nliCategories.filter((_, i) => i !== idx)
+                              setNliCategories(next)
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {nliCategories.length === 0 && (
+                  <div className="py-8 text-center text-[10px] text-muted-foreground italic">
+                    No categories defined. Click "Add Category" to start.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
