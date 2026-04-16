@@ -4,10 +4,8 @@ import { getChatProvider } from './providers/factory'
 import { enrichDomain } from './prompts'
 import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from './types'
 import { getPrefilledDomain } from './domain-prefill'
+import { setDomainKnowledge, getAllDomainKnowledge, clearDomainKnowledge } from './db/domain-knowledge-repo'
 
-const DB_NAME = 'tabmind-domains'
-const DB_VERSION = 1
-const STORE_NAME = 'domain-knowledge'
 const BATCH_SIZE = 25
 const BATCH_CONCURRENCY = 4
 const UNKNOWN_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -136,51 +134,20 @@ function isUnknownStillFresh(info: DomainInfo, now = Date.now()): boolean {
   return !info.known && now - info.fetchedAt < UNKNOWN_TTL_MS
 }
 
-function openDomainDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'domain' })
-      }
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
 async function getAllDomainRows(): Promise<DomainInfo[]> {
-  const db = await openDomainDb()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly')
-    const req = tx.objectStore(STORE_NAME).getAll()
-    req.onsuccess = () => resolve((req.result as DomainInfo[]) ?? [])
-    req.onerror = () => reject(req.error)
-  })
+  const rows = await getAllDomainKnowledge()
+  return rows as DomainInfo[]
 }
 
 async function putDomainRows(rows: DomainInfo[]): Promise<void> {
-  if (rows.length === 0) return
-  const db = await openDomainDb()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const store = tx.objectStore(STORE_NAME)
-    for (const row of rows) store.put(row)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
+  for (const row of rows) {
+    await setDomainKnowledge(row)
+  }
 }
 
 export async function clearDomainKnowledgeCache(): Promise<void> {
   try {
-    const db = await openDomainDb()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite')
-      tx.objectStore(STORE_NAME).clear()
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
+    await clearDomainKnowledge()
   } catch (err) {
     domainEnricherLog.warn('failed to clear domain cache', {
       err: err instanceof Error ? err.message : String(err),
@@ -205,8 +172,6 @@ async function classifyDomainBatch(
 }
 
 function estimateDomainMaxTokens(domainCount: number): number {
-  // Each recognized domain returns ~20-40 tokens in JSON.
-  // Keep a generous ceiling to avoid truncation on larger batches.
   return Math.min(5_000, Math.max(1_000, domainCount * 100))
 }
 
@@ -250,14 +215,7 @@ async function classifyDomainBatchWithRetry(
   const parsed = parsedDetailed.rows
   const truncated = looksTruncatedResponse(raw)
   const unmatchedStructured = parsed.length === 0 && looksStructuredButUnmatched(raw)
-  if (parsed.length === 0 && raw.trim()) {
-    domainEnricherLog.warn('empty parse result for non-empty response', {
-      rawPreview: raw.slice(0, 240),
-      rawResponse: raw,
-    })
-  }
-  // If response appears truncated, split and retry even when heuristic parser
-  // extracted some items, otherwise we risk marking the remaining domains unknown.
+
   if ((truncated || unmatchedStructured) && domains.length > 1 && depth < 3) {
     const mid = Math.ceil(domains.length / 2)
     const [left, right] = await Promise.all([
@@ -358,23 +316,18 @@ export async function estimateDomainEnrichmentWork(domains: string[]): Promise<n
   const now = Date.now()
   const toQuery = new Set<string>()
 
-  // 1. Identify unresolved domains
   for (const domain of uniqueDomains) {
     if (getPrefilledDomain(domain)) continue
-
     const cached = cache.get(domain)
     if (!cached || (!cached.known && !isUnknownStillFresh(cached, now))) {
       toQuery.add(domain)
     }
   }
 
-  // 2. Proactively add parents of unresolved domains
   for (const domain of toQuery) {
     const parent = getParentDomain(domain)
     if (!parent || toQuery.has(parent)) continue
-
     if (getPrefilledDomain(parent)) continue
-
     const parentCached = cache.get(parent)
     if (!parentCached || (!parentCached.known && !isUnknownStillFresh(parentCached, now))) {
       toQuery.add(parent)
@@ -421,12 +374,10 @@ export async function enrichDomains(
       }
     }
 
-    // 2. Proactively gather parents for unresolved domains
     if (toQuery.size > 0) {
       for (const domain of toQuery) {
         const parent = getParentDomain(domain)
         if (!parent || toQuery.has(parent) || result.has(parent)) continue
-
         const prefilled = getPrefilledDomain(parent)
         if (prefilled) {
           result.set(parent, {
@@ -439,7 +390,6 @@ export async function enrichDomains(
           })
           continue
         }
-
         const cached = cache.get(parent)
         if (cached && (cached.known || isUnknownStillFresh(cached, now))) {
           result.set(parent, cached)
@@ -455,7 +405,7 @@ export async function enrichDomains(
 
     return result
   } catch (err) {
-    domainEnricherLog.error('enrich failed, using fallback', {
+    domainEnricherLog.error('enrich failed, using empty result', {
       err: err instanceof Error ? err.message : String(err),
     })
     return new Map()

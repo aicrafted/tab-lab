@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { cosineSimilarity, fetchEmbedding, loadCachedEmbeddings } from '@/lib/embedder'
+import { cosineSimilarity, fetchEmbedding, loadEmbeddingsForCurrentModel } from '@/lib/embedder'
 import type { LlmSettings } from '@/lib/types'
 
 export interface SemanticResult {
@@ -32,7 +32,7 @@ export function useSemanticSearch(settings: LlmSettings) {
     setError(null)
 
     try {
-      const cache = await loadCachedEmbeddings()
+      const cache = await loadEmbeddingsForCurrentModel(settings)
       if (cache.size === 0) {
         setResults([])
         setState('no-cache')

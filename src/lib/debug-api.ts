@@ -3,7 +3,7 @@ import { chatComplete } from './llm'
 import { clearAllAICache, getCached, getLlmSettings, setCached } from './storage'
 import { getAll, type CacheEntry } from './cacheDb'
 import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from './cluster'
-import { loadCachedEmbeddings } from './embedder'
+import { loadEmbeddingsForCurrentModel } from './embedder'
 import type { LlmSettings } from './types'
 
 type CachePrefix = 'tab' | 'bm'
@@ -148,7 +148,7 @@ function createDebugApi(): TablabDebugApi {
       async clusterTest(prefix: CachePrefix = 'tab') {
         const [allCache, allEmbeddings] = await Promise.all([
           getAll(),
-          loadCachedEmbeddings(),
+          loadEmbeddingsForCurrentModel(await getLlmSettings()),
         ])
         
         // Better fallback: if cache is empty, use all URLs that have embeddings

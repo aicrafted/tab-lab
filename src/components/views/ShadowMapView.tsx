@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
-import { loadCachedEmbeddings } from '@/lib/embedder'
+import { loadEmbeddingsForCurrentModel } from '@/lib/embedder'
 
 type ClusterType = 'exact' | 'title-similar' | 'semantic'
 
@@ -26,7 +26,7 @@ interface Cluster {
   pages: Page[]
 }
 
-export function ShadowMapView({ bookmarks, tabs, loading }: ViewProps) {
+export function ShadowMapView({ bookmarks, tabs, loading, llmSettings }: ViewProps) {
   const [removedIds, setRemovedIds] = useState<string[]>([])
   const [hiddenClusters, setHiddenClusters] = useState<string[]>([])
   const [embeddingByUrl, setEmbeddingByUrl] = useState<Map<string, number[]>>(new Map())
@@ -36,14 +36,16 @@ export function ShadowMapView({ bookmarks, tabs, loading }: ViewProps) {
 
   useEffect(() => {
     let cancelled = false
+    if (!llmSettings) return
+
     void (async () => {
-      const map = await loadCachedEmbeddings()
+      const map = await loadEmbeddingsForCurrentModel(llmSettings)
       if (!cancelled) setEmbeddingByUrl(map)
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [llmSettings])
 
   const pages = useMemo<Page[]>(() => {
     const base: Page[] = [

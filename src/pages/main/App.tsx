@@ -13,7 +13,7 @@ import {
   type BookmarkFolderOption,
 } from '@/lib/bookmarks'
 import { checkLlmAvailability, type LlmAvailability } from '@/lib/classifier'
-import { loadCached2D } from '@/lib/embedder'
+import { loadProjectionForCurrentModel } from '@/lib/embedder'
 import { loadHydratedData } from '@/lib/initial-load'
 import { loadClusterNames } from '@/lib/cluster-names'
 import {
@@ -309,7 +309,7 @@ export function App() {
     setClusterNames(storedClusterNames)
 
     // Restore cached 2D projection (Semantic Map coords)
-    const cached2D = await loadCached2D()
+    const cached2D = await loadProjectionForCurrentModel(llmSettings)
     if (cached2D.size > 0) setProjectedPoints(cached2D)
 
     setLastUpdated(Date.now())

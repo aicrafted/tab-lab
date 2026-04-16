@@ -19,6 +19,7 @@ export interface HydratedData {
 }
 
 export async function loadHydratedData(): Promise<HydratedData> {
+
   const [rawBookmarks, rawTabs] = await Promise.all([
     getAllBookmarks(),
     getAllTabs(),

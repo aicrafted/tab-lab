@@ -1,7 +1,7 @@
 import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from './cluster'
 import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, groupRareCategories, SPLIT_THRESHOLD, splitLargeClusters } from './classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from './domain-enricher'
-import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, reprojectAllEmbeddings } from './embedder'
+import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadEmbeddingsForCurrentModel, reprojectAllEmbeddings } from './embedder'
 import { aiPipelineLog } from './logger'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from './intent'
 import { detectPlatform } from './platform-detection'
@@ -999,7 +999,7 @@ export class PipelineOrchestrator {
       if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
       const allDomains = [...new Set(tabs.map((item) => item.domain).filter(Boolean))]
       const domainMap = await enrichDomains(allDomains, settings)
-      const embeddings = await loadCachedEmbeddings()
+      const embeddings = await loadEmbeddingsForCurrentModel(settings)
       await splitLargeClusters(
         tabs.map((t) => ({
           url: t.url,
@@ -1073,7 +1073,7 @@ export class PipelineOrchestrator {
     try {
       if (!hasEmbeddingProviderConfig(settings)) throw new Error('Embedding provider unavailable')
       await fetchEmbeddingsBatch(items, settings, (updates) => task.progress(updates.length), this.currentRun?.abortController.signal)
-      const points = await reprojectAllEmbeddings()
+      const points = await reprojectAllEmbeddings(settings)
       this.callbacks.onProjectedPoints(points)
       task.done()
       if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })

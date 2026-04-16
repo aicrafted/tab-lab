@@ -67,6 +67,18 @@ export abstract class LlmProvider {
     options?: CheckStatusOptions
   ): Promise<ProviderStatus>
 
+  /** Get embedding dimension for current settings. Might perform a dummy embed. */
+  async getEmbeddingDim(settings: LlmSettings): Promise<number> {
+    const model = this.getEmbeddingModel(settings)
+    if (!model) return 0
+    try {
+      const vec = await this.embed('dim_check', settings)
+      return vec.length
+    } catch {
+      return 0
+    }
+  }
+
   /** Optional: specific NLI classification if supported natively or via prompt */
   async classify(
     _text: string,

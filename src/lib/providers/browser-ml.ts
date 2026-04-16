@@ -47,4 +47,10 @@ export class BrowserMlProvider extends LlmProvider {
     if (chatCached && embedCached) return { available: true, status: 'ready' }
     return { available: true, status: 'loading', message: 'Models downloading or not cached' }
   }
+
+  async getEmbeddingDim(settings: LlmSettings): Promise<number> {
+    const model = this.getEmbeddingModel(settings)
+    if (model === 'Xenova/all-MiniLM-L6-v2') return 384
+    return super.getEmbeddingDim(settings)
+  }
 }
