@@ -14,7 +14,8 @@ export interface ProgressReporter {
 export function createLoggerProgress(
   operation: string,
   total: number,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
+  onProgress?: (delta: number) => void
 ): ProgressReporter {
   const startedAt = Date.now()
   const safeTotal = Math.max(total, 1)
@@ -27,6 +28,10 @@ export function createLoggerProgress(
   return {
     progress(delta = 1, extra?: Record<string, unknown>) {
       const nextDone = Math.min(safeTotal, done + Math.max(0, Math.floor(delta)))
+      const actualDelta = nextDone - done
+      if (actualDelta > 0) {
+        onProgress?.(actualDelta)
+      }
       for (let current = done + 1; current <= nextDone; current += 1) {
         const pct = Math.floor((current / safeTotal) * 100)
         const shouldLog =

@@ -51,7 +51,7 @@ export function repairJsonString(input: string): string {
 /**
  * Attempts to extract and parse JSON from an LLM response string.
  */
-export function parseLlmJson<T>(raw: string, fallback: T): T {
+export function parseLlmJson<T>(raw: string, fallback: T = null as any): T {
   if (!raw) return fallback
 
   const extracted = extractJson(raw)

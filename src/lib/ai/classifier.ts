@@ -4,7 +4,7 @@ import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { getCached, setCached } from '../core/storage'
 import { classifyCluster, classifyItem, groupRareCategories as groupRareCategoriesContract, normalizeCategories } from './prompts'
 import type { LlmSettings } from '../core/types'
-import { classifierLog } from '../core/logger'
+import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { cosineSimilarity } from './embedder'
@@ -20,7 +20,7 @@ function trackClassifierParse(strict: boolean): void {
   else classifierParseMetrics.fallback += 1
   const total = classifierParseMetrics.strict + classifierParseMetrics.fallback
   if (total > 0 && total % 25 === 0) {
-    classifierLog.info('parse metrics', {
+    aiPipelineLog.info('parse metrics', {
       strict: classifierParseMetrics.strict,
       fallback: classifierParseMetrics.fallback,
     })
@@ -72,7 +72,7 @@ function urlPathSnippet(url: string): string {
     const path = new URL(url).pathname.replace(/\/$/, '')
     return path.slice(0, 80)
   } catch (err) {
-    classifierLog.debug('failed to parse url path snippet', {
+    aiPipelineLog.debug('failed to parse url path snippet', {
       url,
       err: err instanceof Error ? err.message : String(err),
     })
@@ -115,7 +115,7 @@ export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmA
     if (status.status === 'loading') return 'after-download'
     return 'unavailable'
   } catch (err) {
-    classifierLog.warn('failed to check LLM availability via provider', {
+    aiPipelineLog.warn('failed to check LLM availability via provider', {
       provider: providerId,
       err: err instanceof Error ? err.message : String(err),
     })
@@ -184,7 +184,7 @@ export async function classifyItems(
     if (status.status === 'ready') {
       ready = true
     } else if (status.status === 'loading') {
-      classifierLog.info(`Provider ${activeProviderId} is loading, waiting...`, { 
+      aiPipelineLog.info(`Provider ${activeProviderId} is loading, waiting...`, { 
         attempt: attempts + 1, 
         message: status.message 
       })
@@ -243,7 +243,7 @@ export async function classifyItems(
               const queryEmbedding = await embedProvider.embed(text, settings, signal)
               itemCandidates = await getTopCandidates(queryEmbedding, taxonomyCentroids)
             } catch (err) {
-              classifierLog.warn('failed to get top candidates via embeddings, falling back to free-form or global list', {
+              aiPipelineLog.warn('failed to get top candidates via embeddings, falling back to free-form or global list', {
                 url: item.url,
                 err: err instanceof Error ? err.message : String(err)
               })
@@ -276,7 +276,7 @@ export async function classifyItems(
         results.push({ url: item.url, category })
       } catch (err) {
         failed += 1
-        classifierLog.error('classifyItems item failed', {
+        aiPipelineLog.error('classifyItems item failed', {
           url: item.url,
           domain: item.domain,
           err: err instanceof Error ? err.message : String(err),
@@ -392,7 +392,7 @@ export async function normalizeCategoryLabels(
     return parsed
   } catch (err) {
     tracker.progress(labels.length)
-    classifierLog.warn('normalizeCategoryLabels JSON parse failed, keeping originals', {
+    aiPipelineLog.warn('normalizeCategoryLabels JSON parse failed, keeping originals', {
       err: err instanceof Error ? err.message : String(err),
     })
     tracker.done({ fallback: true })
@@ -428,11 +428,11 @@ export async function groupRareCategories(
       .map(([category]) => category)
 
     if (rare.length === 0) {
-      classifierLog.info('groupRareCategories no rare categories; stopping', { pass })
+      aiPipelineLog.info('groupRareCategories no rare categories; stopping', { pass })
       break
     }
 
-    classifierLog.info('groupRareCategories pass', { pass: pass + 1, rare: rare.length, frequent: frequent.length })
+    aiPipelineLog.info('groupRareCategories pass', { pass: pass + 1, rare: rare.length, frequent: frequent.length })
 
     const prompt = groupRareCategoriesContract.user({
       frequent: frequent.map((label) => ({ label, count: counts.get(label) ?? 0 })),
@@ -458,7 +458,7 @@ export async function groupRareCategories(
     try {
       mergeMap = groupRareCategoriesContract.parseResponse(raw)
     } catch (err) {
-      classifierLog.warn('groupRareCategories parse failed; stopping', {
+      aiPipelineLog.warn('groupRareCategories parse failed; stopping', {
         pass: pass + 1,
         err: err instanceof Error ? err.message : String(err),
         raw: raw.slice(0, 120),
@@ -478,7 +478,7 @@ export async function groupRareCategories(
     })
 
     if (!changed) {
-      classifierLog.info('groupRareCategories no changes; stopping', { pass: pass + 1 })
+      aiPipelineLog.info('groupRareCategories no changes; stopping', { pass: pass + 1 })
       break
     }
   }
@@ -608,7 +608,7 @@ export async function splitLargeClusters(
           })
           updates.push({ url: item.url, category, parentCategory })
         } catch (err) {
-          classifierLog.error('splitLargeClusters item failed', {
+          aiPipelineLog.error('splitLargeClusters item failed', {
             url: item.url,
             domain: item.domain,
             parentCategory,
