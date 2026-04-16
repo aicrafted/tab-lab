@@ -1,7 +1,7 @@
 import { LlmProvider, type ChatMessage, type ChatOptions, type ProviderStatus, type CheckStatusOptions } from './base'
 import type { LlmSettings } from '../types'
-import { webllmChat, isWebllmModelCached } from '../webllm-provider'
-import { webgpuEmbed, isTransformersEmbeddingModelCached } from '../webgpu-provider'
+import { webllmChat, isWebllmModelCached } from './webllm-provider'
+import { webgpuEmbed, isTransformersEmbeddingModelCached } from './webgpu-provider'
 
 export class BrowserMlProvider extends LlmProvider {
   readonly id = 'browser-ml'

@@ -1,5 +1,5 @@
 import { env, pipeline } from '@xenova/transformers'
-import { patchRequestAdapterForWindows } from '@/lib/webgpu-compat'
+import { patchRequestAdapterForWindows } from '@/lib/providers/webgpu-compat'
 
 env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('assets/')
 env.allowRemoteModels = true

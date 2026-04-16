@@ -25,11 +25,11 @@ import type { ChatProvider, ClassificationMethod, EmbeddingProvider, LlmSettings
 import {
   isWebllmModelCached,
   preloadWebllmModel,
-} from '@/lib/webllm-provider'
+} from '@/lib/providers/webllm-provider'
 import {
   isTransformersEmbeddingModelCached,
   preloadTransformersEmbeddingModel,
-} from '@/lib/webgpu-provider'
+} from '@/lib/providers/webgpu-provider'
 import type { ViewProps } from '@/components/views/types'
 
 const WEBLLM_CHAT_MODELS = [
