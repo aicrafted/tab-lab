@@ -7,6 +7,8 @@ export interface ClusterResult {
   representatives: string[]
 }
 
+export const MIN_CLUSTER_SIZE = 3
+
 interface VectorItem {
   url: string
   embedding: number[]
@@ -122,4 +124,73 @@ export function kMeans(
   }
 
   return clusters
+}
+
+/**
+ * Consolidates clusters with fewer than minSize members into the nearest larger clusters.
+ * This saves LLM calls for naming clusters that are too small to be meaningful on their own.
+ */
+export function mergeSmallClusters(
+  clusters: ClusterResult[],
+  items: VectorItem[],
+  minSize: number,
+): ClusterResult[] {
+  const large = clusters.filter((c) => c.members.length >= minSize)
+  const small = clusters.filter((c) => c.members.length < minSize)
+
+  if (large.length === 0 || small.length === 0) {
+    return clusters
+  }
+
+  // Create a map for quick item lookup
+  const itemMap = new Map<string, number[]>()
+  for (const item of items) {
+    itemMap.set(item.url, item.embedding)
+  }
+
+  // Deep copy large clusters to avoid mutating input
+  const merged = large.map((c) => ({
+    ...c,
+    members: [...c.members],
+  }))
+
+  // Re-assign members from small clusters
+  for (const s of small) {
+    let bestIdx = 0
+    let bestSimilarity = -Infinity
+
+    for (let i = 0; i < merged.length; i++) {
+      const sim = cosineSimilarity(s.centroid, merged[i].centroid)
+      if (sim > bestSimilarity) {
+        bestSimilarity = sim
+        bestIdx = i
+      }
+    }
+
+    merged[bestIdx].members.push(...s.members)
+  }
+
+  // Recalculate centroids and representatives for all merged clusters
+  return merged.map((c, idx) => {
+    const memberEmbeddings = c.members
+      .map((url) => itemMap.get(url))
+      .filter((e): e is number[] => !!e)
+
+    const newCentroid = meanVector(memberEmbeddings)
+
+    const representatives = c.members
+      .map((url) => ({ url, embedding: itemMap.get(url)! }))
+      .sort((a, b) => (
+        distanceFromCentroid(a.embedding, newCentroid) - distanceFromCentroid(b.embedding, newCentroid)
+      ))
+      .slice(0, 3)
+      .map((item) => item.url)
+
+    return {
+      ...c,
+      clusterId: idx, // Re-index to keep them continuous
+      centroid: newCentroid,
+      representatives,
+    }
+  })
 }

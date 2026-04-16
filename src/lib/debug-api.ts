@@ -2,6 +2,8 @@ import { classifyItems, groupRareCategories, normalizeCategoryLabels } from './c
 import { chatComplete } from './llm'
 import { clearAllAICache, getCached, getLlmSettings, setCached } from './storage'
 import { getAll, type CacheEntry } from './cacheDb'
+import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE } from './cluster'
+import { loadCachedEmbeddings } from './embedder'
 import type { LlmSettings } from './types'
 
 type CachePrefix = 'tab' | 'bm'
@@ -18,6 +20,7 @@ export interface TablabDebugApi {
     classifyUrl(url: string, title: string): Promise<string>
     groupRare(prefix?: CachePrefix): Promise<{ url: string; category: string }[]>
     chat(userMessage: string, systemPrompt?: string, maxTokens?: number): Promise<string>
+    clusterTest(prefix?: CachePrefix): Promise<any>
   }
   cache: {
     clear(): Promise<void>
@@ -138,7 +141,51 @@ function createDebugApi(): TablabDebugApi {
         console.info('[tablab] chat ->', { provider, model, userMessage })
         const raw = await chatComplete(systemPrompt, userMessage, settings, maxTokens)
         console.info('[tablab] chat <-', raw)
+        console.info('[tablab] chat <-', raw)
         return raw
+      },
+
+      async clusterTest(prefix: CachePrefix = 'tab') {
+        const [allCache, allEmbeddings] = await Promise.all([
+          getAll(),
+          loadCachedEmbeddings(),
+        ])
+        
+        const items = [...allCache.entries()]
+          .filter(([key]) => key.startsWith(`${prefix}:`))
+          .map(([key, entry]) => {
+            const url = key.slice(prefix.length + 1)
+            const embedding = allEmbeddings.get(url)
+            return { url, title: entry.category, embedding }
+          })
+          .filter((item): item is { url: string; title: string; embedding: number[] } => !!item.embedding)
+        
+        if (items.length === 0) {
+          console.warn('[tablab] no items with embeddings found for cluster test', { prefix, cacheSize: allCache.size, embeddingSize: allEmbeddings.size })
+          return `No items with embeddings found for ${prefix} in cache (Cache: ${allCache.size}, Embeddings: ${allEmbeddings.size})`
+        }
+
+        const k = Math.max(3, Math.min(150, Math.max(Math.ceil(items.length / 8), 3)))
+        const raw = kMeans(items, k)
+        const merged = mergeSmallClusters(raw, items, MIN_CLUSTER_SIZE)
+
+        console.info('[tablab] Cluster Test Result:', {
+          rawCount: raw.length,
+          mergedCount: merged.length,
+          savings: raw.length - merged.length,
+          rawSizes: raw.map(c => c.members.length),
+          mergedSizes: merged.map(c => c.members.length)
+        })
+        console.info('[tablab] Raw Clusters:', raw)
+        console.info('[tablab] Merged Clusters:', merged)
+
+        return {
+          rawCount: raw.length,
+          mergedCount: merged.length,
+          savings: raw.length - merged.length,
+          rawSizes: raw.map(c => c.members.length),
+          mergedSizes: merged.map(c => c.members.length)
+        }
       },
     },
 

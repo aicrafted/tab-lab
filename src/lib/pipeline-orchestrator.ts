@@ -1,4 +1,4 @@
-import { kMeans, type ClusterResult } from './cluster'
+import { kMeans, mergeSmallClusters, MIN_CLUSTER_SIZE, type ClusterResult } from './cluster'
 import { checkLlmAvailability, classifyBookmarks, classifyByClusters, classifyTabs, classifyWithLmStudio, normalizeCategoryLabels, groupRareCategories, splitLargeClusters } from './classifier'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from './domain-enricher'
 import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadCachedEmbeddings, reprojectAllEmbeddings } from './embedder'
@@ -428,7 +428,9 @@ export class PipelineOrchestrator {
         tabItems.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
       ).size
       const k = Math.max(3, Math.min(150, Math.max(Math.ceil(tabItems.length / 8), uniquePlatformCount)))
-      const clusters = kMeans(tabItems.map(({ url, embedding }) => ({ url, embedding })), k)
+      const vectorItems = tabItems.map(({ url, embedding }) => ({ url, embedding }))
+      const rawClusters = kMeans(vectorItems, k)
+      const clusters = mergeSmallClusters(rawClusters, vectorItems, MIN_CLUSTER_SIZE)
       const names = await classifyByClusters(tabItems, clusters, 'tab', settings, (updates) => {
         if (!this.isRunActive(runId)) return
         tabsTask.progress(updates.length)
@@ -447,7 +449,9 @@ export class PipelineOrchestrator {
         bookmarkItems.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
       ).size
       const k = Math.max(3, Math.min(150, Math.max(Math.ceil(bookmarkItems.length / 8), uniquePlatformCount)))
-      const clusters = kMeans(bookmarkItems.map(({ url, embedding }) => ({ url, embedding })), k)
+      const vectorItems = bookmarkItems.map(({ url, embedding }) => ({ url, embedding }))
+      const rawClusters = kMeans(vectorItems, k)
+      const clusters = mergeSmallClusters(rawClusters, vectorItems, MIN_CLUSTER_SIZE)
       const bookmarkClusters: ClusterResult[] = clusters.map((cluster) => ({ ...cluster, clusterId: cluster.clusterId + BOOKMARK_CLUSTER_OFFSET }))
       const names = await classifyByClusters(bookmarkItems, bookmarkClusters, 'bm', settings, (updates) => {
         if (!this.isRunActive(runId)) return
