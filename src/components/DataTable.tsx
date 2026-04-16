@@ -72,6 +72,8 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onPaginationChange: setPagination,
+    enableSortingRemoval: false,
+    sortDescFirst: false,
     state: { sorting, columnFilters, pagination },
   })
 
