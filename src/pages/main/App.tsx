@@ -34,6 +34,8 @@ import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
 import { effectiveIntent } from '@/lib/ai/static-intent'
 import { isLocalUrl } from '@/lib/core/local-network'
+import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
+import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
 import { Brain, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
@@ -56,28 +58,7 @@ import { OverlapExplorerView } from '@/components/views/OverlapExplorerView'
 import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
 
-function parseCategoryFacetTokens(values: string[]): {
-  parentTokens: Set<string>
-  childTokens: Set<string>
-} {
-  const parentTokens = new Set<string>()
-  const childTokens = new Set<string>()
-  for (const value of values) {
-    if (value.startsWith('parent:')) {
-      const parent = value.slice('parent:'.length).trim()
-      if (parent) parentTokens.add(parent)
-      continue
-    }
-    if (value.startsWith('child:')) {
-      const child = value.slice('child:'.length).trim()
-      if (child) childTokens.add(child)
-      continue
-    }
-    const legacyValue = value.trim()
-    if (legacyValue) childTokens.add(legacyValue)
-  }
-  return { parentTokens, childTokens }
-}
+type FacetMode = 'domains' | 'categories' | 'intent' | 'platform' | 'tags'
 
 const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
@@ -109,41 +90,45 @@ const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
   list: ['bookmarks', 'tabs'],
 }
 
-function scoreFaviconCandidate(iconUrl: string, domain: string): number {
-  try {
-    const parsed = new URL(iconUrl)
-    const host = parsed.hostname.toLowerCase()
-    const target = domain.toLowerCase()
-    const path = parsed.pathname.toLowerCase()
-    const query = parsed.search.toLowerCase()
-
-    let score = 0
-
-    if (host === target) score += 40
-    else if (host.endsWith(`.${target}`)) score += 25
-
-    if (path === '/favicon.ico') score += 140
-    else if (path === '/favicon.png') score += 120
-    else if (path === '/favicon.svg') score += 110
-    else if (path.includes('favicon')) score += 90
-    else if (path.includes('apple-touch-icon')) score += 80
-
-    if (path.endsWith('.ico')) score += 45
-    else if (path.endsWith('.png')) score += 30
-    else if (path.endsWith('.webp')) score += 20
-    else if (path.endsWith('.svg')) score += 10
-
-    const noisyKeywords = ['copilot', 'avatar', 'profile', 'badge', 'emoji', 'user', 'team', 'topic']
-    if (noisyKeywords.some((kw) => path.includes(kw) || query.includes(kw))) {
-      score -= 120
-    }
-
-    score -= Math.min(path.length, 140) / 4
-    score -= Math.min(parsed.search.length, 80) / 6
-    return score
-  } catch {
-    return Number.NEGATIVE_INFINITY
+function filterItems<T extends TabItem | BookmarkItem>(
+  items: T[],
+  activeFacets: string[],
+  facetMode: FacetMode,
+  parentCategoryFilterMap: Map<string, Set<string>>,
+): T[] {
+  if (activeFacets.length === 0) return items
+  if (facetMode === 'domains') {
+    return items.filter((item) => activeFacets.includes(item.domain))
   }
+  if (facetMode === 'intent') {
+    return items.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
+  }
+  if (facetMode === 'platform') {
+    return items.filter((item) => item.platform != null && activeFacets.includes(item.platform))
+  }
+  if (facetMode === 'tags') {
+    return items.filter((item) => {
+      const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
+      return tags.some((tag) => activeFacets.includes(tag))
+    })
+  }
+
+  const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+  const categoriesFromParents = new Set<string>()
+  for (const parent of parentTokens) {
+    const names = parentCategoryFilterMap.get(parent)
+    if (!names) {
+      categoriesFromParents.add(parent)
+      continue
+    }
+    for (const name of names) categoriesFromParents.add(name)
+  }
+
+  return items.filter((item) => {
+    const child = item.category?.trim()
+    if (!child) return false
+    return childTokens.has(child) || categoriesFromParents.has(child)
+  })
 }
 
 export function App() {
@@ -160,7 +145,7 @@ export function App() {
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
-  const [facetMode, setFacetMode] = useState<'domains' | 'categories' | 'intent' | 'platform' | 'tags'>('domains')
+  const [facetMode, setFacetMode] = useState<FacetMode>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
   const [, startFilterTransition] = useTransition()
@@ -529,71 +514,11 @@ export function App() {
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
   const filteredBookmarks = useMemo(() => {
-    if (activeFacets.length === 0) return sourceScopedBookmarks
-    if (facetMode === 'domains') {
-      return sourceScopedBookmarks.filter((item) => activeFacets.includes(item.domain))
-    }
-    if (facetMode === 'intent') {
-      return sourceScopedBookmarks.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
-    }
-    if (facetMode === 'platform') {
-      return sourceScopedBookmarks.filter((item) => item.platform != null && activeFacets.includes(item.platform))
-    }
-    if (facetMode === 'tags') {
-      return sourceScopedBookmarks.filter((item) => {
-        const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
-        return tags.some((tag) => activeFacets.includes(tag))
-      })
-    }
-    const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
-    const categoriesFromParents = new Set<string>()
-    for (const parent of parentTokens) {
-      const names = parentCategoryFilterMap.get(parent)
-      if (!names) {
-        categoriesFromParents.add(parent)
-        continue
-      }
-      for (const name of names) categoriesFromParents.add(name)
-    }
-    return sourceScopedBookmarks.filter((item) => {
-      const child = item.category?.trim()
-      if (!child) return false
-      return childTokens.has(child) || categoriesFromParents.has(child)
-    })
+    return filterItems(sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap)
   }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap])
 
   const filteredTabs = useMemo(() => {
-    if (activeFacets.length === 0) return sourceScopedTabs
-    if (facetMode === 'domains') {
-      return sourceScopedTabs.filter((item) => activeFacets.includes(item.domain))
-    }
-    if (facetMode === 'intent') {
-      return sourceScopedTabs.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
-    }
-    if (facetMode === 'platform') {
-      return sourceScopedTabs.filter((item) => item.platform != null && activeFacets.includes(item.platform))
-    }
-    if (facetMode === 'tags') {
-      return sourceScopedTabs.filter((item) => {
-        const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
-        return tags.some((tag) => activeFacets.includes(tag))
-      })
-    }
-    const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
-    const categoriesFromParents = new Set<string>()
-    for (const parent of parentTokens) {
-      const names = parentCategoryFilterMap.get(parent)
-      if (!names) {
-        categoriesFromParents.add(parent)
-        continue
-      }
-      for (const name of names) categoriesFromParents.add(name)
-    }
-    return sourceScopedTabs.filter((item) => {
-      const child = item.category?.trim()
-      if (!child) return false
-      return childTokens.has(child) || categoriesFromParents.has(child)
-    })
+    return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap)
   }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap])
 
   const handleViewChange = useCallback((view: ViewId) => {

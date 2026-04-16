@@ -7,7 +7,7 @@ import { getCached, setCached } from '../core/storage'
 import { tagWithGeminiNano, tagWithLmStudio } from '../ai/tagger'
 import type { BookmarkItem, LlmSettings, TabItem } from '../core/types'
 import { ClusteringStrategy } from './clustering-strategy'
-import type { PipelineCallbacks, RunContext } from './types'
+import type { PipelineCallbacks, RunContext, TaskHandle } from './types'
 import { TASK_IDS } from './types'
 import type { TaskRegistry } from './task-registry'
 import { getTaxonomyContext, hasChatProviderConfig, hasDomainKnowledgeProviderConfig, hasEmbeddingProviderConfig } from './utils'
@@ -32,6 +32,66 @@ export class PipelineRunner {
 
   isRunActive(runId: number): boolean {
     return Boolean(this.currentRun && this.currentRun.runId === runId && !this.currentRun.cancelled)
+  }
+
+  private async runTagsForPrefix(
+    runId: number,
+    items: { url: string; title: string; domain: string }[],
+    prefix: 'tab' | 'bm',
+    settings: LlmSettings,
+    task: TaskHandle,
+  ): Promise<void> {
+    if (settings.tasks.chat.provider === 'gemini-nano') {
+      await tagWithGeminiNano(items, prefix, (updates) => {
+        if (!this.isRunActive(runId)) return
+        task.progress(updates.length)
+        this.callbacks.onTagsUpdate(updates, prefix)
+      }, this.currentRun?.abortController.signal)
+    } else {
+      await tagWithLmStudio(
+        items.map((item) => ({ url: item.url, title: item.title, domain: item.domain })),
+        prefix,
+        settings,
+        (updates) => {
+          if (!this.isRunActive(runId)) return
+          task.progress(updates.length)
+          this.callbacks.onTagsUpdate(updates, prefix)
+        },
+        this.currentRun?.abortController.signal,
+      )
+    }
+    task.done()
+  }
+
+  private async runIntentForPrefix(
+    runId: number,
+    items: { url: string; title: string; domain: string; staticIntent?: TabItem['staticIntent'] }[],
+    prefix: 'tab' | 'bm',
+    settings: LlmSettings,
+    task: TaskHandle,
+    domainMap?: Map<string, DomainInfo>,
+  ): Promise<void> {
+    if (settings.tasks.chat.provider === 'gemini-nano') {
+      await classifyIntentGeminiNano(items, prefix, (updates) => {
+        if (!this.isRunActive(runId)) return
+        task.progress(updates.length)
+        this.callbacks.onIntentUpdate(updates, prefix)
+      }, this.currentRun?.abortController.signal)
+    } else {
+      await classifyIntentLmStudio(
+        items.map((item) => ({ url: item.url, title: item.title, domain: item.domain, staticIntent: item.staticIntent })),
+        prefix,
+        settings,
+        (updates) => {
+          if (!this.isRunActive(runId)) return
+          task.progress(updates.length)
+          this.callbacks.onIntentUpdate(updates, prefix)
+        },
+        domainMap,
+        this.currentRun?.abortController.signal,
+      )
+    }
+    task.done()
   }
 
   async executeAutoPipeline(
@@ -193,91 +253,10 @@ export class PipelineRunner {
     aiPipelineLog.debug('parallelizing tags and intents', { runId: runIdStr, tabs: tabs.length, bookmarks: bookmarks.length })
 
     await Promise.all([
-      // 1. Tags
-      (async () => {
-        if (settings.tasks.chat.provider === 'gemini-nano') {
-          await tagWithGeminiNano(tabs, 'tab', (updates) => {
-            if (!this.isRunActive(runId)) return
-            tagsTabsTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'tab')
-          }, this.currentRun?.abortController.signal)
-        } else {
-          await tagWithLmStudio(
-            tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            settings,
-            (updates) => {
-              if (!this.isRunActive(runId)) return
-              tagsTabsTask.progress(updates.length)
-              this.callbacks.onTagsUpdate(updates, 'tab')
-            }, this.currentRun?.abortController.signal)
-        }
-        tagsTabsTask.done()
-      })(),
-
-      (async () => {
-        if (settings.tasks.chat.provider === 'gemini-nano') {
-          await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
-            if (!this.isRunActive(runId)) return
-            tagsBookmarksTask.progress(updates.length)
-            this.callbacks.onTagsUpdate(updates, 'bm')
-          }, this.currentRun?.abortController.signal)
-        } else {
-          await tagWithLmStudio(
-            bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            settings,
-            (updates) => {
-              if (!this.isRunActive(runId)) return
-              tagsBookmarksTask.progress(updates.length)
-              this.callbacks.onTagsUpdate(updates, 'bm')
-            }, this.currentRun?.abortController.signal)
-        }
-        tagsBookmarksTask.done()
-      })(),
-
-      // 2. Intents
-      (async () => {
-        if (settings.tasks.chat.provider === 'gemini-nano') {
-          await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
-            if (!this.isRunActive(runId)) return
-            intentTabsTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'tab')
-          }, this.currentRun?.abortController.signal)
-        } else {
-          await classifyIntentLmStudio(
-            tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
-            'tab',
-            settings,
-            (updates) => {
-              if (!this.isRunActive(runId)) return
-              intentTabsTask.progress(updates.length)
-              this.callbacks.onIntentUpdate(updates, 'tab')
-            }, domainMap, this.currentRun?.abortController.signal)
-        }
-        intentTabsTask.done()
-      })(),
-
-      (async () => {
-        if (settings.tasks.chat.provider === 'gemini-nano') {
-          await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
-            if (!this.isRunActive(runId)) return
-            intentBookmarksTask.progress(updates.length)
-            this.callbacks.onIntentUpdate(updates, 'bm')
-          }, this.currentRun?.abortController.signal)
-        } else {
-          await classifyIntentLmStudio(
-            bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
-            'bm',
-            settings,
-            (updates) => {
-              if (!this.isRunActive(runId)) return
-              intentBookmarksTask.progress(updates.length)
-              this.callbacks.onIntentUpdate(updates, 'bm')
-            }, domainMap, this.currentRun?.abortController.signal)
-        }
-        intentBookmarksTask.done()
-      })(),
+      this.runTagsForPrefix(runId, tabs, 'tab', settings, tagsTabsTask),
+      this.runTagsForPrefix(runId, bookmarks, 'bm', settings, tagsBookmarksTask),
+      this.runIntentForPrefix(runId, tabs, 'tab', settings, intentTabsTask, domainMap),
+      this.runIntentForPrefix(runId, bookmarks, 'bm', settings, intentBookmarksTask, domainMap),
     ])
   }
 
@@ -374,8 +353,6 @@ export class PipelineRunner {
       }
 
       if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-      tabsTask.done()
-      bookmarksTask.done()
 
       const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
       await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)

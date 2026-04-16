@@ -5,7 +5,7 @@ import { clearEmbeddingCache } from '@/lib/ai/embedder'
 import { PipelineOrchestrator } from '@/lib/pipeline/pipeline-orchestrator'
 import { detectPlatform } from '@/lib/core/platform-detection'
 import { clearAllAICache, getCached, setCached } from '@/lib/core/storage'
-import type { BookmarkItem, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
+import type { BookmarkItem, CacheEntry, KnownPlatform, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
 
 interface UseAiPipelinesArgs {
   bookmarks: BookmarkItem[]
@@ -233,7 +233,11 @@ export function useAiPipelines({
     await runDomainKnowledgePass(true)
   }, [runDomainKnowledgePass])
 
-  const clearCategoryCache = useCallback(async () => {
+  const clearCacheFields = useCallback(async (
+    tabItems: { url: string }[],
+    bookmarkItems: { url: string }[],
+    fields: Partial<CacheEntry>,
+  ) => {
     const clearPrefix = async (
       prefix: 'tab' | 'bm',
       items: { url: string }[],
@@ -243,63 +247,37 @@ export function useAiPipelines({
         if (!existing) return
         await setCached(prefix, item.url, {
           ...existing,
-          category: '',
-          parentCategory: undefined,
-          clusterId: undefined,
+          ...fields,
           processedAt: Date.now(),
         })
       }))
     }
 
     await Promise.all([
-      clearPrefix('tab', tabs),
-      clearPrefix('bm', bookmarks),
+      clearPrefix('tab', tabItems),
+      clearPrefix('bm', bookmarkItems),
     ])
-  }, [bookmarks, tabs])
+  }, [])
+
+  const clearCategoryCache = useCallback(async () => {
+    await clearCacheFields(tabs, bookmarks, {
+      category: '',
+      parentCategory: undefined,
+      clusterId: undefined,
+    })
+  }, [bookmarks, clearCacheFields, tabs])
 
   const clearTagsCache = useCallback(async () => {
-    const clearPrefix = async (
-      prefix: 'tab' | 'bm',
-      items: { url: string }[],
-    ) => {
-      await Promise.all(items.map(async (item) => {
-        const existing = await getCached(prefix, item.url)
-        if (!existing) return
-        await setCached(prefix, item.url, {
-          ...existing,
-          tags: undefined,
-          processedAt: Date.now(),
-        })
-      }))
-    }
-
-    await Promise.all([
-      clearPrefix('tab', tabs),
-      clearPrefix('bm', bookmarks),
-    ])
-  }, [bookmarks, tabs])
+    await clearCacheFields(tabs, bookmarks, {
+      tags: undefined,
+    })
+  }, [bookmarks, clearCacheFields, tabs])
 
   const clearIntentCache = useCallback(async () => {
-    const clearPrefix = async (
-      prefix: 'tab' | 'bm',
-      items: { url: string }[],
-    ) => {
-      await Promise.all(items.map(async (item) => {
-        const existing = await getCached(prefix, item.url)
-        if (!existing) return
-        await setCached(prefix, item.url, {
-          ...existing,
-          intent: undefined,
-          processedAt: Date.now(),
-        })
-      }))
-    }
-
-    await Promise.all([
-      clearPrefix('tab', tabs),
-      clearPrefix('bm', bookmarks),
-    ])
-  }, [bookmarks, tabs])
+    await clearCacheFields(tabs, bookmarks, {
+      intent: undefined,
+    })
+  }, [bookmarks, clearCacheFields, tabs])
 
   const handleClassify = useCallback(async () => {
     orchestratorRef.current?.enqueueClassifyPass(tabs, bookmarks, llmSettings)
@@ -308,14 +286,6 @@ export function useAiPipelines({
   const handleRunIntent = useCallback(async () => {
     orchestratorRef.current?.enqueueIntentPass(tabs, bookmarks, llmSettings)
   }, [bookmarks, llmSettings, tabs])
-
-  const handlePass2 = useCallback(async () => {
-    orchestratorRef.current?.enqueueNormalizePass(tabs, llmSettings)
-  }, [llmSettings, tabs])
-
-  const handlePass3 = useCallback(async () => {
-    orchestratorRef.current?.enqueueSplitPass(tabs, llmSettings)
-  }, [llmSettings, tabs])
 
   const handleRunTags = useCallback(async () => {
     orchestratorRef.current?.enqueueTagsPass(tabs, bookmarks, llmSettings)
@@ -375,8 +345,6 @@ export function useAiPipelines({
     handleReclassify,
     handleRunIntent,
     handleReintent,
-    handlePass2,
-    handlePass3,
     handlePostProcessCategories,
     handleRunTags,
     handleRetag,

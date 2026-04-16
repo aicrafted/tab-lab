@@ -516,7 +516,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeTitle}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeTitle: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Title</span>
                 </label>
@@ -525,7 +525,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeDomain}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomain: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain</span>
                 </label>
@@ -534,7 +534,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includePath}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includePath: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Path</span>
                 </label>
@@ -543,7 +543,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeDomainCategory}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainCategory: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Category</span>
                 </label>
@@ -552,7 +552,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeDomainDescription}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainDescription: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Description</span>
                 </label>
@@ -561,7 +561,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeDomainPlatform}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeDomainPlatform: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Domain Platform</span>
                 </label>
@@ -570,7 +570,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeCategory}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeCategory: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">AI Category</span>
                 </label>
@@ -579,7 +579,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     type="checkbox"
                     checked={embeddingFlags.includeLocalLabel}
                     onChange={(e) => setEmbeddingFlags({ ...embeddingFlags, includeLocalLabel: e.target.checked })}
-                    className="h-3 w-3 rounded border-border bg-background text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded-sm border-border bg-background accent-primary cursor-pointer transition-all"
                   />
                   <span className="text-[10px] font-medium uppercase text-muted-foreground group-hover:text-foreground transition-colors">Local Label</span>
                 </label>
