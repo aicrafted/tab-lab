@@ -166,8 +166,9 @@ export async function fetchEmbeddingsBatch(
   items: { url: string; title: string; domain: string; category?: string }[],
   settings: LlmSettings,
   onProgress: (updates: { url: string; embedding: number[] }[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await fetchAndCacheEmbeddings(items, settings, onProgress)
+  await fetchAndCacheEmbeddings(items, settings, onProgress, undefined, signal)
 }
 
 function urlPathSnippet(url: string): string {
@@ -188,6 +189,7 @@ export async function fetchAndCacheEmbeddings(
   settings: LlmSettings,
   onProgress?: (updates: { url: string; embedding: number[] }[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<Map<string, number[]>> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
@@ -229,7 +231,8 @@ export async function fetchAndCacheEmbeddings(
       const baseText = `${item.title}\n${item.domain}${path ? `\n${path}` : ''}`
       const enrichedText = domainLabel ? `${domainLabel}\n${baseText}` : baseText
       const text = item.category ? `${item.category}\n${enrichedText}` : enrichedText
-      const embedding = await fetchEmbedding(text, settings)
+      if (signal?.aborted) throw new Error('Aborted')
+      const embedding = await fetchEmbedding(text, settings, signal)
       await storeEmbedding(item.url, embedding)
       result.set(item.url, embedding)
       onProgress?.([{ url: item.url, embedding }])

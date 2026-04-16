@@ -154,6 +154,7 @@ async function classifyItemNLI(
   item: ClassifiedItem,
   settings: LlmSettings,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
@@ -161,7 +162,7 @@ async function classifyItemNLI(
   const path = urlPathSnippet(item.url)
   const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
   const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
-  const queryEmbedding = await provider.embed(text, settings)
+  const queryEmbedding = await provider.embed(text, settings, signal)
   const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
   let bestLabel = 'Other'
   let bestScore = -Infinity
@@ -217,6 +218,7 @@ export async function classifyItems(
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const uncached: ClassifiedItem[] = []
   const cached: { url: string; category: string }[] = []
@@ -283,6 +285,7 @@ export async function classifyItems(
   const BATCH = 5
   let failed = 0
   for (let i = 0; i < uncached.length; i += BATCH) {
+    if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; category: string }[] = []
 
@@ -295,7 +298,7 @@ export async function classifyItems(
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
           const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
-          const raw = await chatComplete(systemPrompt, userMsg, settings, 40, options)
+          const raw = await chatComplete(systemPrompt, userMsg, settings, 40, { ...options, signal })
           if (useJsonOutput) {
             const parsed = classifyItem.parseResponseDetailed(raw)
             trackClassifierParse(parsed.strict)
@@ -550,6 +553,7 @@ export async function splitLargeClusters(
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
   embeddings?: Map<string, number[]>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const groups = new Map<string, { url: string; title: string; domain: string }[]>()
   for (const item of items) {
@@ -567,6 +571,7 @@ export async function splitLargeClusters(
   })
 
   for (const [parentCategory, members] of groups) {
+    if (signal?.aborted) throw new Error('Aborted')
     if (members.length <= SPLIT_THRESHOLD) continue
 
     const membersWithEmbeddings = embeddings
@@ -590,6 +595,7 @@ export async function splitLargeClusters(
           onProgress(updates.map((update) => ({ url: update.url, category: update.category })))
         },
         domainMap,
+        signal,
       )
       tracker.tick(members.length, { parentCategory, strategy: 'kmeans' })
       continue
@@ -609,6 +615,7 @@ export async function splitLargeClusters(
       : {}
     const BATCH = 5
     for (let i = 0; i < members.length; i += BATCH) {
+      if (signal?.aborted) throw new Error('Aborted')
       const batch = members.slice(i, i + BATCH)
       const updates: { url: string; category: string; parentCategory?: string }[] = []
 
@@ -628,7 +635,7 @@ export async function splitLargeClusters(
             userMsg,
             settings,
             40,
-            options,
+            { ...options, signal },
           )
           const category = useJsonOutput
             ? (classifyItem.parseResponse(raw, parentCategory) || parentCategory)
@@ -662,6 +669,7 @@ export async function classifyTabs(
   tabs: TabItem[],
   onProgress: (updates: { url: string; category: string }[]) => void,
   settings?: LlmSettings,
+  signal?: AbortSignal,
 ): Promise<void> {
   const activeSettings = settings ?? {
     ...DEFAULT_LLM_SETTINGS,
@@ -676,6 +684,8 @@ export async function classifyTabs(
     'tab',
     activeSettings,
     onProgress,
+    undefined,
+    signal,
   )
 }
 
@@ -683,6 +693,7 @@ export async function classifyBookmarks(
   bookmarks: BookmarkItem[],
   onProgress: (updates: { url: string; category: string }[]) => void,
   settings?: LlmSettings,
+  signal?: AbortSignal,
 ): Promise<void> {
   const activeSettings = settings ?? {
     ...DEFAULT_LLM_SETTINGS,
@@ -697,6 +708,8 @@ export async function classifyBookmarks(
     'bm',
     activeSettings,
     onProgress,
+    undefined,
+    signal,
   )
 }
 
@@ -706,8 +719,9 @@ export async function classifyWithLmStudio(
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await classifyItems(items, prefix, settings, onProgress, domainMap)
+  await classifyItems(items, prefix, settings, onProgress, domainMap, signal)
 }
 
 function inferClusterNameFromRepresentative(title: string, category: string): string {
@@ -740,6 +754,7 @@ export async function classifyByClusters(
   settings: LlmSettings,
   onProgress: (updates: { url: string; category: string; parentCategory?: string; clusterId: number }[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<Map<number, string>> {
   const totalMembers = clusters.reduce((sum, cluster) => sum + cluster.members.length, 0)
   const tracker = createProgressTracker('classifyByClusters', totalMembers, { clusters: clusters.length })
@@ -750,6 +765,7 @@ export async function classifyByClusters(
   const useNli = embedProvider.getClassificationMethod(settings) === 'nli'
 
   for (const cluster of clusters) {
+    if (signal?.aborted) throw new Error('Aborted')
     const representativeItems = cluster.representatives
       .map((url) => byUrl.get(url))
       .filter((item): item is ClusterInputItem => Boolean(item))
@@ -781,6 +797,7 @@ export async function classifyByClusters(
           metricKey: 'classifier-clusters',
           jsonSchema: CLUSTER_RESPONSE_SCHEMA,
           ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
+          signal,
         },
       )
       const parsed = classifyCluster.parseResponse(raw)

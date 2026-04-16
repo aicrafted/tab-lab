@@ -46,6 +46,7 @@ export async function tagItems(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const uncached: typeof items = []
   const cached: { url: string; tags: string[] }[] = []
@@ -74,6 +75,7 @@ export async function tagItems(
 
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
+    if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; tags: string[] }[] = []
 
@@ -81,8 +83,7 @@ export async function tagItems(
       try {
         const path = urlPathSnippet(item.url)
         const userMsg = tagItem.user({ title: item.title, domain: item.domain, path })
-        const raw = await chatComplete(systemPrompt, userMsg, settings, 60, options,
-        )
+        const raw = await chatComplete(systemPrompt, userMsg, settings, 60, { ...options, signal })
         const parsed = tagItem.parseResponseDetailed(raw, format)
         if (useJsonOutput) trackTagParse(parsed.strict)
         const tags = parsed.tags
@@ -111,6 +112,7 @@ export async function tagWithGeminiNano(
   items: { url: string; title: string; domain: string }[],
   prefix: 'tab' | 'bm',
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   await tagItems(
     items,
@@ -124,6 +126,7 @@ export async function tagWithGeminiNano(
       },
     },
     onProgress,
+    signal,
   )
 }
 
@@ -132,6 +135,7 @@ export async function tagWithLmStudio(
   prefix: 'tab' | 'bm',
   settings: LlmSettings,
   onProgress: (updates: { url: string; tags: string[] }[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await tagItems(items, prefix, settings, onProgress)
+  await tagItems(items, prefix, settings, onProgress, signal)
 }

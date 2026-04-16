@@ -196,8 +196,12 @@ function chunkDomains(domains: string[], size: number): string[][] {
   return chunks
 }
 
-async function classifyDomainBatch(domains: string[], settings: LlmSettings): Promise<DomainInfo[]> {
-  return classifyDomainBatchWithRetry(domains, settings, 0)
+async function classifyDomainBatch(
+  domains: string[],
+  settings: LlmSettings,
+  signal?: AbortSignal,
+): Promise<DomainInfo[]> {
+  return classifyDomainBatchWithRetry(domains, settings, 0, signal)
 }
 
 function estimateDomainMaxTokens(domainCount: number): number {
@@ -224,6 +228,7 @@ async function classifyDomainBatchWithRetry(
   domains: string[],
   settings: LlmSettings,
   depth: number,
+  signal?: AbortSignal,
 ): Promise<DomainInfo[]> {
   if (domains.length === 0) return []
   const fetchedAt = Date.now()
@@ -232,7 +237,7 @@ async function classifyDomainBatchWithRetry(
     enrichDomain.user(domains),
     settings,
     estimateDomainMaxTokens(domains.length),
-    { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA },
+    { responseFormat: 'json', metricKey: 'domains', jsonSchema: DOMAIN_BATCH_RESPONSE_SCHEMA, signal },
   )
   const parsedDetailed = enrichDomain.parseResponseDetailed(raw, new Set(domains), fetchedAt)
   if (parsedDetailed.strict) {
@@ -256,8 +261,8 @@ async function classifyDomainBatchWithRetry(
   if ((truncated || unmatchedStructured) && domains.length > 1 && depth < 3) {
     const mid = Math.ceil(domains.length / 2)
     const [left, right] = await Promise.all([
-      classifyDomainBatchWithRetry(domains.slice(0, mid), settings, depth + 1),
-      classifyDomainBatchWithRetry(domains.slice(mid), settings, depth + 1),
+      classifyDomainBatchWithRetry(domains.slice(0, mid), settings, depth + 1, signal),
+      classifyDomainBatchWithRetry(domains.slice(mid), settings, depth + 1, signal),
     ])
     return [...left, ...right]
   }
@@ -269,6 +274,7 @@ async function queryDomainsIntoResult(
   settings: LlmSettings,
   result: Map<string, DomainInfo>,
   onProgress?: (delta: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (domains.length === 0) return
 
@@ -279,6 +285,7 @@ async function queryDomainsIntoResult(
   await Promise.all(
     Array.from({ length: concurrency }, async () => {
       while (nextBatchIndex < batches.length) {
+        if (signal?.aborted) throw new Error('Aborted')
         const batchIndex = nextBatchIndex
         nextBatchIndex += 1
         const batch = batches[batchIndex]
@@ -286,7 +293,7 @@ async function queryDomainsIntoResult(
         const upfrontProgress = batchSize > 0 ? 1 : 0
         if (upfrontProgress > 0) onProgress?.(upfrontProgress)
         try {
-          const knownItems = await classifyDomainBatch(batch, settings)
+          const knownItems = await classifyDomainBatch(batch, settings, signal)
           const knownByDomain = new Map(knownItems.map((item) => [item.domain, item]))
           const fetchedAt = Date.now()
           const rowsToStore: DomainInfo[] = []
@@ -381,6 +388,7 @@ export async function enrichDomains(
   domains: string[],
   settings: LlmSettings,
   onProgress?: (delta: number) => void,
+  signal?: AbortSignal,
 ): Promise<Map<string, DomainInfo>> {
   try {
     const uniqueDomains = [...new Set(domains.map(normalizeDomain).filter(Boolean))]
@@ -442,7 +450,7 @@ export async function enrichDomains(
     }
 
     if (toQuery.size > 0 && canUseDomainEnrichmentLlm(settings)) {
-      await queryDomainsIntoResult([...toQuery], settings, result, onProgress)
+      await queryDomainsIntoResult([...toQuery], settings, result, onProgress, signal)
     }
 
     return result

@@ -75,6 +75,7 @@ interface RunContext {
   runId: number
   cancelled: boolean
   kind: 'auto' | 'domain' | 'embedding' | 'classify' | 'tags' | 'intent' | 'normalize' | 'split' | 'postprocess'
+  abortController: AbortController
 }
 
 const BOOKMARK_CLUSTER_OFFSET = 10_000
@@ -287,6 +288,7 @@ export class PipelineOrchestrator {
   cancel(runId: number): void {
     if (!this.currentRun || this.currentRun.runId !== runId) return
     this.currentRun.cancelled = true
+    this.currentRun.abortController.abort()
     for (const task of this.tasks.values()) {
       if (task.status === 'running' || task.status === 'pending') {
         this.updateTask(task.id, { status: 'cancelled', finishedAt: Date.now() })
@@ -328,7 +330,7 @@ export class PipelineOrchestrator {
 
   private async startAutoRun(req: AutoRunRequest): Promise<void> {
     const { runId, tabs, bookmarks, settings } = req
-    this.currentRun = { runId, kind: 'auto', cancelled: false }
+    this.currentRun = { runId, kind: 'auto', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     try {
@@ -400,7 +402,7 @@ export class PipelineOrchestrator {
     const domainMap = await enrichDomains(allDomains, settings, (delta) => {
       if (!this.isRunActive(runId)) return
       domainsTask.progress(delta)
-    })
+    }, this.currentRun?.abortController.signal)
     if (!this.isRunActive(runId)) {
       domainsTask.cancel(); embeddingsTask.cancel(); tabsTask.cancel(); bookmarksTask.cancel()
       return
@@ -411,7 +413,7 @@ export class PipelineOrchestrator {
     const embeddings = await fetchAndCacheEmbeddings(allItems, settings, (updates) => {
       if (!this.isRunActive(runId)) return
       embeddingsTask.progress(updates.length)
-    }, domainMap)
+    }, domainMap, this.currentRun?.abortController.signal)
     if (!this.isRunActive(runId)) {
       embeddingsTask.cancel(); tabsTask.cancel(); bookmarksTask.cancel()
       return
@@ -432,7 +434,7 @@ export class PipelineOrchestrator {
         tabsTask.progress(updates.length)
         this.callbacks.onCategoryUpdate(updates, 'tab')
         this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })), 'tab')
-      }, domainMap)
+      }, domainMap, this.currentRun?.abortController.signal)
       this.callbacks.onClusterNames(names)
     }
     tabsTask.done()
@@ -452,7 +454,7 @@ export class PipelineOrchestrator {
         bookmarksTask.progress(updates.length)
         this.callbacks.onCategoryUpdate(updates, 'bm')
         this.callbacks.onClusterUpdate(updates.map((u) => ({ url: u.url, clusterId: u.clusterId })), 'bm')
-      }, domainMap)
+      }, domainMap, this.currentRun?.abortController.signal)
       this.callbacks.onClusterNames(names)
     }
     bookmarksTask.done()
@@ -473,7 +475,7 @@ export class PipelineOrchestrator {
       if (!this.isRunActive(runId)) return
       tabsTask.progress(updates.length)
       this.callbacks.onCategoryUpdate(updates, 'tab')
-    }, settings)
+    }, settings, this.currentRun?.abortController.signal)
     if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
     tabsTask.done()
 
@@ -481,7 +483,7 @@ export class PipelineOrchestrator {
       if (!this.isRunActive(runId)) return
       bookmarksTask.progress(updates.length)
       this.callbacks.onCategoryUpdate(updates, 'bm')
-    }, settings)
+    }, settings, this.currentRun?.abortController.signal)
     if (!this.isRunActive(runId)) { bookmarksTask.cancel(); return }
     bookmarksTask.done()
 
@@ -510,26 +512,26 @@ export class PipelineOrchestrator {
         if (!this.isRunActive(runId)) return
         tagsTabsTask.progress(updates.length)
         this.callbacks.onTagsUpdate(updates, 'tab')
-      })
+      }, this.currentRun?.abortController.signal)
       tagsTabsTask.done()
       await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
         if (!this.isRunActive(runId)) return
         tagsBookmarksTask.progress(updates.length)
         this.callbacks.onTagsUpdate(updates, 'bm')
-      })
+      }, this.currentRun?.abortController.signal)
       tagsBookmarksTask.done()
 
       await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
         if (!this.isRunActive(runId)) return
         intentTabsTask.progress(updates.length)
         this.callbacks.onIntentUpdate(updates, 'tab')
-      })
+      }, this.currentRun?.abortController.signal)
       intentTabsTask.done()
       await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
         if (!this.isRunActive(runId)) return
         intentBookmarksTask.progress(updates.length)
         this.callbacks.onIntentUpdate(updates, 'bm')
-      })
+      }, this.currentRun?.abortController.signal)
       intentBookmarksTask.done()
       return
     }
@@ -542,8 +544,7 @@ export class PipelineOrchestrator {
         if (!this.isRunActive(runId)) return
         tagsTabsTask.progress(updates.length)
         this.callbacks.onTagsUpdate(updates, 'tab')
-      },
-    )
+      }, this.currentRun?.abortController.signal)
     tagsTabsTask.done()
     await tagWithLmStudio(
       bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -553,8 +554,7 @@ export class PipelineOrchestrator {
         if (!this.isRunActive(runId)) return
         tagsBookmarksTask.progress(updates.length)
         this.callbacks.onTagsUpdate(updates, 'bm')
-      },
-    )
+      }, this.currentRun?.abortController.signal)
     tagsBookmarksTask.done()
 
     await classifyIntentLmStudio(
@@ -565,9 +565,7 @@ export class PipelineOrchestrator {
         if (!this.isRunActive(runId)) return
         intentTabsTask.progress(updates.length)
         this.callbacks.onIntentUpdate(updates, 'tab')
-      },
-      domainMap,
-    )
+      }, domainMap, this.currentRun?.abortController.signal)
     intentTabsTask.done()
     await classifyIntentLmStudio(
       bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -577,9 +575,7 @@ export class PipelineOrchestrator {
         if (!this.isRunActive(runId)) return
         intentBookmarksTask.progress(updates.length)
         this.callbacks.onIntentUpdate(updates, 'bm')
-      },
-      domainMap,
-    )
+      }, domainMap, this.currentRun?.abortController.signal)
     intentBookmarksTask.done()
   }
 
@@ -642,7 +638,7 @@ export class PipelineOrchestrator {
     bookmarks: BookmarkItem[],
     settings: LlmSettings,
   ): Promise<void> {
-    this.currentRun = { runId, kind: 'classify', cancelled: false }
+    this.currentRun = { runId, kind: 'classify', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
 
@@ -659,8 +655,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'tab')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyWithLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -670,20 +665,19 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'bm')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
       } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
         await classifyTabs(tabs, (updates) => {
           if (!this.isRunActive(runId)) return
           tabsTask.progress(updates.length)
           this.callbacks.onCategoryUpdate(updates, 'tab')
-        }, settings)
+        }, settings, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyBookmarks(bookmarks, (updates) => {
           if (!this.isRunActive(runId)) return
           bookmarksTask.progress(updates.length)
           this.callbacks.onCategoryUpdate(updates, 'bm')
-        }, settings)
+        }, settings, this.currentRun?.abortController.signal)
       } else if (hasChatProviderConfig(settings)) {
         await classifyWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -693,8 +687,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'tab')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyWithLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -704,8 +697,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onCategoryUpdate(updates, 'bm')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
       } else {
         throw new Error('LLM unavailable')
       }
@@ -735,7 +727,7 @@ export class PipelineOrchestrator {
     bookmarks: BookmarkItem[],
     settings: LlmSettings,
   ): Promise<void> {
-    this.currentRun = { runId, kind: 'tags', cancelled: false }
+    this.currentRun = { runId, kind: 'tags', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const tabsTask = this.createTaskTracker(TASK_IDS.TAGS_TABS, 'LLM tagging tabs', tabs.length)
@@ -747,13 +739,13 @@ export class PipelineOrchestrator {
           if (!this.isRunActive(runId)) return
           tabsTask.progress(updates.length)
           this.callbacks.onTagsUpdate(updates, 'tab')
-        })
+        }, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await tagWithGeminiNano(bookmarks, 'bm', (updates) => {
           if (!this.isRunActive(runId)) return
           bookmarksTask.progress(updates.length)
           this.callbacks.onTagsUpdate(updates, 'bm')
-        })
+        }, this.currentRun?.abortController.signal)
       } else if (hasChatProviderConfig(settings)) {
         await tagWithLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -763,8 +755,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onTagsUpdate(updates, 'tab')
-          },
-        )
+          }, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await tagWithLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -774,8 +765,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onTagsUpdate(updates, 'bm')
-          },
-        )
+          }, this.currentRun?.abortController.signal)
       } else {
         throw new Error('LLM unavailable')
       }
@@ -799,7 +789,7 @@ export class PipelineOrchestrator {
     bookmarks: BookmarkItem[],
     settings: LlmSettings,
   ): Promise<void> {
-    this.currentRun = { runId, kind: 'intent', cancelled: false }
+    this.currentRun = { runId, kind: 'intent', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const tabsTask = this.createTaskTracker(TASK_IDS.INTENT_TABS, 'LLM intent tabs', tabs.length)
@@ -815,8 +805,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onIntentUpdate(updates, 'tab')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyIntentLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -826,20 +815,19 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onIntentUpdate(updates, 'bm')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
       } else if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
         await classifyIntentGeminiNano(tabs, 'tab', (updates) => {
           if (!this.isRunActive(runId)) return
           tabsTask.progress(updates.length)
           this.callbacks.onIntentUpdate(updates, 'tab')
-        })
+        }, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyIntentGeminiNano(bookmarks, 'bm', (updates) => {
           if (!this.isRunActive(runId)) return
           bookmarksTask.progress(updates.length)
           this.callbacks.onIntentUpdate(updates, 'bm')
-        })
+        }, this.currentRun?.abortController.signal)
       } else if (hasChatProviderConfig(settings)) {
         await classifyIntentLmStudio(
           tabs.map((t) => ({ url: t.url, title: t.title, domain: t.domain })),
@@ -849,8 +837,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             tabsTask.progress(updates.length)
             this.callbacks.onIntentUpdate(updates, 'tab')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
         if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
         await classifyIntentLmStudio(
           bookmarks.map((b) => ({ url: b.url, title: b.title, domain: b.domain })),
@@ -860,8 +847,7 @@ export class PipelineOrchestrator {
             if (!this.isRunActive(runId)) return
             bookmarksTask.progress(updates.length)
             this.callbacks.onIntentUpdate(updates, 'bm')
-          },
-        )
+          }, undefined, this.currentRun?.abortController.signal)
       } else {
         throw new Error('LLM unavailable')
       }
@@ -880,7 +866,7 @@ export class PipelineOrchestrator {
   }
 
   private async startStandaloneNormalizeRun(runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
-    this.currentRun = { runId, kind: 'normalize', cancelled: false }
+    this.currentRun = { runId, kind: 'normalize', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const task = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 1)
@@ -921,7 +907,7 @@ export class PipelineOrchestrator {
   }
 
   private async startStandaloneSplitRun(runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
-    this.currentRun = { runId, kind: 'split', cancelled: false }
+    this.currentRun = { runId, kind: 'split', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const task = this.createTaskTracker('split-large-categories', 'Split large categories', 1)
@@ -945,6 +931,7 @@ export class PipelineOrchestrator {
         },
         domainMap,
         embeddings,
+        this.currentRun?.abortController.signal,
       )
 
       const tabCategoryItems = (await Promise.all(
@@ -973,7 +960,7 @@ export class PipelineOrchestrator {
     bookmarks: BookmarkItem[],
     settings: LlmSettings,
   ): Promise<void> {
-    this.currentRun = { runId, kind: 'postprocess', cancelled: false }
+    this.currentRun = { runId, kind: 'postprocess', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const task = this.createTaskTracker(TASK_IDS.NORMALIZE_CATEGORIES, 'Post-process categories', 1)
@@ -995,13 +982,13 @@ export class PipelineOrchestrator {
     items: { url: string; title: string; domain: string; category?: string }[],
     settings: LlmSettings,
   ): Promise<void> {
-    this.currentRun = { runId, kind: 'embedding', cancelled: false }
+    this.currentRun = { runId, kind: 'embedding', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const task = this.createTaskTracker(TASK_IDS.EMBEDDINGS, 'LLM calc embeddings', items.length)
     try {
       if (!hasEmbeddingProviderConfig(settings)) throw new Error('Embedding provider unavailable')
-      await fetchEmbeddingsBatch(items, settings, (updates) => task.progress(updates.length))
+      await fetchEmbeddingsBatch(items, settings, (updates) => task.progress(updates.length), this.currentRun?.abortController.signal)
       const points = await reprojectAllEmbeddings()
       this.callbacks.onProjectedPoints(points)
       task.done()
@@ -1015,7 +1002,7 @@ export class PipelineOrchestrator {
   }
 
   private async startStandaloneDomainRun(runId: number, domains: string[], settings: LlmSettings, force: boolean): Promise<void> {
-    this.currentRun = { runId, kind: 'domain', cancelled: false }
+    this.currentRun = { runId, kind: 'domain', cancelled: false, abortController: new AbortController() }
     this.clearTasks()
     this.emit({ type: 'pipeline-start', runId })
     const estimatedWork = await estimateDomainEnrichmentWork(domains)
@@ -1023,7 +1010,7 @@ export class PipelineOrchestrator {
     try {
       if (!hasDomainKnowledgeProviderConfig(settings)) throw new Error('Domain enrichment provider unavailable')
       if (force) await clearDomainKnowledgeCache()
-      const domainMap = await enrichDomains(domains, settings, (delta) => task.progress(delta))
+      const domainMap = await enrichDomains(domains, settings, (delta) => task.progress(delta), this.currentRun?.abortController.signal)
       this.callbacks.onDomainMap(domainMap)
       task.done()
       if (this.isRunActive(runId)) this.emit({ type: 'pipeline-done', runId })

@@ -37,7 +37,10 @@ const INTENT_RESPONSE_SCHEMA = {
 
 let intentLabelEmbeddingsPromise: Promise<Map<PageIntent, number[]>> | null = null
 
-async function getIntentLabelEmbeddings(settings: LlmSettings): Promise<Map<PageIntent, number[]>> {
+async function getIntentLabelEmbeddings(
+  settings: LlmSettings,
+  signal?: AbortSignal,
+): Promise<Map<PageIntent, number[]>> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
   const model = provider.getEmbeddingModel(settings) || 'default'
@@ -50,7 +53,8 @@ async function getIntentLabelEmbeddings(settings: LlmSettings): Promise<Map<Page
 
   const map = new Map<PageIntent, number[]>()
   for (const intent of VALID_INTENTS) {
-    map.set(intent, await provider.embed(INTENT_DESCRIPTORS[intent] ?? intent, settings))
+    if (signal?.aborted) throw new Error('Aborted')
+    map.set(intent, await provider.embed(INTENT_DESCRIPTORS[intent] ?? intent, settings, signal))
   }
   if (model === 'default') {
     intentLabelEmbeddingsPromise = Promise.resolve(map)
@@ -67,12 +71,16 @@ function urlPathSnippet(url: string): string {
   }
 }
 
-async function classifyIntentNLI(item: { url: string; title: string; domain: string }, settings: LlmSettings): Promise<PageIntent> {
+async function classifyIntentNLI(
+  item: { url: string; title: string; domain: string },
+  settings: LlmSettings,
+  signal?: AbortSignal,
+): Promise<PageIntent> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
   const path = urlPathSnippet(item.url)
-  const query = await provider.embed([item.title, item.domain, path].filter(Boolean).join(' '), settings)
-  const labels = await getIntentLabelEmbeddings(settings)
+  const query = await provider.embed([item.title, item.domain, path].filter(Boolean).join(' '), settings, signal)
+  const labels = await getIntentLabelEmbeddings(settings, signal)
   let bestIntent: PageIntent = 'other'
   let bestScore = -Infinity
 
@@ -95,6 +103,7 @@ export async function classifyIntent(
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const uncached: typeof items = []
   const cached: IntentUpdate[] = []
@@ -131,6 +140,7 @@ export async function classifyIntent(
 
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
+    if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
     const results: IntentUpdate[] = []
 
@@ -138,13 +148,13 @@ export async function classifyIntent(
       try {
         let intent: PageIntent = 'other'
         if (useNli) {
-          intent = await classifyIntentNLI(item, settings)
+          intent = await classifyIntentNLI(item, settings, signal)
         } else {
           const path = urlPathSnippet(item.url)
           const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap)?.description : undefined
           const siteLine = domainDesc ? `Site: ${domainDesc}` : undefined
           const userMsg = classifyIntentContract.user({ title: item.title, domain: item.domain, path, siteLine })
-          const raw = await chatComplete(prompt, userMsg, settings, 15, options)
+          const raw = await chatComplete(prompt, userMsg, settings, 15, { ...options, signal })
           if (useJsonOutput) {
             const parsed = classifyIntentContract.parseResponseDetailed(raw, format)
             trackIntentParse(parsed.strict)
@@ -176,6 +186,7 @@ export async function classifyIntentGeminiNano(
   items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
   prefix: 'tab' | 'bm',
   onProgress: (updates: IntentUpdate[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   await classifyIntent(
     items,
@@ -189,6 +200,8 @@ export async function classifyIntentGeminiNano(
       },
     },
     onProgress,
+    undefined,
+    signal,
   )
 }
 
@@ -198,6 +211,7 @@ export async function classifyIntentLmStudio(
   settings: LlmSettings,
   onProgress: (updates: IntentUpdate[]) => void,
   domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await classifyIntent(items, prefix, settings, onProgress, domainMap)
+  await classifyIntent(items, prefix, settings, onProgress, domainMap, signal)
 }
