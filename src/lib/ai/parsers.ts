@@ -20,9 +20,16 @@ export function extractJson(text: string): string {
   const open = text[start]
   const close = open === '{' ? '}' : ']'
   let depth = 0
+  let inString = false
+  let escape = false
   for (let i = start; i < text.length; i++) {
-    if (text[i] === open) depth++
-    else if (text[i] === close) {
+    const ch = text[i]
+    if (escape) { escape = false; continue }
+    if (ch === '\\' && inString) { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === open) depth++
+    else if (ch === close) {
       depth--
       if (depth === 0) return text.slice(start, i + 1)
     }

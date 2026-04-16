@@ -193,9 +193,9 @@ export async function fetchAndCacheEmbeddings(
         const domainParts: string[] = []
         if (cfg.includeDomainCategory && domainInfo?.category) domainParts.push(domainInfo.category)
         if (cfg.includeDomainDescription && domainInfo?.description) domainParts.push(domainInfo.description)
-        if (cfg.includeDomainPlatform && domainInfo?.platform) domainParts.push(`Platform: ${domainInfo.platform}`)
+        if (cfg.includeDomainPlatform && domainInfo?.platform) domainParts.push(domainInfo.platform)
         
-        const domainRichText = domainParts.length > 0 ? domainParts.join(': ') : ''
+        const domainRichText = domainParts.length > 0 ? domainParts.join(' ') : ''
         
         const displayTitle = cfg.includeTitle ? cleanTitle(item.title, item.domain) : ''
         const displayDomain = cfg.includeDomain ? item.domain : ''

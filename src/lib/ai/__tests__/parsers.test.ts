@@ -17,6 +17,17 @@ describe('parsers', () => {
       const input = '{"a": 1}'
       expect(extractJson(input)).toBe('{"a": 1}')
     })
+
+    it('should not terminate early on } inside a string value', () => {
+      // LLM output: category value contains a stray } before the closing "
+      const input = '{"category": "Search Engine Optimization (SEO)}" }'
+      expect(extractJson(input)).toBe('{"category": "Search Engine Optimization (SEO)}" }')
+    })
+
+    it('should handle escaped quotes inside string values', () => {
+      const input = '{"key": "value with \\"quotes\\" inside"}'
+      expect(extractJson(input)).toBe('{"key": "value with \\"quotes\\" inside"}')
+    })
   })
 
   describe('repairJsonString', () => {
