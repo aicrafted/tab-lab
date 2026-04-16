@@ -164,6 +164,7 @@ export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
 export interface LlmSettings {
   localNetworks: string[]
   nliCategories: NliCategory[]
+  nliConfidenceThreshold: number
   providers: {
     browserMl: {
       chatModel: string
@@ -276,6 +277,7 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
     },
   },
   nliCategories: [...DEFAULT_NLI_CATEGORIES],
+  nliConfidenceThreshold: 0.25,
   tasks: {
     chat: { provider: 'lmstudio' },
     embedding: { provider: 'lmstudio' },
@@ -337,6 +339,7 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         },
       },
       nliCategories: (obj.nliCategories as NliCategory[]) ?? [...DEFAULT_NLI_CATEGORIES],
+      nliConfidenceThreshold: typeof obj.nliConfidenceThreshold === 'number' ? obj.nliConfidenceThreshold : 0.25,
     }
   }
 

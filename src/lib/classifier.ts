@@ -155,7 +155,7 @@ async function classifyItemNLI(
   settings: LlmSettings,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<string | null> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
   
@@ -173,6 +173,10 @@ async function classifyItemNLI(
       bestScore = score
       bestLabel = label
     }
+  }
+  if (bestScore < settings.nliConfidenceThreshold) {
+    classifierLog.debug('nli low confidence (item)', { url: item.url, score: bestScore, label: bestLabel })
+    return null
   }
 
   return bestLabel
@@ -293,7 +297,12 @@ export async function classifyItems(
       try {
         let category = 'Other'
         if (useNli) {
-          category = await classifyItemNLI(item, settings, domainMap)
+          const result = await classifyItemNLI(item, settings, domainMap)
+          if (result === null) {
+            tracker.tick(1, { url: item.url, skipped: 'low-confidence' })
+            continue
+          }
+          category = result
         } else {
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap)
@@ -733,7 +742,7 @@ function inferClusterNameFromRepresentative(title: string, category: string): st
 async function classifyClusterNli(
   centroid: number[],
   settings: LlmSettings
-): Promise<string> {
+): Promise<string | null> {
   const labelEmbeddings = await getCategoryLabelEmbeddings(settings)
   let bestLabel = 'Other'
   let bestScore = -Infinity
@@ -743,6 +752,10 @@ async function classifyClusterNli(
       bestScore = score
       bestLabel = label
     }
+  }
+  if (bestScore < settings.nliConfidenceThreshold) {
+    classifierLog.debug('nli low confidence (cluster)', { score: bestScore, label: bestLabel })
+    return null
   }
   return bestLabel
 }
@@ -779,7 +792,12 @@ export async function classifyByClusters(
     let name = 'Other'
 
     if (useNli) {
-      category = await classifyClusterNli(cluster.centroid, settings)
+      const result = await classifyClusterNli(cluster.centroid, settings)
+      if (result === null) {
+        tracker.tick(cluster.members.length, { clusterId: cluster.clusterId, skipped: 'low-confidence' })
+        continue
+      }
+      category = result
       name = inferClusterNameFromRepresentative(representativeItems[0].title, category)
     } else {
       const provider = settings.tasks.chat.provider

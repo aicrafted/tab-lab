@@ -64,6 +64,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const [chatProvider, setChatProvider] = useState<ChatProvider>(llmSettings.tasks.chat.provider)
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(llmSettings.tasks.embedding.provider)
   const [nliCategories, setNliCategories] = useState<NliCategory[]>(llmSettings.nliCategories ?? [...DEFAULT_NLI_CATEGORIES])
+  const [nliConfidenceThreshold, setNliConfidenceThreshold] = useState(llmSettings.nliConfidenceThreshold ?? 0.25)
 
   // UI State
   const [models, setModels] = useState<string[]>([])
@@ -202,8 +203,9 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         embedding: { provider: embeddingProvider },
       },
       nliCategories,
+      nliConfidenceThreshold,
     })
-  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories])
+  }, [browserMl, chatProvider, embeddingProvider, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
@@ -666,6 +668,27 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               <p className="text-[10px] text-muted-foreground leading-relaxed px-1">
                 Custom labels used for semantic bucketing. The descriptor should contain keywords that describe the typical content.
               </p>
+
+              <div className="space-y-2 px-1 py-3 border-y border-border/40">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Confidence Threshold</label>
+                    <p className="text-[9px] text-muted-foreground/60 italic">Minimum score (0 to 1) for a valid classification</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono font-bold text-primary">{nliConfidenceThreshold.toFixed(2)}</span>
+                    <Input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={nliConfidenceThreshold}
+                      onChange={(e) => setNliConfidenceThreshold(parseFloat(e.target.value))}
+                      className="w-32 h-4 accent-primary"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div className="rounded-md border border-border/40 bg-background/20">
                 <Table>
