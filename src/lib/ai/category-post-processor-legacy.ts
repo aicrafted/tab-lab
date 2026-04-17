@@ -9,6 +9,7 @@ import { createLoggerProgress } from '../core/progress'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { cosineSimilarity, fetchEmbedding, fetchEmbeddingsBatch } from './embedder'
 import { SPLIT_THRESHOLD } from './classifier'
+import { classifyVectorNli } from './nli-engine'
 
 const RARE_THRESHOLD = 3
 
@@ -373,7 +374,7 @@ export async function legacy_classifyByClusters(
 
     let category = 'Other'
     if (useNli) {
-      const result = await import('./nli-engine').then(m => m.classifyVectorNli(cluster.centroid, settings))
+      const result = await classifyVectorNli(cluster.centroid, settings)
       category = result?.label || 'Other'
     } else {
       const raw = await chatComplete(

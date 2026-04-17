@@ -32,7 +32,7 @@ export async function refineCategoryLabels(
     // 1. Get clusters of duplicates from LLM (only for candidates)
     const response = await chatComplete(
       consolidateCategories.system(),
-      consolidateCategories.user(candidates.map(l => l.label)),
+      consolidateCategories.user(candidates),
       settings,
       8000, // Very large output allowed for many groups
       { metricKey: 'post-process-consolidation' }

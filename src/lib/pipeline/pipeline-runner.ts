@@ -366,10 +366,10 @@ export class PipelineRunner {
 
     const tracker = createLoggerProgress('normalizeCategoriesStep', 2)
     
-    const NORMALIZE_MAX_COUNT = 5
+    const NORMALIZE_MAX_COUNT = 1000
     
     // Phase 1: Normalize/Merge
-    // Use the new frequency-aware consolidation logic (only for categories with <= 5 items)
+    // Use the frequency-aware consolidation logic (Synonym/Acronym merging)
     const mapping = await refineCategoryLabels(labelsWithCounts, settings, NORMALIZE_MAX_COUNT)
     
     // Convert to item format for applyRefinedCategories
@@ -553,7 +553,7 @@ export class PipelineRunner {
       }, {} as Record<string, number>)
       const labelsWithCounts = Object.entries(counts).map(([label, count]) => ({ label, count }))
 
-      const NORMALIZE_MAX_COUNT = 5
+      const NORMALIZE_MAX_COUNT = 1000
       aiPipelineLog.info('standalone normalize start', { totalLabels: labelsWithCounts.length })
       const mergeMap = await refineCategoryLabels(labelsWithCounts, settings, NORMALIZE_MAX_COUNT)
 

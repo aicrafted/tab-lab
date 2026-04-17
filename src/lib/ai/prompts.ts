@@ -9,23 +9,25 @@ const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 
 type KnownPlatform = DomainInfo['platform']
 
-const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. Goal: provide a GENERAL TOPIC category for each page.
+const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. Goal: provide a SPECIFIC TOPIC category for each page.
 Rules:
-1. Category must be a broad domain or topic (1-3 words, Title Case).
-2. DO NOT use brand names, site names, or domains (e.g., use "Social Media" instead of "Twitter").
-3. DO NOT copy the tab title or domain into the category.
-4. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General".
+1. Category must be a descriptive topic (1-3 words, Title Case).
+2. PREFER SPECIFICITY: Use "Programming Languages" instead of "Technology", or "UI Design" instead of "Design".
+3. DO NOT use brand names, site names, or domains.
+4. DO NOT copy the tab title or domain into the category.
+5. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General", "Technology", "Internet".
 Reply with the category label ONLY — no punctuation, no repeats.`
 
-const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. Goal: assign a general TOPIC category to each browser page.
-Output strict JSON: {"category": "GENERAL TOPIC"}
+const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. Goal: assign a SPECIFIC TOPIC category to each browser page.
+Output strict JSON: {"category": "TOPIC"}
 
 Rules:
-1. Category must be a broad domain or topic (1-3 words, Title Case).
-2. DO NOT include brand names, site names, or domains (e.g., use "Social Media" instead of "Twitter", "Shopping" instead of "eBay").
-3. DO NOT copy the tab title or domain directly into the category.
-4. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General".
-5. If a specific tool, identify its nature (e.g., "Graphic Design Tool" instead of "Canva").
+1. Category must be a descriptive topic (1-3 words, Title Case).
+2. PREFER SPECIFICITY: Focus on precise topics. "React" is better than "Technology". "E-commerce" is better than "Shopping".
+3. DO NOT include brand names, site names, or domains (e.g., use "Social Media" instead of "Twitter").
+4. DO NOT copy the tab title or domain directly into the category.
+5. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General", "Technology", "Internet".
+6. If a specific tool, identify its nature (e.g., "Graphic Design Tool" instead of "Visuals").
 
 Example: {"category": "Software Engineering"}`
 
@@ -73,24 +75,21 @@ export const MAP_LABELS_TO_UMBRELLAS_USER_PREFIX = `Umbrella Categories:
 export const MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE = `
 Labels to map:
 `
-
 const CONSOLIDATE_LABELS_SYSTEM = `You are a strict Deduplication Engine. 
-Objective: Identify clusters of category labels from the provided list that are redundant or highly overlapping.
+Objective: Identify clusters of redundant category labels.
 
-CRITICAL RULES:
-1. USE ONLY LABELS FROM THE INPUT LIST. 
-2. DO NOT INVENT, SUGGEST, OR ADD NEW LABELS. THIS IS FORBIDDEN.
-3. Inventing any character not found in the input list will break the system.
-4. Output MUST be a JSON array of arrays: [["Label A", "Label B"]].
-5. Each inner array must contain 2 or more related labels from the input list that should be merged (specific into general).
-6. Labels that are unique and not redundant MUST be omitted from the output.
-7. Reply ONLY with the JSON array. If no duplicates are found, return [].
+RULES:
+1. USE ONLY THE EXACT LABELS PROVIDED.
+2. Use counts as context:
+   - Merging large categories (many items) is only allowed for SYNONYMS or ACRONYMS (e.g., "AI" and "Artificial Intelligence").
+   - DO NOT merge distinct large topics (e.g., "Video" and "Music") even if they are related.
+   - Small categories (few items) can be merged more aggressively into larger related categories.
+3. Output MUST be a JSON array of arrays: [["Label A", "Label B"]].
+4. Each group must contain 2+ labels from the input list.
+5. If no duplicates found, return [].
+6. Reply ONLY with the JSON array.`
 
-Example:
-Input: ["Design", "Webdesign", "Cooking", "Music"]
-Output: [["Design", "Webdesign"]]`
-
-const CONSOLIDATE_LABELS_USER_PREFIX = `Scan these labels and group redundant ones. DO NOT add any new words. Input labels:`
+const CONSOLIDATE_LABELS_USER_PREFIX = `Scan these labels (with item counts) and group redundant ones:`
 
 const GROUP_RARE_CATEGORIES_SYSTEM = 'You output strict JSON only.'
 const GROUP_RARE_CATEGORIES_USER_PREFIX = `You are consolidating browser tab categories. Map each RARE category to its best target.
@@ -188,6 +187,7 @@ function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
     .replace(/([a-z]{2,})([A-Z])/g, '$1 $2') // Break CamelCase (WebApp -> Web App, protects IoT, eBay)
     .replace(/([A-Z]{2,})([A-Z][a-z]{2,})/g, '$1 $2') // Handle acronyms (AIModel -> AI Model, protects APIs)
     .replace(/_/g, ' ')
+    .replace(/^\.+|\.+$/g, '') // Strip leading/trailing dots
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -202,7 +202,7 @@ function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
   // Split by common delimiters and take the first part
   // This handles "Category/Subcategory" or "Item 1 & Item 2"
   const firstPhrase = text.split(/[&/\\|;]/)[0]?.trim() || text
-  let candidate = firstPhrase.slice(0, 40).trim()
+  let candidate = firstPhrase.slice(0, 40).replace(/^\.+|\.+$/g, '').trim()
   if (!candidate) return fallback
 
   // Enforce Title Case for each word
@@ -227,6 +227,8 @@ function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
 function isInvalidCategoryLabel(label: string): boolean {
   const text = label.trim()
   if (!text || text.length < 2) return true
+  if (/\.{3,}/.test(text)) return true // Reject ellipses
+  if (text.startsWith('.')) return true
   if (/<\|[^|>]*\|>/.test(text)) return true
   // Blacklist generic technical terms that are often hallucinations or bad defaults
   if (/^(analysis|final|assistant|user|system|channel|null|undefined|category|unknown|other|result|choice)$/i.test(text)) return true
@@ -358,8 +360,8 @@ export const classifyItem = {
       lines.push('Assign a more specific sub-category.')
     }
     if (candidates && candidates.length > 0) {
-      lines.push(`Candidates: ${candidates.join(', ')}, Other`)
-      lines.push('Choose the best match from Candidates, or use "Other" if none fits.')
+      lines.push(`Existing categories: ${candidates.join(', ')}`)
+      lines.push('Use an existing category ONLY if it is a PRECISE match. If existing categories are too broad (like "Technology", "Web", or "Internet"), create a NEW specific TOPIC.')
     }
     lines.push('\nImportant: Respond with a general TOPIC (e.g., "Shopping"), not a brand name (e.g., "Amazon" or "eBay").')
     return lines.join('\n')
@@ -426,8 +428,8 @@ export const consolidateCategories = {
     return CONSOLIDATE_LABELS_SYSTEM
   },
 
-  user(labels: string[]): string {
-    const list = labels.map((l) => `- ${l}`).join('\n')
+  user(labelsWithCounts: { label: string; count: number }[]): string {
+    const list = labelsWithCounts.map((l) => `- ${l.label} (${l.count} items)`).join('\n')
     return `${CONSOLIDATE_LABELS_USER_PREFIX}\n${list}\n\nReturn ONLY JSON array using the EXACT strings above.`
   },
 

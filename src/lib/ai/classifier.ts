@@ -151,11 +151,18 @@ export async function classifyItems(
     ...(chatProviderId === 'browser-ml' ? { disableThinking: true } : {}),
   }
 
+  const seenCategories = new Set<string>()
+  // Seed with categories we already know from cache
+  cached.forEach(c => seenCategories.add(c.category))
+
   const BATCH = 5
   for (let i = 0; i < uncached.length; i += BATCH) {
     if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; category: string; parentCategory: string }[] = []
+
+    // Provide some existing categories as hints, but limited to avoid prompt bloat
+    const hints = Array.from(seenCategories).slice(0, 30)
 
     await Promise.all(batch.map(async (item) => {
       try {
@@ -171,7 +178,13 @@ export async function classifyItems(
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
 
-          const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
+          const userMsg = classifyItem.user({ 
+            title: item.title, 
+            domain: item.domain, 
+            path, 
+            siteLine,
+            candidates: hints
+          })
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, { ...options, signal })
           const parsed = classifyItem.parseResponseDetailed(raw)
           trackClassifierParse(parsed.strict)
@@ -179,6 +192,8 @@ export async function classifyItems(
         }
         
         const finalCategory = category.trim()
+        seenCategories.add(finalCategory) // Add to hints for next batch
+        
         const existing = await getCached(item.url)
         const parentCategory = (existing?.parentCategory ?? finalCategory).trim()
         await setCached(item.url, { ...existing, category: finalCategory, parentCategory, processedAt: Date.now() })
