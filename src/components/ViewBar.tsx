@@ -40,7 +40,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
   },
   {
     id: 'domains-tags-intents',
-    label: 'Domains, tags, intents',
+    label: 'Domains and labels',
     hint: 'Relationship and structure views across domains, tags and clusters.',
     views: ['domain-drill-down', 'domain-graph', 'overlap-explorer', 'tag-cooccurrence', 'tag-constellation', 'treemap'],
   },
@@ -48,7 +48,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     id: 'semantic',
     label: 'Semantic',
     hint: 'Embedding-driven maps and semantic neighborhood exploration.',
-    views: ['personal-radar', 'semantic', 'shadow-map'],
+    views: ['semantic', 'personal-radar', 'shadow-map'],
   },
   {
     id: 'history',

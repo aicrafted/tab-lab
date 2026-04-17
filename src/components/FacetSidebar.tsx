@@ -360,16 +360,16 @@ function UniversalFacetBlock({
         <Select value={selectedIntent ?? '__any__'} onValueChange={(value) => onIntentChange(value === '__any__' ? null : value)}>
           <SelectTrigger className="h-7 text-xs">
             {selectedIntentItem ? (
-              <span className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                 {(() => {
                   const Icon = intentIcon(selectedIntentItem.value)
                   return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
                 })()}
                 <span className="truncate">{selectedIntentItem.value}</span>
                 <span className="shrink-0 tabular-nums text-muted-foreground/70">{selectedIntentItem.count}</span>
-              </span>
+              </div>
             ) : (
-              <span className="truncate">Any intent</span>
+              <div className="truncate">Any intent</div>
             )}
           </SelectTrigger>
           <SelectContent className="text-xs">
@@ -391,16 +391,16 @@ function UniversalFacetBlock({
         <Select value={selectedPlatform ?? '__any__'} onValueChange={(value) => onPlatformChange(value === '__any__' ? null : value)}>
           <SelectTrigger className="h-7 text-xs">
             {selectedPlatformItem ? (
-              <span className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                 {(() => {
                   const Icon = platformIcon(selectedPlatformItem.value)
                   return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
                 })()}
                 <span className="truncate">{selectedPlatformItem.value}</span>
                 <span className="shrink-0 tabular-nums text-muted-foreground/70">{selectedPlatformItem.count}</span>
-              </span>
+              </div>
             ) : (
-              <span className="truncate">Any platform</span>
+              <div className="truncate">Any platform</div>
             )}
           </SelectTrigger>
           <SelectContent className="text-xs">

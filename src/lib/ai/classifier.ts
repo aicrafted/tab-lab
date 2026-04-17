@@ -64,7 +64,7 @@ export type LlmAvailability = 'checking' | 'ready' | 'after-download' | 'unavail
 export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 
-function urlPathSnippet(url: string): string {
+export function urlPathSnippet(url: string): string {
   try {
     const path = new URL(url).pathname.replace(/\/$/, '')
     return path.slice(0, 80)
@@ -73,7 +73,7 @@ function urlPathSnippet(url: string): string {
   }
 }
 
-function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined, localNetworks: string[]): string {
+export function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined, localNetworks: string[]): string {
   if (!domainMap) return ''
   const info = getDomainInfo(domain, domainMap, localNetworks)
   if (!info?.known) return ''
@@ -268,6 +268,9 @@ export async function analyzeItemsTwoPass(
         const path = urlPathSnippet(item.url)
         const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
 
+        const domainInfo = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks) : null
+        const platform = domainInfo?.platform ?? null
+
         // Pass 1: Metadata Extraction
         const metaUserMsg = analyzeMetadata.user({ title: item.title, domain: item.domain, path, siteLine })
         const metaRaw = await chatComplete(analyzeMetadata.system(), metaUserMsg, settings, 512, { ...options, signal, metricKey: 'classifier-meta' })
@@ -296,7 +299,7 @@ export async function analyzeItemsTwoPass(
           parentCategory: finalParent,
           tags: meta.tags,
           intent: meta.intent,
-          platform: meta.platform ?? undefined,
+          platform: platform ?? undefined,
           processedAt: Date.now() 
         })
         results.push({ 
@@ -305,7 +308,7 @@ export async function analyzeItemsTwoPass(
           parentCategory: finalParent,
           tags: meta.tags, 
           intent: meta.intent, 
-          platform: meta.platform 
+          platform: platform 
         })
       } catch (err) {
         aiPipelineLog.error('analyzeItemsTwoPass item failed', { url: item.url, err })

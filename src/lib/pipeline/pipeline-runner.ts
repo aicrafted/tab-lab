@@ -1,4 +1,6 @@
-import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsTwoPass } from '../ai/classifier'
+import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsTwoPass, urlPathSnippet, domainSiteLine } from '../ai/classifier'
+import { analyzeMetadata, type PageIntent } from '../ai/prompts'
+import { chatComplete } from '../ai/llm'
 import { refineCategoryLabels, applyRefinedCategories } from '../ai/post-processor'
 import { legacy_groupRareCategories } from '../ai/category-post-processor-legacy'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
@@ -428,44 +430,21 @@ export class PipelineRunner {
     const intentTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'Detecting intent', unifiedDocs.length)
 
     try {
-      const nanoStatus = await checkLlmAvailability(settings)
-      const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+      const allDomains = [...new Set(unifiedDocs.map(d => d.domain).filter(Boolean))]
+      const domainMap = await enrichDomains(allDomains, settings, undefined, this.currentRun?.abortController.signal)
+      this.callbacks.onDomainMap(domainMap)
 
-      // Use combined flow for LLM
-      if (!useNli && (hasChatProviderConfig(settings) || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')))) {
-        await analyzeItemsTwoPass(
-          unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            const count = updates.length
-            tabsTask.progress(count)
-            tagsTask.progress(count)
-            intentTask.progress(count)
-
-            this.callbacks.onCategoryUpdate(updates.map(u => ({ url: u.url, category: u.category, parentCategory: u.parentCategory })))
-            this.callbacks.onTagsUpdate(updates.map(u => ({ url: u.url, tags: u.tags })))
-            this.callbacks.onIntentUpdate(updates.map(u => ({ url: u.url, intent: u.intent })))
-          },
-          undefined, // No domainMap passed for standalone classify yet (could be added)
-          this.currentRun?.abortController.signal,
-        )
-      } else if (useNli) {
-        // Fallback or specific NLI classify logic
-        await classifyItems(
-          unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
-          settings,
-          (updates) => {
-            if (!this.isRunActive(runId)) return
-            tabsTask.progress(updates.length)
-            this.callbacks.onCategoryUpdate(updates)
-          },
-          undefined,
-          this.currentRun?.abortController.signal,
-        )
-      } else {
-        throw new Error('LLM unavailable')
-      }
+      await classifyItems(
+        unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
+        settings,
+        (updates) => {
+          if (!this.isRunActive(runId)) return
+          tabsTask.progress(updates.length)
+          this.callbacks.onCategoryUpdate(updates)
+        },
+        domainMap,
+        this.currentRun?.abortController.signal,
+      )
 
       if (!this.isRunActive(runId)) { 
         tabsTask.cancel(); bookmarksTask.cancel(); tagsTask.cancel(); intentTask.cancel()
@@ -478,6 +457,72 @@ export class PipelineRunner {
     } catch (err) {
       tabsTask.failed(err)
       bookmarksTask.failed(err)
+      tagsTask.failed(err)
+      intentTask.failed(err)
+      throw err
+    }
+  }
+
+  async startStandaloneLabelsRun(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
+    const unifiedDocs = this.buildUnifiedDocs(tabs, bookmarks)
+    const tagsTask = this.registry.registerTask(TASK_IDS.TAGS_TABS, 'LLM labels (tags+intent)', unifiedDocs.length)
+    const intentTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'LLM intent pages', 0) // progress tracked by tagsTask for simplicity
+
+    try {
+      const allDomains = [...new Set(unifiedDocs.map(d => d.domain).filter(Boolean))]
+      const domainMap = await enrichDomains(allDomains, settings, undefined, this.currentRun?.abortController.signal)
+      this.callbacks.onDomainMap(domainMap)
+
+      const options = {
+        responseFormat: 'json' as const,
+        ...(settings.tasks.chat.provider === 'browser-ml' ? { disableThinking: true } : {}),
+      }
+
+      const BATCH = 5
+      for (let i = 0; i < unifiedDocs.length; i += BATCH) {
+        if (!this.isRunActive(runId)) break
+        const batch = unifiedDocs.slice(i, i + BATCH)
+        const tagUpdates: { url: string; tags: string[] }[] = []
+        const intentUpdates: { url: string; intent: PageIntent | undefined }[] = []
+
+        await Promise.all(batch.map(async (item) => {
+          try {
+            const path = urlPathSnippet(item.url)
+            const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
+            const userMsg = analyzeMetadata.user({ title: item.title, domain: item.domain, path, siteLine })
+            const raw = await chatComplete(analyzeMetadata.system(), userMsg, settings, 512, { ...options, metricKey: 'standalone-labels', signal: this.currentRun?.abortController.signal })
+            const meta = analyzeMetadata.parseResponse(raw)
+
+            const existing = await getCached(item.url)
+            await setCached(item.url, {
+              ...existing,
+              category: existing?.category ?? 'Other',
+              tags: meta.tags,
+              intent: meta.intent,
+              processedAt: Date.now(),
+            })
+
+            tagUpdates.push({ url: item.url, tags: meta.tags })
+            intentUpdates.push({ url: item.url, intent: meta.intent })
+          } catch (err) {
+            aiPipelineLog.error('standalone labels item failed', { url: item.url, err })
+          } finally {
+            tagsTask.progress(1)
+          }
+        }))
+
+        if (tagUpdates.length > 0) this.callbacks.onTagsUpdate(tagUpdates)
+        if (intentUpdates.length > 0) this.callbacks.onIntentUpdate(intentUpdates)
+      }
+
+      if (!this.isRunActive(runId)) {
+        tagsTask.cancel()
+        intentTask.cancel()
+        return
+      }
+      tagsTask.done()
+      intentTask.done()
+    } catch (err) {
       tagsTask.failed(err)
       intentTask.failed(err)
       throw err

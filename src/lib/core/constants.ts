@@ -31,12 +31,10 @@ export const BUILD = {
     'console-api': false,
     views: {
       hide: [
-        'treemap', 'semantic', 'domain-graph', 'reading-queue', 
-        'tag-constellation', 'personal-radar', 'topic-river', 'domain-drill-down', 
-        'focus-rings', 'tag-cooccurrence', 'shelf-view', 'overlap-explorer', 
-        'shadow-map', 'session-story', 
-        'magazine',
-        'settings-knowledge'
+        'topic-river',
+        'tag-constellation', 'domain-graph', 'reading-queue',         
+        'focus-rings', 'shadow-map', 'magazine',
+        'settings-knowledge', 'settings-advanced'
       ] as ViewId[],
     }
   }

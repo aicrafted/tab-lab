@@ -57,6 +57,15 @@ export class PipelineOrchestrator {
     return runId
   }
 
+  enqueueLabelsPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
+    const runId = ++this.runSeq
+    if (this.currentRun) return runId
+    void this.startStandaloneRun('tags', runId, async () => {
+      await this.runner.startStandaloneLabelsRun(runId, tabs, bookmarks, settings)
+    })
+    return runId
+  }
+
   enqueueClassifyPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId

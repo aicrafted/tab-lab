@@ -1,4 +1,4 @@
-import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Tag, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Wand2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { formatAge } from '@/lib/core/utils'
@@ -8,15 +8,10 @@ import type { TaskState } from '@/lib/pipeline/pipeline-orchestrator'
 interface StatusBarAiActions {
   onClearCache?: () => Promise<void>
   onRunDomains?: () => Promise<void>
-  onRedomains?: () => Promise<void>
   onClassify?: () => Promise<void>
-  onReclassify?: () => Promise<void>
-  onRunTags?: () => Promise<void>
-  onRetag?: () => Promise<void>
-  onRunIntent?: () => Promise<void>
-  onReintent?: () => Promise<void>
+  onRunLabels?: () => Promise<void>
   onRunEmbeddings?: () => Promise<void>
-  onReembed?: () => Promise<void>
+  onRunFull?: () => Promise<void>
 }
 
 interface StatusBarProps {
@@ -50,79 +45,44 @@ export function StatusBar({
 }: StatusBarProps) {
   const aiActions = ai ?? {}
   const aiActionItems: AiActionItem[] = [
+    aiActions.onRunFull ? {
+      key: 'full',
+      label: 'Run full AI pipeline',
+      icon: Wand2,
+      title: 'Run full processing pipeline (domains -> embeddings -> labels -> classification)',
+      onClick: aiActions.onRunFull,
+    } : null,
+    aiActions.onRunDomains ? {
+      key: 'domains',
+      label: 'Domains enrichment',
+      icon: Database,
+      title: 'Fetch and cache domain metadata',
+      onClick: aiActions.onRunDomains,
+    } : null,
+    aiActions.onRunEmbeddings ? {
+      key: 'embeddings',
+      label: 'Build semantic',
+      icon: Brain,
+      title: 'Generate embeddings and 2D projection',
+      onClick: aiActions.onRunEmbeddings,
+    } : null,
+    aiActions.onRunLabels ? {
+      key: 'labels',
+      label: 'Labels inference',
+      icon: Hash,
+      title: 'Classify pages by tags and intent',
+      onClick: aiActions.onRunLabels,
+    } : null,
     aiActions.onClassify ? {
       key: 'classify',
       label: 'Classify',
       icon: Wand2,
-      title: 'Run category classification (pass 1)',
+      title: 'Assign topical categories to all pages',
       onClick: aiActions.onClassify,
-    } : null,
-    aiActions.onRunDomains ? {
-      key: 'domains',
-      label: 'Domains',
-      icon: Database,
-      title: 'Save domain knowledge (site descriptions) to cache',
-      onClick: aiActions.onRunDomains,
-    } : null,
-    aiActions.onRedomains ? {
-      key: 'redomains',
-      label: 'Re-Domains',
-      icon: Database,
-      title: 'Clear and rebuild domain knowledge cache',
-      onClick: aiActions.onRedomains,
-    } : null,
-    aiActions.onReclassify ? {
-      key: 'reclassify',
-      label: 'Re-Classify',
-      icon: Wand2,
-      title: 'Clear only category cache and classify again',
-      onClick: aiActions.onReclassify,
-    } : null,
-    aiActions.onRunTags ? {
-      key: 'tags',
-      label: 'Tags',
-      icon: Hash,
-      title: 'Generate tags for all items',
-      onClick: aiActions.onRunTags,
-    } : null,
-    aiActions.onRetag ? {
-      key: 'retag',
-      label: 'Re-Tags',
-      icon: Hash,
-      title: 'Clear only tags cache and run tagging again',
-      onClick: aiActions.onRetag,
-    } : null,
-    aiActions.onRunIntent ? {
-      key: 'intent',
-      label: 'Intent',
-      icon: Tag,
-      title: 'Classify pages by intent',
-      onClick: aiActions.onRunIntent,
-    } : null,
-    aiActions.onReintent ? {
-      key: 'reintent',
-      label: 'Re-Intent',
-      icon: Tag,
-      title: 'Clear only intent cache and classify intent again',
-      onClick: aiActions.onReintent,
-    } : null,
-    aiActions.onRunEmbeddings ? {
-      key: 'embeddings',
-      label: 'Embeddings',
-      icon: Brain,
-      title: 'Run embeddings + 2D projection',
-      onClick: aiActions.onRunEmbeddings,
-    } : null,
-    aiActions.onReembed ? {
-      key: 'reembed',
-      label: 'Re-embed',
-      icon: Brain,
-      title: 'Clear embedding cache and re-embed all pages',
-      onClick: aiActions.onReembed,
     } : null,
     aiActions.onClearCache ? {
       key: 'clear',
-      label: 'Clear',
+      label: 'Clear cache',
       icon: Eraser,
       title: 'Clear all cached AI data',
       onClick: aiActions.onClearCache,

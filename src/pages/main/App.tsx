@@ -37,7 +37,7 @@ import { isLocalUrl } from '@/lib/core/local-network'
 import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
 import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
-import { Brain, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Database, Eraser, Hash, RefreshCw, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -244,17 +244,8 @@ export function App() {
     handleClearCache,
     handleClassify,
     handleRunDomainKnowledge,
-    handleRedomainKnowledge,
-    handleReclassify,
-    handleRunIntent,
-    handleReintent,
-    handlePostProcessCategories,
-    handleNormalizeCategories,
-    handleGroupRareCategories,
-    handleSplitCategories,
+    handleRunLabels,
     handleRunTags,
-    handleRetag,
-    handleReembedAll,
     handleStopPipeline,
   } = useAiPipelines({
     bookmarks,
@@ -273,30 +264,15 @@ export function App() {
   // Sync data with browser events
   useBrowserStateSync(doLoad)
 
-  const isNliMode = llmSettings.tasks.classification.method === 'nli'
+
 
   const aiActionItems: AiActionItem[] = [
-    { key: 'domains', label: 'Domains', icon: Database, title: 'Save domain knowledge (site descriptions) to cache', onClick: handleRunDomainKnowledge },
-    { key: 'redomains', label: 'Re-Domains', icon: Database, title: 'Clear and rebuild domain knowledge cache', onClick: handleRedomainKnowledge },
-    { key: 'classify', label: 'Classify', icon: Wand2, title: 'Run category classification (pass 1)', onClick: handleClassify },
-    { key: 'reclassify', label: 'Re-Classify', icon: Wand2, title: 'Clear only category cache and classify again', onClick: handleReclassify },
-    { key: 'postcategories', label: 'Post-Categories', icon: Wand2, title: 'Run ALL category post-processing (normalize + group rare)', onClick: handlePostProcessCategories },
-    { key: 'normalize', label: 'Normalize', icon: RefreshCw, title: 'Normalize category labels (Phase 1: Discovery + Phase 2: Vector mapping)', onClick: handleNormalizeCategories },
-    { key: 'grouprare', label: 'Group Rare', icon: Tag, title: 'Group sparse categories into frequent ones', onClick: handleGroupRareCategories },
-    ...(!isNliMode
-      ? [
-          { key: 'split', label: 'Split Clusters', icon: Hash, title: 'Split large categories using sub-clustering', onClick: handleSplitCategories },
-        ] as AiActionItem[]
-      : []),
-    { key: 'tags', label: 'Tags', icon: Hash, title: 'Generate tags for all items', onClick: handleRunTags },
-    { key: 'retag', label: 'Re-Tags', icon: Hash, title: 'Clear only tags cache and run tagging again', onClick: handleRetag },
-    { key: 'intent', label: 'Intent', icon: Tag, title: 'Classify pages by intent', onClick: handleRunIntent },
-    { key: 'reintent', label: 'Re-Intent', icon: Tag, title: 'Clear only intent cache and classify intent again', onClick: handleReintent },
-    { key: 'embeddings', label: 'Embeddings', icon: Brain, title: 'Run embeddings + 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
-    { key: 'reembed', label: 'Re-embed', icon: Brain, title: 'Clear embedding cache and re-embed all pages', onClick: handleReembedAll },
-    { key: 'cluster-trace', label: 'Cluster Trace', icon: Database, title: 'Check cluster merge efficiency (logs to console)', onClick: async () => { await window.tablab?.ai.clusterTest() } },
-    { key: 'full-pipeline', label: 'Run full pipeline', icon: Wand2, title: 'Run full AI pipeline (domains, classify, post-process, tags, intent, embeddings)', onClick: () => runAutoAiPipeline(tabs, bookmarks, tabs) },
-    { key: 'clear', label: 'Clear', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
+    { key: 'full', label: 'Run full AI pipeline', icon: Wand2, title: 'Run full processing pipeline (domains -> embeddings -> labels -> classification)', onClick: () => runAutoAiPipeline(tabs, bookmarks, tabs) },
+    { key: 'domains', label: 'Domains enrichment', icon: Database, title: 'Fetch and cache domain metadata', onClick: handleRunDomainKnowledge },
+    { key: 'embeddings', label: 'Build semantic', icon: Brain, title: 'Generate embeddings and 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
+    { key: 'labels', label: 'Labels inference', icon: Hash, title: 'Classify pages by tags and intent', onClick: handleRunLabels },
+    { key: 'classify', label: 'Classify', icon: Wand2, title: 'Assign topical categories to all pages', onClick: handleClassify },
+    { key: 'clear', label: 'Clear cache', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
   ]
 
   const footerTaskStatus = useMemo(() => {

@@ -137,12 +137,11 @@ Valid values: "article", "reference", "tool", "service", "transactional", "video
 
 Example output: {"intent": "reference"}`
 
-const ANALYZE_METADATA_SYSTEM_JSON = `You are a web page analyzer. Extract tags, intent, and platform from a browser tab.
+const ANALYZE_METADATA_SYSTEM_JSON = `You are a web page analyzer. Extract tags and intent from a browser tab.
 Output strict JSON:
 {
   "tags": ["tag1", "tag2", "tag3"],
-  "intent": "article|reference|tool|service|transactional|video|repository",
-  "platform": "social|video|code|registry|qa|blog|docs|shopping|news|ai|tool|sandbox|cloud|music|finance|ci|games|education|email|reference|null"
+  "intent": "article|reference|tool|service|transactional|video|repository"
 }
 
 RULES:
@@ -157,30 +156,8 @@ RULES:
    - video: primary content is video/audio (YouTube, Twitch, podcasts)
    - repository: code asset (GitHub repo, npm, crates.io)
    Note: prefer "tool" over "service" when the page has interactive functionality.
-3. PLATFORM (what kind of service hosts this):
-   - social: social networks (Reddit, Twitter, LinkedIn, Mastodon)
-   - video: video hosting (YouTube, Vimeo, Twitch)
-   - code: code hosting / dev IDEs (GitHub, GitLab, VS Code web)
-   - registry: package managers (npm, PyPI, crates.io)
-   - qa: Q&A sites (Stack Overflow, Ask HN)
-   - blog: articles / personal blogs (Medium, Substack, dev.to)
-   - docs: official documentation (ReadTheDocs, developer portals)
-   - shopping: e-commerce (Amazon, eBay, Shopify stores)
-   - news: news media (BBC, HN, TechCrunch)
-   - ai: AI tools and model hubs (ChatGPT, Claude, HuggingFace)
-   - tool: general SaaS apps (Figma, Notion, Linear)
-   - sandbox: code playgrounds (CodePen, StackBlitz, JSFiddle)
-   - cloud: cloud providers (AWS, GCP, Azure)
-   - music: music streaming (Spotify, SoundCloud)
-   - finance: banking / trading (Stripe, Robinhood, bank portals)
-   - ci: CI/CD platforms (GitHub Actions, CircleCI, Vercel)
-   - games: gaming stores / communities (Steam, itch.io)
-   - education: learning platforms (Coursera, Udemy, Khan Academy)
-   - email: webmail clients (Gmail, Outlook web)
-   - reference: general encyclopedias / wikis (Wikipedia, MDN)
-   - Use null if no platform fits.
 
-Example: {"tags": ["rust", "async", "tokio"], "intent": "reference", "platform": "docs"}`
+Example: {"tags": ["rust", "async", "tokio"], "intent": "reference"}`
 
 const CLASSIFY_CATEGORY_SYSTEM_JSON = `You are a tab categorizer. Goal: assign a SPECIFIC TOPIC category to a browser page.
 Output strict JSON: {"category": "SPECIFIC TOPIC"}
@@ -202,14 +179,13 @@ Only skip domains that are clearly private/internal: IP addresses, localhost, ra
 When in doubt whether you know a domain, include it rather than skipping it.
 Always respond with valid JSON only.`
 const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you can identify, output a JSON object with:
-- "domain": exact domain string from the input (required, copy exactly with full TLD/subdomain; do not shorten or rewrite)
+- "domain": copy the domain EXACTLY as it appears in the input list — do not alter spelling, TLD, or subdomains
 - "category": short label (1-4 words, Title Case) describing the site's main purpose (required)
 - "description": 3-7 words describing what the site is (required)
 - "platform": one of [${KNOWN_PLATFORMS_TEXT}] — pick the best match; omit only if none fits
 
 Skip only: IP addresses, localhost, clearly private/internal hostnames.
 Include everything else you know — companies, brands, shops, media, tools from any country.
-If you are not sure about exact domain spelling, skip that domain.
 
 Examples:
 [
@@ -653,14 +629,12 @@ export const analyzeMetadata = {
   user(params: { title: string; domain: string; path?: string; siteLine?: string }): string {
     return tagItem.user(params)
   },
-  parseResponse(raw: string): { tags: string[]; intent: PageIntent | undefined; platform: KnownPlatform | null } {
+  parseResponse(raw: string): { tags: string[]; intent: PageIntent | undefined } {
     const tags = parseTagsJson(raw)
     const intent = parseIntentJson(raw)
-    const platform = normalizePlatform(parseLlmJson<any>(raw, {}).platform)
     return { 
       tags: tags.tags, 
-      intent: intent.intent, 
-      platform: platform || null 
+      intent: intent.intent
     }
   }
 }

@@ -283,6 +283,10 @@ export function useAiPipelines({
     orchestratorRef.current?.enqueueTagsPass(tabs, bookmarks, llmSettings)
   }, [bookmarks, llmSettings, tabs])
 
+  const handleRunLabels = useCallback(async () => {
+    orchestratorRef.current?.enqueueLabelsPass(tabs, bookmarks, llmSettings)
+  }, [bookmarks, llmSettings, tabs])
+
   const handlePostProcessCategories = useCallback(async () => {
     orchestratorRef.current?.enqueuePostProcessPass(tabs, bookmarks, llmSettings)
   }, [bookmarks, llmSettings, tabs])
@@ -354,6 +358,7 @@ export function useAiPipelines({
     handleGroupRareCategories,
     handleSplitCategories,
     handleRunTags,
+    handleRunLabels,
     handleRetag,
     handleReembedAll,
     handleStopPipeline,
