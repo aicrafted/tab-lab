@@ -10,8 +10,9 @@ const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 type KnownPlatform = DomainInfo['platform']
 
 const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case) that best describes the content. Avoid using "Other" unless the page is truly ambiguous. Reply with the category label only — no explanation, no punctuation.`
-const CLASSIFY_ITEM_SYSTEM_JSON = `You are bookmarks classifier. For each site title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (1-3 words, Title Case) that best describes the content.
+const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case) that best describes the content.
 Avoid using "Other" unless the page is truly ambiguous.
+
 Example output: {"category": "Development"}`
 
 const CLASSIFY_CLUSTER_SYSTEM = `You classify clusters of browser pages.
@@ -135,35 +136,42 @@ Domains:`
 
 
 function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
-  const text = raw
+  let text = raw
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/<\|[^|>]*\|>/g, ' ')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/[{}[\]`"]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+  // Remove common LLM prefixes if the model fails to return clean text
+  text = text.replace(/^(category|label|output|result|choice|name|type)\s*[:=]\s*/i, '').trim()
+  
   if (!text) return fallback
   const firstPhrase = text.split(/[;|]/)[0]?.trim() || text
   const candidate = firstPhrase.slice(0, 40).trim()
   if (!candidate) return fallback
-  if (/^(analysis|final|assistant|user|system|channel)$/i.test(candidate)) return fallback
+  if (/^(analysis|final|assistant|user|system|channel|null|undefined)$/i.test(candidate)) return fallback
   if (/^-?\d+(\.\d+)?$/.test(candidate)) return fallback
   return candidate
 }
 
 function isInvalidCategoryLabel(label: string): boolean {
   const text = label.trim()
-  if (!text) return true
+  if (!text || text.length < 2) return true
   if (/<\|[^|>]*\|>/.test(text)) return true
-  if (/^(analysis|final|assistant|user|system|channel)$/i.test(text)) return true
-  if (/^-?\d+(\.\d+)?$/.test(text)) return true
+  // Re-include 'analysis' as it helped prevent over-generalization before
+  if (/^(analysis|final|assistant|user|system|channel|null|undefined)$/i.test(text)) return true
   return false
 }
 
 function parseCategoryJson(raw: string): { category: string; strict: boolean } {
-  const parsed = parseLlmJson<{ category?: string }>(raw, {})
-  if (parsed.category) {
-    return { category: normalizeCategoryLabel(parsed.category), strict: true }
+  const parsed = parseLlmJson<any>(raw, null)
+  if (parsed && typeof parsed === 'object') {
+    const cat = parsed.category || parsed.label || parsed.type || parsed.class
+    if (cat && typeof cat === 'string' && cat.trim()) {
+      return { category: normalizeCategoryLabel(cat), strict: true }
+    }
   }
   return { category: 'Other', strict: false }
 }

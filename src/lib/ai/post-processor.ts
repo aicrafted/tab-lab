@@ -1,5 +1,6 @@
 import { chatComplete } from './llm'
 import { getCached, setCached } from '../core/storage'
+import { parseLlmJson } from './parsers'
 import { normalizeCategories, MAP_LABELS_TO_UMBRELLAS_SYSTEM, MAP_LABELS_TO_UMBRELLAS_USER_PREFIX, MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE } from './prompts'
 import type { LlmSettings } from '../core/types'
 import { aiPipelineLog } from '../core/logger'
@@ -76,7 +77,7 @@ export async function refineCategoryLabels(
           { metricKey: 'post-process-assignment' }
         )
 
-        const batchMap = JSON.parse(response.replace(/```json\n?|\n?```/g, '').trim())
+        const batchMap = parseLlmJson<Record<string, string>>(response, {})
         
         for (const label of chunk) {
           const target = batchMap[label]

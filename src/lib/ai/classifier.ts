@@ -7,7 +7,6 @@ import type { LlmSettings } from '../core/types'
 import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { cosineSimilarity } from './embedder'
 import { classifyVectorNli } from './nli-engine'
 
 const classifierParseMetrics = {
@@ -67,19 +66,6 @@ function urlPathSnippet(url: string): string {
   }
 }
 
-async function getTopCandidates(
-  itemEmbedding: number[],
-  taxonomyCentroids: Map<string, number[]>,
-  topK = 5,
-): Promise<string[]> {
-  const scores: { label: string; score: number }[] = []
-  for (const [label, centroid] of taxonomyCentroids.entries()) {
-    scores.push({ label: label, score: cosineSimilarity(itemEmbedding, centroid) })
-  }
-  scores.sort((a, b) => b.score - a.score)
-  return scores.slice(0, topK).map((s) => s.label)
-}
-
 function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo> | undefined, localNetworks: string[]): string {
   if (!domainMap) return ''
   const info = getDomainInfo(domain, domainMap, localNetworks)
@@ -130,8 +116,6 @@ export async function classifyItems(
   onProgress: (updates: { url: string; category: string }[]) => void,
   domainMap?: Map<string, DomainInfo>,
   signal?: AbortSignal,
-  taxonomyCentroids?: Map<string, number[]>,
-  candidates?: string[],
 ): Promise<void> {
   const uncached: ClassifiedItem[] = []
   const cached: { url: string; category: string }[] = []
@@ -157,6 +141,7 @@ export async function classifyItems(
   const useNli = settings.tasks.classification.method === 'nli' && !!embedProvider.getEmbeddingModel(settings)
   
   const tracker = createLoggerProgress('classifyItems', uncached.length, { provider: useNli ? 'nli' : chatProviderId })
+  
   const format = 'json' as const
   const systemPrompt = classifyItem.system(format)
   const options = {
@@ -186,15 +171,7 @@ export async function classifyItems(
           const path = urlPathSnippet(item.url)
           const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
 
-          let itemCandidates = candidates
-          if (taxonomyCentroids?.size && !!embedProvider.getEmbeddingModel(settings)) {
-            const domainDesc = domainMap ? getDomainInfo(item.domain, domainMap, settings.localNetworks)?.description : undefined
-            const text = [domainDesc, item.title, item.domain, path].filter(Boolean).join(' ')
-            const queryEmbedding = await embedProvider.embed(text, settings, signal)
-            itemCandidates = await getTopCandidates(queryEmbedding, taxonomyCentroids)
-          }
-
-          const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine, candidates: itemCandidates })
+          const userMsg = classifyItem.user({ title: item.title, domain: item.domain, path, siteLine })
           const raw = await chatComplete(systemPrompt, userMsg, settings, 40, { ...options, signal })
           const parsed = classifyItem.parseResponseDetailed(raw)
           trackClassifierParse(parsed.strict)

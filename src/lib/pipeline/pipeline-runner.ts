@@ -15,7 +15,7 @@ import { ClusteringStrategy } from './clustering-strategy'
 import type { PipelineCallbacks, RunContext, TaskHandle } from './types'
 import { TASK_IDS } from './types'
 import type { TaskRegistry } from './task-registry'
-import { getTaxonomyContext, hasChatProviderConfig, hasDomainKnowledgeProviderConfig, hasEmbeddingProviderConfig } from './utils'
+import { hasChatProviderConfig, hasDomainKnowledgeProviderConfig, hasEmbeddingProviderConfig } from './utils'
 
 type PageDoc = { url: string; title: string; domain: string; staticIntent?: TabItem['staticIntent'] }
 
@@ -298,7 +298,6 @@ export class PipelineRunner {
     const tabsTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'Auto classify pages', unifiedDocs.length)
     const bookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'Auto classify bookmarks', 1)
 
-    const { candidates, taxonomyCentroidsMap } = await getTaxonomyContext()
 
     await classifyItems(
       unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
@@ -310,8 +309,6 @@ export class PipelineRunner {
       },
       undefined,
       this.currentRun?.abortController.signal,
-      taxonomyCentroidsMap,
-      candidates,
     )
     tabsTask.done()
     bookmarksTask.done()
@@ -399,7 +396,6 @@ export class PipelineRunner {
     try {
       const nanoStatus = await checkLlmAvailability(settings)
       const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
-      const { candidates, taxonomyCentroidsMap } = await getTaxonomyContext()
 
       if (useNli || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) || hasChatProviderConfig(settings)) {
         await classifyItems(
@@ -412,8 +408,6 @@ export class PipelineRunner {
           },
           undefined,
           this.currentRun?.abortController.signal,
-          taxonomyCentroidsMap,
-          candidates,
         )
         tabsTask.done()
         bookmarksTask.done()
