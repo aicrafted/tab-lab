@@ -1,4 +1,4 @@
-import { checkLlmAvailability, classifyItems, splitLargeClusters } from '../ai/classifier'
+import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsFull } from '../ai/classifier'
 import { refineCategoryLabels, applyRefinedCategories } from '../ai/post-processor'
 import { legacy_groupRareCategories } from '../ai/category-post-processor-legacy'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
@@ -295,32 +295,54 @@ export class PipelineRunner {
 
   async runAutoGeminiFlow(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
     const unifiedDocs = this.buildUnifiedDocs(tabs, bookmarks)
-    const tabsTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'Auto classify pages', unifiedDocs.length)
-    const bookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'Auto classify bookmarks', 1)
+    const allDomains = [...new Set(unifiedDocs.map((item) => item.domain).filter(Boolean))]
 
+    // Phase 1: Enrich Domains (for siteLine context)
+    const domainsTask = this.registry.registerTask(TASK_IDS.DOMAINS, 'Auto domain knowledge', allDomains.length)
+    const domainMap = await enrichDomains(allDomains, settings, (delta) => {
+      if (!this.isRunActive(runId)) return
+      domainsTask.progress(delta)
+    }, this.currentRun?.abortController.signal)
+    domainsTask.done()
+    this.callbacks.onDomainMap(domainMap)
 
-    await classifyItems(
+    // Phase 2: Full Analysis (Combined)
+    const tabsTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'Analyzing pages', unifiedDocs.length)
+    const bookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'Analyzing bookmarks', 1)
+    
+    // To keep UI tasks moving, we create sub-tasks for tags/intent but they progress in parallel
+    const tagsTask = this.registry.registerTask(TASK_IDS.TAGS_TABS, 'Extracting tags', unifiedDocs.length)
+    const intentTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'Detecting intent', unifiedDocs.length)
+
+    await analyzeItemsFull(
       unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
       settings,
       (updates) => {
         if (!this.isRunActive(runId)) return
-        tabsTask.progress(updates.length)
-        this.callbacks.onCategoryUpdate(updates)
+        const count = updates.length
+        tabsTask.progress(count)
+        tagsTask.progress(count)
+        intentTask.progress(count)
+
+        this.callbacks.onCategoryUpdate(updates.map(u => ({ url: u.url, category: u.category, parentCategory: u.parentCategory })))
+        this.callbacks.onTagsUpdate(updates.map(u => ({ url: u.url, tags: u.tags })))
+        this.callbacks.onIntentUpdate(updates.map(u => ({ url: u.url, intent: u.intent })))
       },
-      undefined,
+      domainMap,
       this.currentRun?.abortController.signal,
     )
     tabsTask.done()
     bookmarksTask.done()
+    tagsTask.done()
+    intentTask.done()
 
     if (!this.isRunActive(runId)) return
 
+    // Phase 3: Post-processing (Categorization polish)
     const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
     await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
     normalizeTask.progress(2)
     normalizeTask.done()
-
-    await this.runTagsAndIntents(runId, tabs, bookmarks, settings)
   }
 
   async runTagsAndIntents(
@@ -398,13 +420,38 @@ export class PipelineRunner {
 
   async startStandaloneClassifyRun(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
     const unifiedDocs = this.buildUnifiedDocs(tabs, bookmarks)
-    const tabsTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'LLM classifying pages', unifiedDocs.length)
-    const bookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'LLM classifying bookmarks', 1)
+    const tabsTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'Analyzing pages', unifiedDocs.length)
+    const bookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'Analyzing bookmarks', 1)
+    
+    // Additional tasks to show progress for tags/intent in UI
+    const tagsTask = this.registry.registerTask(TASK_IDS.TAGS_TABS, 'Extracting tags', unifiedDocs.length)
+    const intentTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'Detecting intent', unifiedDocs.length)
+
     try {
       const nanoStatus = await checkLlmAvailability(settings)
       const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
 
-      if (useNli || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) || hasChatProviderConfig(settings)) {
+      // Use combined flow for LLM
+      if (!useNli && (hasChatProviderConfig(settings) || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')))) {
+        await analyzeItemsFull(
+          unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
+          settings,
+          (updates) => {
+            if (!this.isRunActive(runId)) return
+            const count = updates.length
+            tabsTask.progress(count)
+            tagsTask.progress(count)
+            intentTask.progress(count)
+
+            this.callbacks.onCategoryUpdate(updates.map(u => ({ url: u.url, category: u.category, parentCategory: u.parentCategory })))
+            this.callbacks.onTagsUpdate(updates.map(u => ({ url: u.url, tags: u.tags })))
+            this.callbacks.onIntentUpdate(updates.map(u => ({ url: u.url, intent: u.intent })))
+          },
+          undefined, // No domainMap passed for standalone classify yet (could be added)
+          this.currentRun?.abortController.signal,
+        )
+      } else if (useNli) {
+        // Fallback or specific NLI classify logic
         await classifyItems(
           unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
           settings,
@@ -416,16 +463,23 @@ export class PipelineRunner {
           undefined,
           this.currentRun?.abortController.signal,
         )
-        tabsTask.done()
-        bookmarksTask.done()
       } else {
         throw new Error('LLM unavailable')
       }
 
-      if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
+      if (!this.isRunActive(runId)) { 
+        tabsTask.cancel(); bookmarksTask.cancel(); tagsTask.cancel(); intentTask.cancel()
+        return 
+      }
+      tabsTask.done()
+      bookmarksTask.done()
+      tagsTask.done()
+      intentTask.done()
     } catch (err) {
       tabsTask.failed(err)
       bookmarksTask.failed(err)
+      tagsTask.failed(err)
+      intentTask.failed(err)
       throw err
     }
   }

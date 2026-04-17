@@ -138,6 +138,47 @@ Valid values: "article", "reference", "tool", "service", "transactional", "video
 
 Example output: {"intent": "reference"}`
 
+const CLASSIFY_FULL_SYSTEM_JSON = `You are a web page analyzer. Goal: Extract category, tags, intent, and platform from a page.
+Output strict JSON:
+{
+  "category": "SPECIFIC TOPIC",
+  "tags": ["tag1", "tag2", "tag3"],
+  "intent": "article|reference|tool|service|transactional|video|repository|other",
+  "platform": "social|video|code|registry|qa|blog|docs|shopping|news|ai|tool|sandbox|cloud|music|finance|ci|games|education|email|reference|null"
+}
+
+RULES:
+1. CATEGORY: Precise topic (1-3 words, Title Case). NO brand names. NO generic "Technology".
+2. TAGS: 3-5 specific lowercase tags.
+3. INTENT (How the user uses the page):
+   - article: read-only (blog posts, news, reddit threads)
+   - reference: lookup (API docs, cheatsheets, wikis)
+   - tool: interactive app (editors, dashboards, SaaS)
+   - service: functional (landing pages, settings, pricing)
+   - transactional: one-time (orders, tickets, receipts)
+   - video: media primary (youtube, twitch, podcasts)
+   - repository: code assets (github, npm, crates.io)
+4. PLATFORM (What kind of service is it):
+   - social: social networks (Reddit posts, Twitter, LinkedIn)
+   - video: video hosting (YouTube, Vimeo)
+   - code: code hosting or IDEs (GitHub repo, VS Code)
+   - registry: package managers (npm, PyPI)
+   - qa: Q&A sites (Stack Overflow)
+   - blog: articles/blogs (Medium)
+   - docs: manuals and guides (ReadTheDocs)
+   - shopping: e-commerce (Amazon, eBay)
+   - ai: AI tools (ChatGPT, Claude, HuggingFace)
+   - tool: general SaaS apps
+   - sandbox: playgrounds (CodePen)
+   - cloud: cloud providers (AWS, GCP)
+   - games: gaming stores (Steam)
+   - education: learning (Coursera)
+   - email: webmail
+   - reference: general encyclopedias/wikis
+
+Example:
+{"category":"Software Engineering", "tags":["typescript", "async", "tutorial"], "intent":"article", "platform":null}`
+
 const ENRICH_DOMAIN_SYSTEM = `You are a web domain classifier with broad knowledge of websites worldwide.
 Classify every domain you can identify — including well-known companies, brands, media, shops, tools, and services in any country.
 Only skip domains that are clearly private/internal: IP addresses, localhost, random subdomains of unknown services, corporate intranets.
@@ -588,4 +629,32 @@ ${domains.join(' \n')}`
   normalizePlatform(value: unknown): KnownPlatform | undefined {
     return normalizePlatform(value)
   },
+}
+
+export const classifyFull = {
+  system(): string {
+    return CLASSIFY_FULL_SYSTEM_JSON
+  },
+
+  user(params: { title: string; domain: string; path?: string; siteLine?: string; candidates?: string[] }): string {
+    const lines = [`Title: ${params.title}`, `Domain: ${params.domain}`]
+    if (params.siteLine) lines.push(params.siteLine.trimStart())
+    if (params.path) lines.push(`Path: ${params.path}`)
+    if (params.candidates && params.candidates.length > 0) {
+      lines.push(`Existing categories: ${params.candidates.join(', ')}`)
+      lines.push('Rules for category hint: Use an existing category ONLY if it is a PRECISE match. If existing categories are too broad (like "Technology", "Web", or "Internet"), create a NEW specific TOPIC.')
+    }
+    return lines.join('\n')
+  },
+
+  parseResponse(raw: string): { category: string; tags: string[]; intent: PageIntent; platform: KnownPlatform | null } {
+    const parsed = parseLlmJson<any>(raw, null)
+    if (!parsed) return { category: 'Other', tags: [], intent: 'other', platform: null }
+    return {
+      category: normalizeCategoryLabel(parsed.category || 'Other'),
+      tags: Array.isArray(parsed.tags) ? parsed.tags.map((t: string) => String(t).toLowerCase().trim()).slice(0, 5) : [],
+      intent: VALID_INTENTS.includes((parsed.intent || '').toLowerCase() as any) ? (parsed.intent.toLowerCase() as PageIntent) : 'other',
+      platform: normalizePlatform(parsed.platform) || null
+    }
+  }
 }

@@ -2,7 +2,13 @@ import { kMeans, type ClusterResult } from './cluster'
 import { chatComplete } from './llm'
 import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { getCached, setCached } from '../core/storage'
-import { classifyCluster, classifyItem } from './prompts'
+import {
+  classifyCluster,
+  classifyFull,
+  classifyItem,
+  type PageIntent,
+  type KnownPlatform,
+} from './prompts'
 import type { LlmSettings } from '../core/types'
 import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
@@ -200,6 +206,101 @@ export async function classifyItems(
         results.push({ url: item.url, category: finalCategory, parentCategory })
       } catch (err) {
         aiPipelineLog.error('classifyItems item failed', { url: item.url, err })
+      } finally {
+        tracker.progress(1)
+      }
+    }))
+    if (results.length > 0) onProgress(results)
+  }
+  tracker.done()
+}
+
+/**
+ * Unified classification, tagging and intent discovery in ONE request.
+ */
+export async function analyzeItemsFull(
+  items: { url: string; title: string; domain: string }[],
+  settings: LlmSettings,
+  onProgress: (updates: {
+    url: string;
+    category: string;
+    parentCategory: string;
+    tags: string[];
+    intent: PageIntent;
+    platform: KnownPlatform | null;
+  }[]) => void,
+  domainMap?: Map<string, DomainInfo>,
+  signal?: AbortSignal,
+): Promise<void> {
+  const uncached = items 
+  if (uncached.length === 0) return
+
+  const tracker = createLoggerProgress('analyzeItemsFull', uncached.length)
+  const systemPrompt = classifyFull.system()
+  const chatProviderId = settings.tasks.chat.provider
+  
+  const options = {
+    responseFormat: 'json' as const,
+    metricKey: 'classifier-full',
+    ...(chatProviderId === 'browser-ml' ? { disableThinking: true } : {}),
+  }
+
+  const seenCategories = new Set<string>()
+  // Load initial hints from items provided
+  await Promise.all(items.map(async (item) => {
+    const entry = await getCached(item.url)
+    if (entry?.category) seenCategories.add(entry.category)
+  }))
+
+  const BATCH = 5
+  for (let i = 0; i < uncached.length; i += BATCH) {
+    if (signal?.aborted) throw new Error('Aborted')
+    const batch = uncached.slice(i, i + BATCH)
+    const results: { url: string; category: string; parentCategory: string; tags: string[]; intent: PageIntent; platform: KnownPlatform | null }[] = []
+
+    const hints = Array.from(seenCategories).slice(0, 30)
+
+    await Promise.all(batch.map(async (item) => {
+      try {
+        const path = urlPathSnippet(item.url)
+        const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
+
+        const userMsg = classifyFull.user({ 
+          title: item.title, 
+          domain: item.domain, 
+          path, 
+          siteLine,
+          candidates: hints
+        })
+        
+        const raw = await chatComplete(systemPrompt, userMsg, settings, 150, { ...options, signal })
+        const full = classifyFull.parseResponse(raw)
+        
+        seenCategories.add(full.category)
+        
+        const existing = await getCached(item.url)
+        const finalParent = (existing?.parentCategory ?? full.category).trim()
+        
+        await setCached(item.url, { 
+          ...existing, 
+          category: full.category, 
+          parentCategory: finalParent,
+          tags: full.tags,
+          intent: full.intent,
+          platform: full.platform ?? undefined,
+          processedAt: Date.now() 
+        })
+        
+        results.push({ 
+          url: item.url, 
+          category: full.category, 
+          parentCategory: finalParent,
+          tags: full.tags, 
+          intent: full.intent, 
+          platform: full.platform 
+        })
+      } catch (err) {
+        aiPipelineLog.error('analyzeItemsFull item failed', { url: item.url, err })
       } finally {
         tracker.progress(1)
       }
