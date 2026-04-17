@@ -84,20 +84,20 @@ export class PipelineOrchestrator {
     return runId
   }
 
-  enqueueNormalizePass(tabs: TabItem[], settings: LlmSettings): number {
+  enqueueNormalizePass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
     void this.startStandaloneRun('normalize', runId, async () => {
-      await this.runner.startStandaloneNormalizeRun(runId, tabs, settings)
+      await this.runner.startStandaloneNormalizeRun(runId, tabs, bookmarks, settings)
     })
     return runId
   }
 
-  enqueueSplitPass(tabs: TabItem[], settings: LlmSettings): number {
+  enqueueSplitPass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
     const runId = ++this.runSeq
     if (this.currentRun) return runId
     void this.startStandaloneRun('split', runId, async () => {
-      await this.runner.startStandaloneSplitRun(runId, tabs, settings)
+      await this.runner.startStandaloneSplitRun(runId, tabs, bookmarks, settings)
     })
     return runId
   }
@@ -107,6 +107,15 @@ export class PipelineOrchestrator {
     if (this.currentRun) return runId
     void this.startStandaloneRun('postprocess', runId, async () => {
       await this.runner.startStandalonePostProcessRun(runId, tabs, bookmarks, settings)
+    })
+    return runId
+  }
+
+  enqueueGroupRarePass(tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): number {
+    const runId = ++this.runSeq
+    if (this.currentRun) return runId
+    void this.startStandaloneRun('grouprare', runId, async () => {
+      await this.runner.startStandaloneGroupRareRun(runId, tabs, bookmarks, settings)
     })
     return runId
   }

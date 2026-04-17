@@ -233,6 +233,9 @@ export function App() {
     handleRunIntent,
     handleReintent,
     handlePostProcessCategories,
+    handleNormalizeCategories,
+    handleGroupRareCategories,
+    handleSplitCategories,
     handleRunTags,
     handleRetag,
     handleReembedAll,
@@ -254,12 +257,21 @@ export function App() {
   // Sync data with browser events
   useBrowserStateSync(doLoad)
 
+  const isNliMode = llmSettings.tasks.classification.method === 'nli'
+
   const aiActionItems: AiActionItem[] = [
     { key: 'domains', label: 'Domains', icon: Database, title: 'Save domain knowledge (site descriptions) to cache', onClick: handleRunDomainKnowledge },
     { key: 'redomains', label: 'Re-Domains', icon: Database, title: 'Clear and rebuild domain knowledge cache', onClick: handleRedomainKnowledge },
     { key: 'classify', label: 'Classify', icon: Wand2, title: 'Run category classification (pass 1)', onClick: handleClassify },
     { key: 'reclassify', label: 'Re-Classify', icon: Wand2, title: 'Clear only category cache and classify again', onClick: handleReclassify },
-    { key: 'postcategories', label: 'Post-Categories', icon: Wand2, title: 'Run category post-processing (normalize + group rare)', onClick: handlePostProcessCategories },
+    { key: 'postcategories', label: 'Post-Categories', icon: Wand2, title: 'Run ALL category post-processing (normalize + group rare)', onClick: handlePostProcessCategories },
+    { key: 'normalize', label: 'Normalize', icon: RefreshCw, title: 'Normalize category labels (Phase 1: Discovery + Phase 2: Vector mapping)', onClick: handleNormalizeCategories },
+    { key: 'grouprare', label: 'Group Rare', icon: Tag, title: 'Group sparse categories into frequent ones', onClick: handleGroupRareCategories },
+    ...(!isNliMode
+      ? [
+          { key: 'split', label: 'Split Clusters', icon: Hash, title: 'Split large categories using sub-clustering', onClick: handleSplitCategories },
+        ] as AiActionItem[]
+      : []),
     { key: 'tags', label: 'Tags', icon: Hash, title: 'Generate tags for all items', onClick: handleRunTags },
     { key: 'retag', label: 'Re-Tags', icon: Hash, title: 'Clear only tags cache and run tagging again', onClick: handleRetag },
     { key: 'intent', label: 'Intent', icon: Tag, title: 'Classify pages by intent', onClick: handleRunIntent },

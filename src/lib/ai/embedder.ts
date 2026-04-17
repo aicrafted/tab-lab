@@ -183,6 +183,11 @@ export async function fetchAndCacheEmbeddings(
       if (signal?.aborted) throw new Error('Aborted')
 
       const texts = chunk.map(item => {
+        // Special case for synthetic items (categories/umbrellas) used in normalization
+        if (item.url.startsWith('label:') || item.url.startsWith('umbrella:')) {
+          return item.title
+        }
+
         const cfg = settings.tasks.embedding
         const path = cfg.includePath ? urlPathSnippet(item.url) : ''
         

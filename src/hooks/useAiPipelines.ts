@@ -44,11 +44,11 @@ export function useAiPipelines({
     setLlmError('Pipeline stopped by user')
   }, [setLlmError])
 
-  const applyTabCategoryBatch = useCallback((updates: { url: string; category: string }[]) => {
+  const applyTabCategoryBatch = useCallback((updates: { url: string; category: string; parentCategory?: string }[]) => {
     setTabs((prev) => applyCategoryUpdates(prev, updates))
   }, [setTabs])
 
-  const applyBookmarkCategoryBatch = useCallback((updates: { url: string; category: string }[]) => {
+  const applyBookmarkCategoryBatch = useCallback((updates: { url: string; category: string; parentCategory?: string }[]) => {
     setBookmarks((prev) => applyCategoryUpdates(prev, updates))
   }, [setBookmarks])
 
@@ -287,6 +287,18 @@ export function useAiPipelines({
     orchestratorRef.current?.enqueuePostProcessPass(tabs, bookmarks, llmSettings)
   }, [bookmarks, llmSettings, tabs])
 
+  const handleNormalizeCategories = useCallback(async () => {
+    orchestratorRef.current?.enqueueNormalizePass(tabs, bookmarks, llmSettings)
+  }, [bookmarks, llmSettings, tabs])
+
+  const handleGroupRareCategories = useCallback(async () => {
+    orchestratorRef.current?.enqueueGroupRarePass(tabs, bookmarks, llmSettings)
+  }, [bookmarks, llmSettings, tabs])
+
+  const handleSplitCategories = useCallback(async () => {
+    orchestratorRef.current?.enqueueSplitPass(tabs, bookmarks, llmSettings)
+  }, [bookmarks, llmSettings, tabs])
+
   const handleReclassify = useCallback(async () => {
     if (!confirm('Re-classify all pages? This clears only cached categories and cluster assignments.')) return
     await clearCategoryCache()
@@ -338,6 +350,9 @@ export function useAiPipelines({
     handleRunIntent,
     handleReintent,
     handlePostProcessCategories,
+    handleNormalizeCategories,
+    handleGroupRareCategories,
+    handleSplitCategories,
     handleRunTags,
     handleRetag,
     handleReembedAll,

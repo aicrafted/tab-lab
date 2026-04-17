@@ -37,7 +37,7 @@ export type PipelineEvent =
   | { type: 'pipeline-cancelled'; runId: number }
 
 export interface PipelineCallbacks {
-  onCategoryUpdate: (updates: { url: string; category: string }[]) => void
+  onCategoryUpdate: (updates: { url: string; category: string; parentCategory?: string }[]) => void
   onTagsUpdate: (updates: { url: string; tags: string[] }[]) => void
   onIntentUpdate: (updates: { url: string; intent: PageIntent }[]) => void
   onClusterUpdate: (updates: { url: string; clusterId: number }[]) => void
@@ -59,7 +59,7 @@ export type PipelineListener = (event: PipelineEvent) => void
 export interface RunContext {
   runId: number
   cancelled: boolean
-  kind: 'auto' | 'domain' | 'embedding' | 'classify' | 'tags' | 'intent' | 'normalize' | 'split' | 'postprocess'
+  kind: 'auto' | 'domain' | 'embedding' | 'classify' | 'tags' | 'intent' | 'normalize' | 'split' | 'postprocess' | 'grouprare'
   abortController: AbortController
 }
 

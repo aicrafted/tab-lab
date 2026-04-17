@@ -7,6 +7,7 @@ import { classifyIntent as classifyIntentContract } from './prompts'
 import { detectStaticIntent } from './static-intent'
 import { getCached, setCached } from '../core/storage'
 import { DEFAULT_LLM_SETTINGS, INTENT_DESCRIPTORS, PAGE_INTENTS, type LlmSettings, type PageIntent } from '../core/types'
+import { aiPipelineLog } from '../core/logger'
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 const intentParseMetrics = {
@@ -22,6 +23,7 @@ function trackIntentParse(strict: boolean): void {
     console.info(`[intent:parse] strict=${intentParseMetrics.strict} fallback=${intentParseMetrics.fallback}`)
   }
 }
+
 const INTENT_RESPONSE_SCHEMA = {
   name: 'intent_response',
   schema: {
@@ -143,7 +145,7 @@ export async function classifyIntent(
     const batch = uncached.slice(i, i + BATCH)
     const results: IntentUpdate[] = []
 
-    for (const item of batch) {
+    await Promise.all(batch.map(async (item) => {
       try {
         let intent: PageIntent = 'other'
         if (useNli) {
@@ -174,9 +176,13 @@ export async function classifyIntent(
         })
         results.push({ url: item.url, intent })
       } catch (err) {
-        console.warn(`[intent] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
+        aiPipelineLog.error('classifyIntent item failed', {
+          url: item.url,
+          err: err instanceof Error ? err.message : String(err),
+        })
       }
-    }
+    }))
+    
     if (results.length > 0) onProgress(results)
   }
 }

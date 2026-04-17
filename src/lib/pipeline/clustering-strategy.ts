@@ -21,6 +21,7 @@ export class ClusteringStrategy {
     domainMap: Map<string, DomainInfo>,
     signal?: AbortSignal,
   ): Promise<void> {
+    const useNli = settings.tasks.classification.method === 'nli'
     // Pass 1: Global clustering (L1 - Parent categories)
     const uniquePlatformCount = new Set(
       items.map((item) => detectPlatform(item.domain, domainMap)).filter((platform): platform is KnownPlatform => platform !== undefined),
@@ -41,6 +42,12 @@ export class ClusteringStrategy {
     }, domainMap, signal)
 
     this.callbacks.onClusterNames(parentNames)
+
+    if (useNli) {
+      task.progress(items.length / 2)
+      aiPipelineLog.info('two-pass clustering P2 skipped for NLI mode')
+      return
+    }
 
     // Pass 2: Refinement of large clusters (L2 - Child categories)
     aiPipelineLog.info('two-pass clustering P2 starting refinement')

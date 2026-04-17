@@ -1,5 +1,7 @@
+.agents/
 .cache/
 .docs/
 node_modules/
 tasks/
 dist/
+AGENTS.md

@@ -2,9 +2,11 @@ import { checkLlmAvailability, classifyItems, groupRareCategories, normalizeCate
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
 import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadEmbeddingsForCurrentModel, reprojectAllEmbeddings } from '../ai/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '../ai/intent'
+import { classifyVectorNli } from '../ai/nli-engine'
 import { aiPipelineLog } from '../core/logger'
+import { createLoggerProgress } from '../core/progress'
 import { getCached, setCached } from '../core/storage'
-import { normalizeUrlForCache } from '../core/url-utils'
+import { normalizeUrlForCache, titleDedupeKey } from '../core/url-utils'
 import { tagWithGeminiNano, tagWithLmStudio } from '../ai/tagger'
 import type { BookmarkItem, LlmSettings, TabItem } from '../core/types'
 import { ClusteringStrategy } from './clustering-strategy'
@@ -36,17 +38,27 @@ export class PipelineRunner {
   }
 
   private buildUnifiedDocs(tabs: TabItem[], bookmarks: BookmarkItem[]): PageDoc[] {
-    const seen = new Map<string, PageDoc>()
-    for (const tab of tabs) {
-      const key = normalizeUrlForCache(tab.url)
-      if (!seen.has(key)) {
-        seen.set(key, { url: key, title: tab.title, domain: tab.domain, staticIntent: tab.staticIntent })
+    // Phase 1: dedup by full cache key (catches exact-URL duplicates: same tab + bookmark)
+    const byUrl = new Map<string, PageDoc>()
+    for (const t of tabs) {
+      const key = normalizeUrlForCache(t.url)
+      if (!byUrl.has(key)) {
+        byUrl.set(key, { url: key, title: t.title, domain: t.domain, staticIntent: t.staticIntent })
       }
     }
-    for (const bookmark of bookmarks) {
-      const key = normalizeUrlForCache(bookmark.url)
-      if (!seen.has(key)) {
-        seen.set(key, { url: key, title: bookmark.title, domain: bookmark.domain, staticIntent: bookmark.staticIntent })
+    for (const b of bookmarks) {
+      const key = normalizeUrlForCache(b.url)
+      if (!byUrl.has(key)) {
+        byUrl.set(key, { url: key, title: b.title, domain: b.domain, staticIntent: b.staticIntent })
+      }
+    }
+
+    // Phase 2: dedup by (path + title) — removes near-duplicates with different tracking params
+    const seen = new Map<string, PageDoc>()
+    for (const doc of byUrl.values()) {
+      const tk = titleDedupeKey(doc.url, doc.title)
+      if (!seen.has(tk)) {
+        seen.set(tk, doc)
       }
     }
     return [...seen.values()]
@@ -125,7 +137,7 @@ export class PipelineRunner {
     const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
 
     if (useNli) {
-      await this.runAutoClusterFlow(runId, tabs, bookmarks, settings)
+      await this.runNliDirectFlow(runId, tabs, bookmarks, settings)
       return
     }
     if (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')) {
@@ -137,6 +149,83 @@ export class PipelineRunner {
       return
     }
     throw new Error('LLM unavailable')
+  }
+
+  private async runNliDirectFlow(
+    runId: number,
+    tabs: TabItem[],
+    bookmarks: BookmarkItem[],
+    settings: LlmSettings,
+  ): Promise<void> {
+    const unifiedDocs = this.buildUnifiedDocs(tabs, bookmarks)
+    const allDomains = [...new Set(unifiedDocs.map((item) => item.domain).filter(Boolean))]
+    const estimatedDomainWork = await estimateDomainEnrichmentWork(allDomains, settings)
+
+    const domainsTask = this.registry.registerTask(TASK_IDS.DOMAINS, 'Auto domain knowledge', Math.max(estimatedDomainWork, 1))
+    const embeddingsTask = this.registry.registerTask(TASK_IDS.EMBEDDINGS, 'Auto embeddings', unifiedDocs.length)
+    const classifyTask = this.registry.registerTask(TASK_IDS.CLASSIFY_TABS, 'NLI classify pages', unifiedDocs.length)
+    const noopBookmarksTask = this.registry.registerTask(TASK_IDS.CLASSIFY_BOOKMARKS, 'NLI classify bookmarks', 1)
+
+    const domainMap = await enrichDomains(allDomains, settings, (delta) => {
+      if (!this.isRunActive(runId)) return
+      domainsTask.progress(delta)
+    }, this.currentRun?.abortController.signal)
+
+    if (!this.isRunActive(runId)) {
+      domainsTask.cancel(); embeddingsTask.cancel(); classifyTask.cancel(); noopBookmarksTask.cancel()
+      return
+    }
+    domainsTask.done()
+    this.callbacks.onDomainMap(domainMap)
+
+    const embeddings = await fetchAndCacheEmbeddings(unifiedDocs, settings, (updates) => {
+      if (!this.isRunActive(runId)) return
+      embeddingsTask.progress(updates.length)
+    }, domainMap, this.currentRun?.abortController.signal)
+
+    if (!this.isRunActive(runId)) {
+      embeddingsTask.cancel(); classifyTask.cancel(); noopBookmarksTask.cancel()
+      return
+    }
+    embeddingsTask.done()
+
+    const updates: { url: string; category: string }[] = []
+    const FLUSH_SIZE = 25
+    for (const item of unifiedDocs) {
+      if (!this.isRunActive(runId)) {
+        classifyTask.cancel()
+        noopBookmarksTask.cancel()
+        return
+      }
+      const embedding = embeddings.get(item.url)
+      if (!embedding) {
+        classifyTask.progress(1)
+        continue
+      }
+      const result = await classifyVectorNli(embedding, settings)
+      if (result) {
+        const existing = await getCached(item.url)
+        await setCached(item.url, {
+          ...existing,
+          category: result.label,
+          parentCategory: result.label,
+          processedAt: Date.now(),
+        })
+        updates.push({ url: item.url, category: result.label })
+      }
+      classifyTask.progress(1)
+      if (updates.length >= FLUSH_SIZE) {
+        this.callbacks.onCategoryUpdate([...updates])
+        updates.length = 0
+      }
+    }
+    if (updates.length > 0) this.callbacks.onCategoryUpdate(updates)
+
+    classifyTask.done()
+    noopBookmarksTask.done()
+
+    if (!this.isRunActive(runId)) return
+    await this.runTagsAndIntents(runId, tabs, bookmarks, settings, domainMap)
   }
 
   async runAutoClusterFlow(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
@@ -191,10 +280,13 @@ export class PipelineRunner {
 
     if (!this.isRunActive(runId)) return
 
-    const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-    await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-    normalizeTask.progress(2)
-    normalizeTask.done()
+    const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+    if (!useNli) {
+      const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
+      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
+      normalizeTask.progress(2)
+      normalizeTask.done()
+    }
 
     await this.runTagsAndIntents(runId, tabs, bookmarks, settings, domainMap)
   }
@@ -256,33 +348,57 @@ export class PipelineRunner {
     intentBookmarksTask.done()
   }
 
-  async normalizeCategoriesAfterClassification(tabItems: { url: string }[], bookmarkItems: { url: string }[], settings: LlmSettings): Promise<void> {
+  async normalizeCategoriesAfterClassification(
+    tabItems: { url: string }[], 
+    bookmarkItems: { url: string }[], 
+    settings: LlmSettings,
+    skipRareMerge = false
+  ): Promise<void> {
     const uniqueUrls = [...new Set([...tabItems, ...bookmarkItems].map((item) => normalizeUrlForCache(item.url)))]
     const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
     const labels = [...new Set(entries.map(({ entry }) => entry?.category).filter(Boolean) as string[])]
     if (labels.length <= 1) return
 
+    const tracker = createLoggerProgress('normalizeCategoriesStep', 2)
+    
+    // Phase 1: Normalize/Merge
     const mergeMap = await normalizeCategoryLabels(labels, settings)
-    const updates: { url: string; category: string }[] = []
+    const updates: { url: string; category: string; parentCategory: string }[] = []
     const cacheWrites: Promise<void>[] = []
 
     for (const { url, entry } of entries) {
-      const from = entry?.category
+      const from = entry?.category?.trim()
       if (!from) continue
-      const to = mergeMap[from] ?? from
-      if (to === from) continue
-      updates.push({ url, category: to })
-      cacheWrites.push(setCached(url, { ...entry, category: to, processedAt: Date.now() }))
+      const to = (mergeMap[from] ?? from).trim()
+      
+      // Even if to === from, we ensure parentCategory is set for consistency
+      updates.push({ url, category: from, parentCategory: to })
+      cacheWrites.push(setCached(url, { 
+        ...entry, 
+        category: from, 
+        parentCategory: to, 
+        processedAt: Date.now() 
+      }))
     }
 
     await Promise.all(cacheWrites)
     if (updates.length > 0) this.callbacks.onCategoryUpdate(updates)
+    tracker.progress(1)
 
+    if (skipRareMerge) {
+      aiPipelineLog.info('normalizeCategories: skipping rare merge as requested')
+      tracker.done()
+      return
+    }
+
+    // Phase 2: Group Rare
     const categoryItems = entries
       .map(({ url, entry }) => (entry?.category ? ({ url, category: mergeMap[entry.category] ?? entry.category }) : null))
       .filter((item): item is { url: string; category: string } => Boolean(item))
     const rareUpdates = await groupRareCategories(categoryItems, settings)
     if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
+    tracker.progress(1)
+    tracker.done()
   }
 
   async startStandaloneClassifyRun(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
@@ -315,11 +431,6 @@ export class PipelineRunner {
       }
 
       if (!this.isRunActive(runId)) { tabsTask.cancel(); bookmarksTask.cancel(); return }
-
-      const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
-      normalizeTask.progress(2)
-      normalizeTask.done()
     } catch (err) {
       tabsTask.failed(err)
       bookmarksTask.failed(err)
@@ -430,28 +541,49 @@ export class PipelineRunner {
     }
   }
 
-  async startStandaloneNormalizeRun(_runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
+  async startStandaloneNormalizeRun(_runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
     const task = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 1)
     try {
+      const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+      if (useNli) {
+        task.done()
+        return
+      }
       if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
 
-      const allLabels = [...new Set(tabs.map((t) => t.category).filter(Boolean) as string[])]
+      const allItems = [...tabs, ...bookmarks]
+      const uniqueUrls = [...new Set(allItems.map((item) => normalizeUrlForCache(item.url)))]
+      const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
+      const allLabels = [...new Set(entries.map(({ entry }) => entry?.category).filter(Boolean) as string[])]
+
       if (allLabels.length <= 1) {
         task.done()
         return
       }
 
-      aiPipelineLog.info('pass2 merge categories start', { totalLabels: allLabels.length, labels: allLabels })
+      aiPipelineLog.info('standalone normalize start', { totalLabels: allLabels.length, labels: allLabels })
       const mergeMap = await normalizeCategoryLabels(allLabels, settings)
-      const updates = tabs
-        .filter((t) => Boolean(t.category))
+
+      const urlToCategory = new Map<string, string>()
+      for (const { url, entry } of entries) {
+        if (entry?.category) urlToCategory.set(url, entry.category)
+      }
+
+      const updates = allItems
         .map((t) => {
-          const from = t.category as string
+          const normalizedUrl = normalizeUrlForCache(t.url)
+          const from = urlToCategory.get(normalizedUrl)
+          if (!from) return null
           const to = mergeMap[from] ?? from
           return from === to ? null : { url: t.url, category: to }
         })
         .filter((item): item is { url: string; category: string } => Boolean(item))
-      const writes = updates.map((u) => setCached(u.url, { category: u.category, processedAt: Date.now() }))
+
+      const writes = updates.map((u) => {
+         const normalizedUrl = normalizeUrlForCache(u.url)
+         const entry = urlToCategory.has(normalizedUrl) ? { category: urlToCategory.get(normalizedUrl) } : {}
+         return setCached(normalizedUrl, { ...entry, category: u.category, processedAt: Date.now() })
+      })
       await Promise.all(writes)
       if (updates.length > 0) this.callbacks.onCategoryUpdate(updates)
       aiPipelineLog.info('pass2 merge categories done', { changes: updates.length })
@@ -462,15 +594,21 @@ export class PipelineRunner {
     }
   }
 
-  async startStandaloneSplitRun(runId: number, tabs: TabItem[], settings: LlmSettings): Promise<void> {
+  async startStandaloneSplitRun(runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
     const task = this.registry.registerTask('split-large-categories', 'Split large categories', 1)
     try {
+      const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
+      if (useNli) {
+        task.done()
+        return
+      }
       if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
-      const allDomains = [...new Set(tabs.map((item) => item.domain).filter(Boolean))]
+      const allItems = [...tabs, ...bookmarks]
+      const allDomains = [...new Set(allItems.map((item) => item.domain).filter(Boolean))]
       const domainMap = await enrichDomains(allDomains, settings)
       const embeddings = await loadEmbeddingsForCurrentModel(settings)
       await splitLargeClusters(
-        tabs.map((t) => ({
+        allItems.map((t) => ({
           url: normalizeUrlForCache(t.url),
           title: t.title,
           domain: t.domain,
@@ -486,15 +624,15 @@ export class PipelineRunner {
         this.currentRun?.abortController.signal,
       )
 
-      const tabCategoryItems = (await Promise.all(
-        tabs.map(async (tab) => {
-          const normalizedUrl = normalizeUrlForCache(tab.url)
+      const allCategoryItems = (await Promise.all(
+        allItems.map(async (item) => {
+          const normalizedUrl = normalizeUrlForCache(item.url)
           const entry = await getCached(normalizedUrl)
           const category = entry?.category?.trim()
           return category ? { url: normalizedUrl, category } : null
         }),
       )).filter((item): item is { url: string; category: string } => Boolean(item))
-      const rareUpdates = await groupRareCategories(tabCategoryItems, settings)
+      const rareUpdates = await groupRareCategories(allCategoryItems, settings)
       if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
 
       task.done()
@@ -505,10 +643,30 @@ export class PipelineRunner {
   }
 
   async startStandalonePostProcessRun(_runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
-    const task = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Post-process categories', 1)
+    const task = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Post-process categories', 2)
     try {
       if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
       await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
+      task.done()
+    } catch (err) {
+      task.failed(err)
+      throw err
+    }
+  }
+
+  async startStandaloneGroupRareRun(_runId: number, tabs: TabItem[], bookmarks: BookmarkItem[], settings: LlmSettings): Promise<void> {
+    const task = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Group rare categories', 1)
+    try {
+      if (!hasChatProviderConfig(settings)) throw new Error('LLM unavailable')
+      const allItems = [...tabs, ...bookmarks]
+      const uniqueUrls = [...new Set(allItems.map((item) => normalizeUrlForCache(item.url)))]
+      const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
+      const categoryItems = entries
+        .map(({ url, entry }) => (entry?.category ? { url, category: entry.category } : null))
+        .filter((item): item is { url: string; category: string } => Boolean(item))
+      
+      const rareUpdates = await groupRareCategories(categoryItems, settings)
+      if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
       task.done()
     } catch (err) {
       task.failed(err)

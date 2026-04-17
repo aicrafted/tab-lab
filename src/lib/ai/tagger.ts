@@ -3,6 +3,7 @@ import { tagItem } from './prompts'
 import { getCached, setCached } from '../core/storage'
 import type { LlmSettings } from '../core/types'
 import { DEFAULT_LLM_SETTINGS } from '../core/types'
+
 const tagParseMetrics = {
   strict: 0,
   fallback: 0,
@@ -16,6 +17,7 @@ function trackTagParse(strict: boolean): void {
     console.info(`[tagger:parse] strict=${tagParseMetrics.strict} fallback=${tagParseMetrics.fallback}`)
   }
 }
+
 const TAGS_RESPONSE_SCHEMA = {
   name: 'tags_response',
   schema: {
@@ -78,7 +80,7 @@ export async function tagItems(
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; tags: string[] }[] = []
 
-    for (const item of batch) {
+    await Promise.all(batch.map(async (item) => {
       try {
         const path = urlPathSnippet(item.url)
         const userMsg = tagItem.user({ title: item.title, domain: item.domain, path })
@@ -102,7 +104,8 @@ export async function tagItems(
         // Skip this item — log but don't abort the batch
         console.warn(`[tagger] skipping ${item.domain}: ${err instanceof Error ? err.message : String(err)}`)
       }
-    }
+    }))
+    
     if (results.length > 0) onProgress(results)
   }
 }

@@ -7,8 +7,13 @@ import type { LlmSettings } from '../core/types'
 import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
-import { cosineSimilarity } from './embedder'
+import { cosineSimilarity, fetchEmbedding, fetchEmbeddingsBatch } from './embedder'
 import { classifyVectorNli } from './nli-engine'
+import { 
+  MAP_LABELS_TO_UMBRELLAS_SYSTEM, 
+  MAP_LABELS_TO_UMBRELLAS_USER_PREFIX, 
+  MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE 
+} from './prompts'
 
 const classifierParseMetrics = {
   strict: 0,
@@ -52,8 +57,9 @@ const CLUSTER_RESPONSE_SCHEMA = {
   },
   strict: false,
 } as const
-const CATEGORY_MERGE_MAP_SCHEMA = {
-  name: 'category_merge_map',
+
+const RARE_GROUP_SCHEMA = {
+  name: 'rare_group',
   schema: {
     type: 'object',
     additionalProperties: { type: 'string' },
@@ -65,7 +71,6 @@ export type LlmAvailability = 'checking' | 'ready' | 'after-download' | 'unavail
 export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 const RARE_THRESHOLD = 3
-
 
 function urlPathSnippet(url: string): string {
   try {
@@ -214,9 +219,9 @@ export async function classifyItems(
   for (let i = 0; i < uncached.length; i += BATCH) {
     if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
-    const results: { url: string; category: string }[] = []
+    const results: { url: string; category: string; parentCategory: string }[] = []
 
-    for (const item of batch) {
+    await Promise.all(batch.map(async (item) => {
       try {
         let category = 'Other'
         if (useNli) {
@@ -227,7 +232,7 @@ export async function classifyItems(
           const result = await classifyVectorNli(queryEmbedding, settings)
           if (!result) {
             tracker.progress(1, { url: item.url, skipped: 'low-confidence' })
-            continue
+            return
           }
           category = result.label
         } else {
@@ -265,14 +270,16 @@ export async function classifyItems(
             category = classifyItem.parseResponse(raw)
           }
         }
+        const finalCategory = category.trim()
         const existing = await getCached(item.url)
+        const parentCategory = (existing?.parentCategory ?? finalCategory).trim()
         await setCached(item.url, {
           ...existing,
-          category,
-          parentCategory: existing?.parentCategory ?? category,
+          category: finalCategory,
+          parentCategory,
           processedAt: Date.now(),
         })
-        results.push({ url: item.url, category })
+        results.push({ url: item.url, category: finalCategory, parentCategory })
       } catch (err) {
         failed += 1
         aiPipelineLog.error('classifyItems item failed', {
@@ -283,7 +290,7 @@ export async function classifyItems(
       } finally {
         tracker.progress(1)
       }
-    }
+    }))
     if (results.length > 0) onProgress(results)
   }
   tracker.done({ failed })
@@ -356,38 +363,143 @@ export async function loadCachedIntents(
 
 /** Returns a mapping of raw category → canonical category name. */
 export async function normalizeCategoryLabels(
-  labels: string[],
+  rawLabels: string[],
   settings: LlmSettings,
 ): Promise<Record<string, string>> {
-  if (labels.length <= 1) return Object.fromEntries(labels.map((label) => [label, label]))
+  const labels = [...new Set(rawLabels.map(l => l.trim()).filter(Boolean))]
+  if (labels.length === 0) return {}
+  if (labels.length === 1) return { [labels[0]]: labels[0] }
   const tracker = createLoggerProgress('normalizeCategoryLabels', labels.length)
 
-  const prompt = normalizeCategories.user(labels)
+  // PHASE 1: Taxonomy Discovery (LLM)
+  // We only ask the LLM to provide a list of umbrella categories.
+  // This is token-efficient because the LLM doesn't output the full mapping.
+  aiPipelineLog.info('normalize phase 1: discovery starting', { inputCount: labels.length })
+  
+  const response = await chatComplete(normalizeCategories.system(), normalizeCategories.user(labels), settings, 2000, {
+    metricKey: 'classifier-normalize-discovery'
+  })
+  const umbrellas = normalizeCategories.parseUmbrellas(response)
+  
+  if (umbrellas.length === 0) {
+    aiPipelineLog.warn('no umbrellas discovered, using original labels', { response: response.slice(0, 500) })
+    return Object.fromEntries(labels.map(l => [l, l]))
+  }
 
-  const maxTokens = Math.min(4000, labels.length * 50 + 300)
-  const raw = await chatComplete(
-    normalizeCategories.system(),
-    prompt,
-    settings,
-    maxTokens,
-    settings.tasks.chat.provider !== 'gemini-nano'
-      ? {
-        responseFormat: 'json',
-        metricKey: 'classifier-normalize',
-        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
-        ...(settings.tasks.chat.provider === 'browser-ml' ? { disableThinking: true } : {}),
-      }
-      : {},
-  )
+  aiPipelineLog.info('normalize phase 1: discovery done', { 
+    umbrellaCount: umbrellas.length,
+    umbrellas: umbrellas.slice(0, 10) // Log first 10 for visibility
+  })
 
+  // PHASE 2: Assignment (LLM + Embeddings Fallback)
+  aiPipelineLog.info('normalize phase 2: assignment starting')
+  
+  const mergeMap: Record<string, string> = {}
+  
   try {
-    const parsed = normalizeCategories.parseResponse(raw, labels)
-    tracker.progress(labels.length)
+    // 1. Pre-fetch ALL embeddings in one massive batch call (for cache and fallback)
+    const allLabelsToEmbed = [...new Set([...umbrellas, ...labels])]
+    aiPipelineLog.info('pre-fetching all embeddings for normalization', { count: allLabelsToEmbed.length })
+    await fetchEmbeddingsBatch(
+      allLabelsToEmbed.map(l => ({ 
+        url: l.startsWith('http') ? l : `label:${l}`, 
+        title: l, 
+        domain: '' 
+      })),
+      settings,
+      () => {}
+    )
+
+    // 2. Fetch umbrella embeddings for fallback
+    const umbrellaEmbeddings = await Promise.all(
+      umbrellas.map(async (u) => ({ label: u, vec: await fetchEmbedding(u, settings) }))
+    )
+
+    // 3. Perform mapping in batches using LLM
+    const MAPPING_BATCH = 40 // Use slightly smaller batch for better LLM precision
+    for (let i = 0; i < labels.length; i += MAPPING_BATCH) {
+      const chunk = labels.slice(i, i + MAPPING_BATCH)
+      const userMessage = `${MAP_LABELS_TO_UMBRELLAS_USER_PREFIX}${umbrellas.join(', ')}${MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE}${chunk.join(', ')}`
+      
+      try {
+        const response = await chatComplete(
+          MAP_LABELS_TO_UMBRELLAS_SYSTEM,
+          userMessage,
+          settings,
+          1000,
+          { metricKey: 'normalize-mapping' }
+        )
+
+        // Parse LLM response (should be a flat mapping object)
+        const batchMap = JSON.parse(response.replace(/```json\n?|\n?```/g, '').trim())
+        
+        // Apply LLM mappings
+        for (const label of chunk) {
+          const target = batchMap[label]
+          if (target && umbrellas.includes(target)) {
+            mergeMap[label] = target
+          } else {
+            // Fallback to NLI if LLM ignored this label or gave invalid umbrella
+            mergeMap[label] = await nliFallback(label, umbrellaEmbeddings)
+          }
+        }
+      } catch (err) {
+        aiPipelineLog.warn('LLM batch mapping failed, using NLI fallback', { chunkSamples: chunk.slice(0, 3), err })
+        // Full fallback for this chunk
+        for (const label of chunk) {
+          mergeMap[label] = await nliFallback(label, umbrellaEmbeddings)
+        }
+      }
+      tracker.progress(chunk.length)
+    }
+
+    async function nliFallback(label: string, targets: {label: string, vec: number[]}[]) {
+      try {
+        const vec = await fetchEmbedding(label, settings)
+        
+        let bestMatch = label
+        let bestScore = -1
+
+        for (const target of targets) {
+          const score = cosineSimilarity(vec, target.vec)
+          if (score > bestScore) {
+            bestScore = score
+            bestMatch = target.label
+          }
+        }
+        
+        // In fallback, we use a lower threshold (0.4) because LLM already failed 
+        // and we want to consolidate if there's any reasonable match
+        return bestScore > 0.4 ? bestMatch : label
+      } catch (err) {
+        return label
+      }
+    }
+
+    // Create a grouped map for better logging: Umbrella -> [Original Labels]
+    const groupedMerges: Record<string, string[]> = {}
+    Object.entries(mergeMap).forEach(([from, to]) => {
+      if (from === to) return // Skip identity mappings for clarity
+      if (!groupedMerges[to]) groupedMerges[to] = []
+      groupedMerges[to].push(from)
+    })
+
+    const actualMergesCount = Object.keys(mergeMap).filter(k => mergeMap[k] !== k).length
+    
+    if (actualMergesCount > 0) {
+      aiPipelineLog.info(`normalizeCategoryLabels result: ${actualMergesCount} labels consolidated into ${Object.keys(groupedMerges).length} groups`, {
+        groups: groupedMerges,
+        totalChanged: actualMergesCount,
+        totalIntact: labels.length - actualMergesCount
+      })
+    } else {
+      aiPipelineLog.warn('normalizeCategoryLabels result: no merges identified. Check if LLM umbrellas are too diverse or similarity threshold is too high.')
+    }
+
     tracker.done()
-    return parsed
+    return mergeMap
   } catch (err) {
-    tracker.progress(labels.length)
-    aiPipelineLog.warn('normalizeCategoryLabels JSON parse failed, keeping originals', {
+    aiPipelineLog.warn('normalizeCategoryLabels phase 2 failed, using identity mapping', {
       err: err instanceof Error ? err.message : String(err),
     })
     tracker.done({ fallback: true })
@@ -443,7 +555,7 @@ export async function groupRareCategories(
       {
         responseFormat: 'json',
         metricKey: 'classifier-group-rare',
-        jsonSchema: CATEGORY_MERGE_MAP_SCHEMA,
+        jsonSchema: RARE_GROUP_SCHEMA,
         ...(provider === 'browser-ml' ? { disableThinking: true } : {}),
       },
     )

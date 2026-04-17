@@ -10,9 +10,8 @@ const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 type KnownPlatform = DomainInfo['platform']
 
 const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case) that best describes the content. Avoid using "Other" unless the page is truly ambiguous. Reply with the category label only — no explanation, no punctuation.`
-const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case) that best describes the content.
+const CLASSIFY_ITEM_SYSTEM_JSON = `You are bookmarks classifier. For each site title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (1-3 words, Title Case) that best describes the content.
 Avoid using "Other" unless the page is truly ambiguous.
-
 Example output: {"category": "Development"}`
 
 const CLASSIFY_CLUSTER_SYSTEM = `You classify clusters of browser pages.
@@ -26,17 +25,39 @@ Rules:
 - avoid using "Other" unless the samples are truly ambiguous
 - output JSON only`
 
-const NORMALIZE_CATEGORIES_SYSTEM = 'You output strict JSON only.'
-const NORMALIZE_CATEGORIES_USER_PREFIX = `You are a category deduplicator. I will give you a list of category labels from browser tabs. Your job is to aggressively merge semantically similar or overlapping labels into a single canonical name. Be generous with merges — if two labels describe roughly the same topic, merge them.
+const DISCOVER_UMBRELLAS_SYSTEM = `You are a taxonomy expert. 
+Your goal is to look at a list of browser tab labels and suggest a set of high-level "Umbrella" categories to consolidate them.
 
 Rules:
-- Merge synonyms, near-duplicates, and subsets (e.g. "Tech" → "Technology", "Software Development" → "Development")
-- Prefer short, widely understood names
-- Keep distinct only if they describe genuinely different topics
-- Reply ONLY with a JSON object mapping each input label to its canonical name. All input labels must appear as keys.
+- Output MUST be a single JSON object with an "umbrellas" key: {"umbrellas": ["Name 1", "Name 2", ...]}
+- STRONGLY CONSOLIDATE: If you receive 100 labels, output 10-20 umbrellas.
+- Max 50 umbrellas total, ideally 15-30.
+- Umbrella categories should be Title Case, short (1-3 words), and meaningful.
+- Avoid specific names like "GitHub", use "Development" or "Code Hosting".
+- Output ONLY the JSON object.
 
-Labels:`
-const NORMALIZE_CATEGORIES_USER_SUFFIX = 'Reply with JSON only, no explanation.'
+Example condensation:
+Input: ["React docs", "Vue guide", "JS tutorial", "Python scripts", "Bash tips"]
+Output: {"umbrellas": ["Software Development", "Programming Languages"]}`
+
+const NORMALIZE_CATEGORIES_USER_PREFIX = `Suggest umbrella categories for these labels:`
+
+const NORMALIZE_CATEGORIES_USER_SUFFIX = 'Output JSON object with "umbrellas" array.'
+
+export const MAP_LABELS_TO_UMBRELLAS_SYSTEM = `You are a taxonomy expert. Your goal is to map input labels to a provided list of Umbrella categories.
+Rules:
+- Output MUST be a single JSON object mapping each input label to its best Umbrella: {"Label 1": "Umbrella A", "Label 2": "Umbrella B"}
+- Every input label MUST be present in the output keys.
+- If a label fits multiple Umbrellas, pick the most specific one.
+- If a label fits NO Umbrella, you may return the label itself (identity mapping) or "Other".
+- Reply ONLY with JSON object.
+`
+
+export const MAP_LABELS_TO_UMBRELLAS_USER_PREFIX = `Umbrella Categories:
+`
+export const MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE = `
+Labels to map:
+`
 
 const GROUP_RARE_CATEGORIES_SYSTEM = 'You output strict JSON only.'
 const GROUP_RARE_CATEGORIES_USER_PREFIX = `You are consolidating browser tab categories. Map each RARE category to its best target.
@@ -302,7 +323,7 @@ export const classifyCluster = {
 
 export const normalizeCategories = {
   system(): string {
-    return NORMALIZE_CATEGORIES_SYSTEM
+    return DISCOVER_UMBRELLAS_SYSTEM
   },
 
   user(labels: string[]): string {
@@ -312,12 +333,13 @@ ${labels.map((label) => `- ${label}`).join('\n')}
 ${NORMALIZE_CATEGORIES_USER_SUFFIX}`
   },
 
-  parseResponse(raw: string, inputLabels: string[]): Record<string, string> {
-    const parsed = parseLlmJson<Record<string, string>>(raw, {})
-    for (const label of inputLabels) {
-      if (!(label in parsed)) parsed[label] = label
+  parseUmbrellas(raw: string): string[] {
+    const parsed = parseLlmJson<any>(raw, [])
+    if (Array.isArray(parsed)) return parsed
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.umbrellas)) {
+      return parsed.umbrellas
     }
-    return parsed
+    return []
   },
 }
 
@@ -402,7 +424,7 @@ export const enrichDomain = {
 
   user(domains: string[]): string {
     return `${ENRICH_DOMAIN_USER_PREFIX}
-${domains.join('\n')}`
+${domains.join(' \n')}`
   },
 
   parseResponse(raw: string, sentDomains: Set<string>, fetchedAt: number): DomainInfo[] {
@@ -416,15 +438,15 @@ ${domains.join('\n')}`
       const rows = Array.isArray(parsed)
         ? parsed
         : (
-            parsed
-            && typeof parsed === 'object'
-            && (
-              (parsed as { domains?: unknown[] }).domains
-              ?? (parsed as { results?: unknown[] }).results
-              ?? (parsed as { items?: unknown[] }).items
-              ?? (parsed as { data?: unknown[] }).data
-            )
+          parsed
+          && typeof parsed === 'object'
+          && (
+            (parsed as { domains?: unknown[] }).domains
+            ?? (parsed as { results?: unknown[] }).results
+            ?? (parsed as { items?: unknown[] }).items
+            ?? (parsed as { data?: unknown[] }).data
           )
+        )
       if (!Array.isArray(rows)) return { rows: [], strict: false, heuristic: false }
       const result: DomainInfo[] = []
       const seen = new Set<string>()

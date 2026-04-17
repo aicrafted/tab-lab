@@ -82,23 +82,50 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
   }
 
   async embedBatch(texts: string[], settings: LlmSettings, signal?: AbortSignal): Promise<number[][]> {
+    const url = this.getBaseUrl(settings)
     const model = this.getEmbeddingModel(settings)
-    if (!model) throw new Error(`No embedding model selected for ${this.id}`)
+    if (!url || !model) return []
 
-    const data = await fetchRemote(
-      texts,
-      this.getBaseUrl(settings),
-      this.getApiKey(settings),
-      model,
-      'embeddings',
-      {},
-      signal
-    )
+    const maxRetries = 10 
+    let lastError: Error | null = null
 
-    // OpenAI format: data: [{ embedding: [...], index: 0 }, ...]
-    // Sort by index to ensure correct order
-    const sorted = [...data.data].sort((a: any, b: any) => a.index - b.index)
-    return sorted.map((item: any) => item.embedding)
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${url}/embeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.getApiKey(settings) ? { Authorization: `Bearer ${this.getApiKey(settings)}` } : {}),
+          },
+          body: JSON.stringify({ model, input: texts }),
+          signal,
+        })
+
+        if (res.status === 500 && attempt < maxRetries - 1) {
+          // Model likely loading, wait and retry
+          const delay = 2000 + attempt * 1000
+          console.warn(`[AI] Embedding model loading (500), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+
+        if (!res.ok) {
+          throw new Error(`Embedding failed: ${res.status} ${res.statusText}`)
+        }
+
+        const data = await res.json()
+        const sorted = [...data.data].sort((a: any, b: any) => a.index - b.index)
+        return sorted.map((item: any) => item.embedding)
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          continue
+        }
+      }
+    }
+
+    throw lastError || new Error('Embedding failed after retries')
   }
 
   async checkStatus(settings: LlmSettings, _options?: CheckStatusOptions): Promise<ProviderStatus> {
@@ -169,7 +196,7 @@ export class LmStudioProvider extends OpenAiCompatibleProvider {
           messages: [{ role: 'user', content: '' }],
           max_tokens: 1,
         }),
-        signal: AbortSignal.timeout(5000), // Wait up to 5s for readiness
+        signal: AbortSignal.timeout(25000), // Wait up to 25s for readiness
       })
 
       if (res.ok) return { available: true, status: 'ready' }
