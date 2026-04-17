@@ -1,4 +1,6 @@
-import { checkLlmAvailability, classifyItems, groupRareCategories, normalizeCategoryLabels, splitLargeClusters } from '../ai/classifier'
+import { checkLlmAvailability, classifyItems, splitLargeClusters } from '../ai/classifier'
+import { refineCategoryLabels, applyRefinedCategories } from '../ai/post-processor'
+import { legacy_groupRareCategories } from '../ai/category-post-processor-legacy'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
 import { fetchAndCacheEmbeddings, fetchEmbeddingsBatch, loadEmbeddingsForCurrentModel, reprojectAllEmbeddings } from '../ai/embedder'
 import { classifyIntentGeminiNano, classifyIntentLmStudio } from '../ai/intent'
@@ -356,33 +358,27 @@ export class PipelineRunner {
   ): Promise<void> {
     const uniqueUrls = [...new Set([...tabItems, ...bookmarkItems].map((item) => normalizeUrlForCache(item.url)))]
     const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
+    const items = new Map(entries.map(e => [e.url, e.entry]))
     const labels = [...new Set(entries.map(({ entry }) => entry?.category).filter(Boolean) as string[])]
     if (labels.length <= 1) return
 
     const tracker = createLoggerProgress('normalizeCategoriesStep', 2)
     
     // Phase 1: Normalize/Merge
-    const mergeMap = await normalizeCategoryLabels(labels, settings)
-    const updates: { url: string; category: string; parentCategory: string }[] = []
-    const cacheWrites: Promise<void>[] = []
+    // Use the new single-level refinement logic
+    const mapping = await refineCategoryLabels(labels, settings)
+    
+    // Convert to item format for applyRefinedCategories
+    const itemData = [...items.entries()].map(([url, entry]) => ({
+      url,
+      originalCategory: entry?.category?.trim() || 'Other'
+    }))
 
-    for (const { url, entry } of entries) {
-      const from = entry?.category?.trim()
-      if (!from) continue
-      const to = (mergeMap[from] ?? from).trim()
-      
-      // Even if to === from, we ensure parentCategory is set for consistency
-      updates.push({ url, category: from, parentCategory: to })
-      cacheWrites.push(setCached(url, { 
-        ...entry, 
-        category: from, 
-        parentCategory: to, 
-        processedAt: Date.now() 
-      }))
-    }
-
-    await Promise.all(cacheWrites)
-    if (updates.length > 0) this.callbacks.onCategoryUpdate(updates)
+    await applyRefinedCategories(
+      itemData,
+      mapping,
+      (updates) => this.callbacks.onCategoryUpdate(updates)
+    )
     tracker.progress(1)
 
     if (skipRareMerge) {
@@ -392,12 +388,7 @@ export class PipelineRunner {
     }
 
     // Phase 2: Group Rare
-    const categoryItems = entries
-      .map(({ url, entry }) => (entry?.category ? ({ url, category: mergeMap[entry.category] ?? entry.category }) : null))
-      .filter((item): item is { url: string; category: string } => Boolean(item))
-    const rareUpdates = await groupRareCategories(categoryItems, settings)
-    if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
-    tracker.progress(1)
+    aiPipelineLog.info('skipping legacy rare category grouping')
     tracker.done()
   }
 
@@ -562,7 +553,7 @@ export class PipelineRunner {
       }
 
       aiPipelineLog.info('standalone normalize start', { totalLabels: allLabels.length, labels: allLabels })
-      const mergeMap = await normalizeCategoryLabels(allLabels, settings)
+      const mergeMap = await refineCategoryLabels(allLabels, settings)
 
       const urlToCategory = new Map<string, string>()
       for (const { url, entry } of entries) {
@@ -632,7 +623,7 @@ export class PipelineRunner {
           return category ? { url: normalizedUrl, category } : null
         }),
       )).filter((item): item is { url: string; category: string } => Boolean(item))
-      const rareUpdates = await groupRareCategories(allCategoryItems, settings)
+      const rareUpdates = await legacy_groupRareCategories(allCategoryItems, settings)
       if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
 
       task.done()
@@ -665,8 +656,8 @@ export class PipelineRunner {
         .map(({ url, entry }) => (entry?.category ? { url, category: entry.category } : null))
         .filter((item): item is { url: string; category: string } => Boolean(item))
       
-      const rareUpdates = await groupRareCategories(categoryItems, settings)
-      if (rareUpdates.length > 0) this.callbacks.onCategoryUpdate(rareUpdates)
+      const updates = await legacy_groupRareCategories(categoryItems, settings)
+      if (updates.length > 0) this.callbacks.onCategoryUpdate(updates)
       task.done()
     } catch (err) {
       task.failed(err)

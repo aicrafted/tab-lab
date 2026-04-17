@@ -1,4 +1,6 @@
-import { classifyItems, groupRareCategories, normalizeCategoryLabels } from '../ai/classifier'
+import { classifyItems } from '../ai/classifier'
+import { legacy_groupRareCategories } from '../ai/category-post-processor-legacy'
+import { refineCategoryLabels } from '../ai/post-processor'
 import { chatComplete } from '../ai/llm'
 import { clearAllAICache, getCached, getLlmSettings, setCached } from './storage'
 import { getAll, type CacheEntry } from '../db/cacheDb'
@@ -99,7 +101,7 @@ function createDebugApi(): TablabDebugApi {
     ai: {
       async normalizeCategories(labels: string[]) {
         const settings = await getLlmSettings()
-        return normalizeCategoryLabels(labels, settings)
+        return refineCategoryLabels(labels, settings)
       },
 
       async classifyUrl(url: string, title: string) {
@@ -123,7 +125,7 @@ function createDebugApi(): TablabDebugApi {
             url: key,
             category: entry.category.trim(),
           }))
-        return groupRareCategories(items, settings)
+        return legacy_groupRareCategories(items, settings)
       },
 
       async chat(
