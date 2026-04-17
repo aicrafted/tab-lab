@@ -1,4 +1,4 @@
-import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsFull } from '../ai/classifier'
+import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsTwoPass } from '../ai/classifier'
 import { refineCategoryLabels, applyRefinedCategories } from '../ai/post-processor'
 import { legacy_groupRareCategories } from '../ai/category-post-processor-legacy'
 import { clearDomainKnowledgeCache, enrichDomains, estimateDomainEnrichmentWork, type DomainInfo } from '../ai/domain-enricher'
@@ -314,7 +314,7 @@ export class PipelineRunner {
     const tagsTask = this.registry.registerTask(TASK_IDS.TAGS_TABS, 'Extracting tags', unifiedDocs.length)
     const intentTask = this.registry.registerTask(TASK_IDS.INTENT_TABS, 'Detecting intent', unifiedDocs.length)
 
-    await analyzeItemsFull(
+    await analyzeItemsTwoPass(
       unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
       settings,
       (updates) => {
@@ -433,7 +433,7 @@ export class PipelineRunner {
 
       // Use combined flow for LLM
       if (!useNli && (hasChatProviderConfig(settings) || (settings.tasks.chat.provider === 'gemini-nano' && (nanoStatus === 'ready' || nanoStatus === 'after-download')))) {
-        await analyzeItemsFull(
+        await analyzeItemsTwoPass(
           unifiedDocs.map((doc) => ({ url: doc.url, title: doc.title, domain: doc.domain })),
           settings,
           (updates) => {

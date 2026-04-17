@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { SourceFilterToggle } from '@/components/SourceFilter'
 import { IntentIcon } from '@/components/IntentIcon'
 import { PlatformIcon } from '@/components/PlatformIcon'
+import { Favicon } from '@/components/Favicon'
 import {
   Select,
   SelectContent,
@@ -213,6 +214,7 @@ export function FacetSidebar({
               key={item.value}
               value={item.value}
               count={item.count}
+              showDomainIcon={activeMode === 'domains'}
               showIntentIcon={activeMode === 'intent'}
               showPlatformIcon={activeMode === 'platform'}
               active={activeValues.includes(item.value)}
@@ -261,12 +263,14 @@ function CompactTagList({
                 ? 'bg-card text-primary'
                 : 'bg-transparent text-muted-foreground hover:text-foreground',
             )}
-            title={`${item.value} (${item.count})`}
+            title={item.count > 1 ? `${item.value} (${item.count})` : item.value}
           >
             <span className="truncate">{item.value}</span>
-            <sup className={cn('tabular-nums text-[10px] leading-none', active ? 'text-primary/80' : 'text-muted-foreground/70')}>
-              {item.count}
-            </sup>
+            {item.count > 1 && (
+              <sup className={cn('tabular-nums text-[10px] leading-none', active ? 'text-primary/80' : 'text-muted-foreground/70')}>
+                {item.count}
+              </sup>
+            )}
           </button>
         )
       })}
@@ -356,6 +360,7 @@ function GroupedCategoryList({
 function FacetRow({
   value,
   count,
+  showDomainIcon,
   showIntentIcon,
   showPlatformIcon,
   active,
@@ -363,6 +368,7 @@ function FacetRow({
 }: {
   value: string
   count: number
+  showDomainIcon: boolean
   showIntentIcon: boolean
   showPlatformIcon: boolean
   active: boolean
@@ -377,7 +383,10 @@ function FacetRow({
         active && 'bg-card',
       )}
     >
-      {!showIntentIcon && !showPlatformIcon && (
+      {showDomainIcon && (
+        <Favicon domain={value} />
+      )}
+      {!showDomainIcon && !showIntentIcon && !showPlatformIcon && (
         <span
           className={cn(
             'h-2 w-2 shrink-0 rounded-full transition-colors',

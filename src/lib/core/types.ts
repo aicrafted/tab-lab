@@ -129,6 +129,7 @@ export interface CacheEntry {
   tags?: string[]          // AI-generated tags
   embedding?: number[]     // raw embedding vector from LM Studio
   intent?: PageIntent      // intent classification
+  platform?: KnownPlatform // detected platform
 }
 
 export type ChatProvider = 'gemini-nano' | 'browser-ml' | 'lmstudio' | 'openrouter'

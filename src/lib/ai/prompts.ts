@@ -1,13 +1,14 @@
 import { parseLlmJson } from './parsers'
 import type { DomainInfo } from './domain-enricher'
-import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent } from '../core/types'
+import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent, type KnownPlatform } from '../core/types'
+export type { PageIntent, KnownPlatform }
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 
 const VALID_PLATFORMS = new Set<string>(KNOWN_PLATFORMS)
 const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 
-type KnownPlatform = DomainInfo['platform']
+// type KnownPlatform = DomainInfo['platform']
 
 const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. Goal: provide a SPECIFIC TOPIC category for each page.
 Rules:
@@ -138,46 +139,65 @@ Valid values: "article", "reference", "tool", "service", "transactional", "video
 
 Example output: {"intent": "reference"}`
 
-const CLASSIFY_FULL_SYSTEM_JSON = `You are a web page analyzer. Goal: Extract category, tags, intent, and platform from a page.
+const ANALYZE_METADATA_SYSTEM_JSON = `You are a web page analyzer. Extract tags, intent, and platform from a browser tab.
 Output strict JSON:
 {
-  "category": "SPECIFIC TOPIC",
   "tags": ["tag1", "tag2", "tag3"],
   "intent": "article|reference|tool|service|transactional|video|repository|other",
   "platform": "social|video|code|registry|qa|blog|docs|shopping|news|ai|tool|sandbox|cloud|music|finance|ci|games|education|email|reference|null"
 }
 
 RULES:
-1. CATEGORY: Precise topic (1-3 words, Title Case). NO brand names. NO generic "Technology".
-2. TAGS: 3-5 specific lowercase tags.
-3. INTENT (How the user uses the page):
-   - article: read-only (blog posts, news, reddit threads)
-   - reference: lookup (API docs, cheatsheets, wikis)
-   - tool: interactive app (editors, dashboards, SaaS)
-   - service: functional (landing pages, settings, pricing)
-   - transactional: one-time (orders, tickets, receipts)
-   - video: media primary (youtube, twitch, podcasts)
-   - repository: code assets (github, npm, crates.io)
-4. PLATFORM (What kind of service is it):
-   - social: social networks (Reddit posts, Twitter, LinkedIn)
-   - video: video hosting (YouTube, Vimeo)
-   - code: code hosting or IDEs (GitHub repo, VS Code)
-   - registry: package managers (npm, PyPI)
-   - qa: Q&A sites (Stack Overflow)
-   - blog: articles/blogs (Medium)
-   - docs: manuals and guides (ReadTheDocs)
-   - shopping: e-commerce (Amazon, eBay)
-   - ai: AI tools (ChatGPT, Claude, HuggingFace)
-   - tool: general SaaS apps
-   - sandbox: playgrounds (CodePen)
-   - cloud: cloud providers (AWS, GCP)
-   - games: gaming stores (Steam)
-   - education: learning (Coursera)
-   - email: webmail
-   - reference: general encyclopedias/wikis
+1. TAGS: 3-5 specific lowercase tags (1-2 words each). Avoid generic tags like "website" or "internet".
+   Tags CAN include product/brand names (e.g., "typescript", "react", "figma").
+2. INTENT (how the user uses this page):
+   - article: read-only content (blog posts, news, reddit threads, forum discussions)
+   - reference: lookup content (API docs, cheatsheets, wikis, man pages)
+   - tool: interactive app (editors, dashboards, SaaS, IDEs)
+   - service: functional but passive (landing pages, settings, pricing, sign-up)
+   - transactional: one-time action (orders, tickets, receipts, tracking)
+   - video: primary content is video/audio (YouTube, Twitch, podcasts)
+   - repository: code asset (GitHub repo, npm, crates.io)
+   - other: anything else
+   Note: prefer "tool" over "service" when the page has interactive functionality.
+3. PLATFORM (what kind of service hosts this):
+   - social: social networks (Reddit, Twitter, LinkedIn, Mastodon)
+   - video: video hosting (YouTube, Vimeo, Twitch)
+   - code: code hosting / dev IDEs (GitHub, GitLab, VS Code web)
+   - registry: package managers (npm, PyPI, crates.io)
+   - qa: Q&A sites (Stack Overflow, Ask HN)
+   - blog: articles / personal blogs (Medium, Substack, dev.to)
+   - docs: official documentation (ReadTheDocs, developer portals)
+   - shopping: e-commerce (Amazon, eBay, Shopify stores)
+   - news: news media (BBC, HN, TechCrunch)
+   - ai: AI tools and model hubs (ChatGPT, Claude, HuggingFace)
+   - tool: general SaaS apps (Figma, Notion, Linear)
+   - sandbox: code playgrounds (CodePen, StackBlitz, JSFiddle)
+   - cloud: cloud providers (AWS, GCP, Azure)
+   - music: music streaming (Spotify, SoundCloud)
+   - finance: banking / trading (Stripe, Robinhood, bank portals)
+   - ci: CI/CD platforms (GitHub Actions, CircleCI, Vercel)
+   - games: gaming stores / communities (Steam, itch.io)
+   - education: learning platforms (Coursera, Udemy, Khan Academy)
+   - email: webmail clients (Gmail, Outlook web)
+   - reference: general encyclopedias / wikis (Wikipedia, MDN)
+   - Use null if no platform fits.
 
-Example:
-{"category":"Software Engineering", "tags":["typescript", "async", "tutorial"], "intent":"article", "platform":null}`
+Example: {"tags": ["rust", "async", "tokio"], "intent": "reference", "platform": "docs"}`
+
+const CLASSIFY_CATEGORY_SYSTEM_JSON = `You are a tab categorizer. Goal: assign a SPECIFIC TOPIC category to a browser page.
+Output strict JSON: {"category": "SPECIFIC TOPIC"}
+
+Rules:
+1. Category must be a descriptive topic (1-3 words, Title Case).
+2. PREFER SPECIFICITY: "Frontend Development" is better than "Technology". "E-commerce" is better than "Shopping".
+3. DO NOT include brand names, site names, or domains (e.g., use "Frontend Development" not "React", "Version Control" not "GitHub").
+4. DO NOT copy the tab title or domain directly into the category.
+5. DO NOT use wide or vague categories: "Miscellaneous", "General", "Technology", "Internet", "Other", "Web", "Software".
+6. If a specific tool, identify its nature (e.g., "Graphic Design Tool" instead of "Visuals").
+7. REUSE existing categories when provided — prefer an existing category that fits over inventing a new one.
+
+Example: {"category": "Software Engineering"}`
 
 const ENRICH_DOMAIN_SYSTEM = `You are a web domain classifier with broad knowledge of websites worldwide.
 Classify every domain you can identify — including well-known companies, brands, media, shops, tools, and services in any country.
@@ -631,30 +651,52 @@ ${domains.join(' \n')}`
   },
 }
 
-export const classifyFull = {
+export const analyzeMetadata = {
+  system(): string { return ANALYZE_METADATA_SYSTEM_JSON },
+  user(params: { title: string; domain: string; path?: string; siteLine?: string }): string {
+    return tagItem.user(params)
+  },
+  parseResponse(raw: string): { tags: string[]; intent: PageIntent; platform: KnownPlatform | null } {
+    const tags = parseTagsJson(raw)
+    const intent = parseIntentJson(raw)
+    const platform = normalizePlatform(parseLlmJson<any>(raw, {}).platform)
+    return { 
+      tags: tags.tags, 
+      intent: intent.intent, 
+      platform: platform || null 
+    }
+  }
+}
+
+export const classifyCategory = {
   system(): string {
-    return CLASSIFY_FULL_SYSTEM_JSON
+    return CLASSIFY_CATEGORY_SYSTEM_JSON
   },
 
-  user(params: { title: string; domain: string; path?: string; siteLine?: string; candidates?: string[] }): string {
+  user(params: { 
+    title: string; 
+    domain: string; 
+    path?: string; 
+    siteLine?: string; 
+    candidates?: string[];
+    tags?: string[];
+  }): string {
     const lines = [`Title: ${params.title}`, `Domain: ${params.domain}`]
     if (params.siteLine) lines.push(params.siteLine.trimStart())
     if (params.path) lines.push(`Path: ${params.path}`)
+    if (params.tags && params.tags.length > 0) {
+      lines.push(`Tags: ${params.tags.join(', ')}`)
+    }
     if (params.candidates && params.candidates.length > 0) {
       lines.push(`Existing categories: ${params.candidates.join(', ')}`)
-      lines.push('Rules for category hint: Use an existing category ONLY if it is a PRECISE match. If existing categories are too broad (like "Technology", "Web", or "Internet"), create a NEW specific TOPIC.')
+      lines.push('Prefer an existing category when it fits. Create a new category only if none of the existing ones are close enough.')
     }
+    lines.push('\nImportant: Category must be a general TOPIC (e.g., "Systems Programming"), not a brand name (e.g., "Rust" or "Tokio").')
     return lines.join('\n')
   },
 
-  parseResponse(raw: string): { category: string; tags: string[]; intent: PageIntent; platform: KnownPlatform | null } {
-    const parsed = parseLlmJson<any>(raw, null)
-    if (!parsed) return { category: 'Other', tags: [], intent: 'other', platform: null }
-    return {
-      category: normalizeCategoryLabel(parsed.category || 'Other'),
-      tags: Array.isArray(parsed.tags) ? parsed.tags.map((t: string) => String(t).toLowerCase().trim()).slice(0, 5) : [],
-      intent: VALID_INTENTS.includes((parsed.intent || '').toLowerCase() as any) ? (parsed.intent.toLowerCase() as PageIntent) : 'other',
-      platform: normalizePlatform(parsed.platform) || null
-    }
+  parseResponse(raw: string): { category: string } {
+    const json = parseCategoryJson(raw)
+    return { category: json.category }
   }
 }

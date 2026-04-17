@@ -80,7 +80,7 @@ export async function chatComplete(
   systemPrompt: string,
   userMessage: string,
   settings: LlmSettings,
-  maxTokens = 40,
+  maxTokens = 512,
   options: ChatOptions = {},
 ): Promise<string> {
   const cleanMessage = sanitizeForLlm(userMessage)

@@ -687,7 +687,7 @@ export function App() {
           activeValues={activeFacets}
           onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}
           onToggle={(v) => setActiveFacets((prev) => {
-            if (facetMode === 'categories') {
+            if (facetMode === 'categories' || facetMode === 'domains') {
               return prev.includes(v) ? [] : [v]
             }
             return prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]

@@ -133,23 +133,24 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
 
   const n = model.tags.length
   const cellSize = Math.max(14, Math.floor(620 / n))
-  const labelSpace = 160
-  const width = labelSpace + n * cellSize + 20
-  const height = labelSpace + n * cellSize + 20
+  const rowLabelSpace = 92
+  const colLabelSpace = 58
+  const width = rowLabelSpace + n * cellSize + 12
+  const height = colLabelSpace + n * cellSize + 12
 
   return (
     <section className="grid gap-4 lg:grid-cols-[1fr_300px]">
       <div className="space-y-3">
-        <div className="relative overflow-auto rounded-md border border-border bg-card/30 p-2">
+        <div className="relative overflow-auto rounded-md border border-border bg-card/30 p-1.5">
           <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[900px]">
             <rect x={0} y={0} width={width} height={height} fill="hsl(var(--background))" />
             {model.tags.map((tag, row) => (
               <text
                 key={`row-${tag}`}
-                x={labelSpace - 6}
-                y={labelSpace + row * cellSize + cellSize * 0.7}
+                x={rowLabelSpace - 6}
+                y={colLabelSpace + row * cellSize + cellSize * 0.7}
                 textAnchor="end"
-                className="cursor-pointer fill-muted-foreground text-[10px]"
+                className="cursor-pointer fill-muted-foreground text-[9px]"
                 onClick={() => setHighlightTag((prev) => (prev === tag ? null : tag))}
               >
                 {tag}
@@ -158,10 +159,10 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
             {model.tags.map((tag, col) => (
               <text
                 key={`col-${tag}`}
-                x={labelSpace + col * cellSize + cellSize * 0.6}
-                y={labelSpace - 8}
-                transform={`rotate(-50 ${labelSpace + col * cellSize + cellSize * 0.6} ${labelSpace - 8})`}
-                className="cursor-pointer fill-muted-foreground text-[10px]"
+                x={rowLabelSpace + col * cellSize + cellSize * 0.6}
+                y={colLabelSpace - 6}
+                transform={`rotate(-50 ${rowLabelSpace + col * cellSize + cellSize * 0.6} ${colLabelSpace - 6})`}
+                className="cursor-pointer fill-muted-foreground text-[9px]"
                 onClick={() => setHighlightTag((prev) => (prev === tag ? null : tag))}
               >
                 {tag}
@@ -175,8 +176,8 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
                 return (
                   <rect
                     key={`${rowTag}-${colTag}`}
-                    x={labelSpace + col * cellSize}
-                    y={labelSpace + row * cellSize}
+                    x={rowLabelSpace + col * cellSize}
+                    y={colLabelSpace + row * cellSize}
                     width={cellSize}
                     height={cellSize}
                     fill={cellColor(cell.count, model.maxValue)}

@@ -4,7 +4,8 @@ import { getChatProvider, getEmbeddingProvider } from './providers/factory'
 import { getCached, setCached } from '../core/storage'
 import {
   classifyCluster,
-  classifyFull,
+  analyzeMetadata,
+  classifyCategory,
   classifyItem,
   type PageIntent,
   type KnownPlatform,
@@ -191,7 +192,7 @@ export async function classifyItems(
             siteLine,
             candidates: hints
           })
-          const raw = await chatComplete(systemPrompt, userMsg, settings, 40, { ...options, signal })
+          const raw = await chatComplete(systemPrompt, userMsg, settings, 256, { ...options, signal })
           const parsed = classifyItem.parseResponseDetailed(raw)
           trackClassifierParse(parsed.strict)
           category = parsed.category
@@ -216,9 +217,11 @@ export async function classifyItems(
 }
 
 /**
- * Unified classification, tagging and intent discovery in ONE request.
+ * Unified classification, tagging and intent discovery in TWO requests.
+ * Pass 1: tags + intent + platform
+ * Pass 2: category (using tags as context)
  */
-export async function analyzeItemsFull(
+export async function analyzeItemsTwoPass(
   items: { url: string; title: string; domain: string }[],
   settings: LlmSettings,
   onProgress: (updates: {
@@ -235,21 +238,19 @@ export async function analyzeItemsFull(
   const uncached = items 
   if (uncached.length === 0) return
 
-  const tracker = createLoggerProgress('analyzeItemsFull', uncached.length)
-  const systemPrompt = classifyFull.system()
+  const tracker = createLoggerProgress('analyzeItemsTwoPass', uncached.length)
   const chatProviderId = settings.tasks.chat.provider
   
   const options = {
     responseFormat: 'json' as const,
-    metricKey: 'classifier-full',
     ...(chatProviderId === 'browser-ml' ? { disableThinking: true } : {}),
   }
 
   const seenCategories = new Set<string>()
-  // Load initial hints from items provided
+  // Load initial hints from items provided (skip invalid/Other)
   await Promise.all(items.map(async (item) => {
     const entry = await getCached(item.url)
-    if (entry?.category) seenCategories.add(entry.category)
+    if (entry?.category && !classifyItem.isInvalidResponse(entry.category)) seenCategories.add(entry.category)
   }))
 
   const BATCH = 5
@@ -258,49 +259,57 @@ export async function analyzeItemsFull(
     const batch = uncached.slice(i, i + BATCH)
     const results: { url: string; category: string; parentCategory: string; tags: string[]; intent: PageIntent; platform: KnownPlatform | null }[] = []
 
-    const hints = Array.from(seenCategories).slice(0, 30)
+    const hints = Array.from(seenCategories)
+      .filter(c => !classifyItem.isInvalidResponse(c))
+      .slice(0, 30)
 
     await Promise.all(batch.map(async (item) => {
       try {
         const path = urlPathSnippet(item.url)
         const siteLine = domainSiteLine(item.domain, domainMap, settings.localNetworks)
 
-        const userMsg = classifyFull.user({ 
+        // Pass 1: Metadata Extraction
+        const metaUserMsg = analyzeMetadata.user({ title: item.title, domain: item.domain, path, siteLine })
+        const metaRaw = await chatComplete(analyzeMetadata.system(), metaUserMsg, settings, 512, { ...options, signal, metricKey: 'classifier-meta' })
+        const meta = analyzeMetadata.parseResponse(metaRaw)
+        
+        // Pass 2: Category Classification
+        const catUserMsg = classifyCategory.user({ 
           title: item.title, 
           domain: item.domain, 
           path, 
           siteLine,
-          candidates: hints
+          candidates: hints,
+          tags: meta.tags
         })
+        const catRaw = await chatComplete(classifyCategory.system(), catUserMsg, settings, 256, { ...options, signal, metricKey: 'classifier-category' })
+        const { category } = classifyCategory.parseResponse(catRaw)
         
-        const raw = await chatComplete(systemPrompt, userMsg, settings, 150, { ...options, signal })
-        const full = classifyFull.parseResponse(raw)
-        
-        seenCategories.add(full.category)
+        seenCategories.add(category)
         
         const existing = await getCached(item.url)
-        const finalParent = (existing?.parentCategory ?? full.category).trim()
+        const finalParent = (existing?.parentCategory ?? category).trim()
         
         await setCached(item.url, { 
           ...existing, 
-          category: full.category, 
+          category: category, 
           parentCategory: finalParent,
-          tags: full.tags,
-          intent: full.intent,
-          platform: full.platform ?? undefined,
+          tags: meta.tags,
+          intent: meta.intent,
+          platform: meta.platform ?? undefined,
           processedAt: Date.now() 
         })
         
         results.push({ 
           url: item.url, 
-          category: full.category, 
+          category: category, 
           parentCategory: finalParent,
-          tags: full.tags, 
-          intent: full.intent, 
-          platform: full.platform 
+          tags: meta.tags, 
+          intent: meta.intent, 
+          platform: meta.platform 
         })
       } catch (err) {
-        aiPipelineLog.error('analyzeItemsFull item failed', { url: item.url, err })
+        aiPipelineLog.error('analyzeItemsTwoPass item failed', { url: item.url, err })
       } finally {
         tracker.progress(1)
       }
