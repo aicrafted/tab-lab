@@ -12,20 +12,27 @@ import { createLoggerProgress } from '../core/progress'
 export async function refineCategoryLabels(
   labelsWithCounts: { label: string; count: number }[],
   settings: LlmSettings,
+  maxCount: number = Infinity,
 ): Promise<Record<string, string>> {
   if (labelsWithCounts.length === 0) return {}
-  if (labelsWithCounts.length === 1) return { [labelsWithCounts[0].label]: labelsWithCounts[0].label }
+  
+  // Filter labels based on frequency threshold
+  const candidates = labelsWithCounts.filter(l => l.count <= maxCount)
+  
+  if (candidates.length <= 1) {
+    return Object.fromEntries(labelsWithCounts.map(l => [l.label, l.label]))
+  }
   
   const tracker = createLoggerProgress('refineCategoryLabels', 1)
-  aiPipelineLog.info('refine: consolidating labels', { totalLabels: labelsWithCounts.length })
+  aiPipelineLog.info('refine: consolidating labels', { totalLabels: labelsWithCounts.length, candidates: candidates.length, maxCount })
 
   try {
     const inputLabels = new Set(labelsWithCounts.map(l => l.label))
     
-    // 1. Get clusters of duplicates from LLM
+    // 1. Get clusters of duplicates from LLM (only for candidates)
     const response = await chatComplete(
       consolidateCategories.system(),
-      consolidateCategories.user(labelsWithCounts.map(l => l.label)),
+      consolidateCategories.user(candidates.map(l => l.label)),
       settings,
       8000, // Very large output allowed for many groups
       { metricKey: 'post-process-consolidation' }
@@ -49,6 +56,13 @@ export async function refineCategoryLabels(
       
       // Only keep labels that were actually in the input and are distinct in group
       const validGroup = [...new Set(group.filter(l => inputLabels.has(l)))]
+      if (validGroup.length < group.length) {
+        aiPipelineLog.warn('refine: filtered out hallucinated labels from group', { 
+          original: group, 
+          filtered: validGroup,
+          removed: group.filter(l => !inputLabels.has(l))
+        })
+      }
       if (validGroup.length < 2) continue
       
       // Find the label in this group with the highest count
@@ -65,7 +79,9 @@ export async function refineCategoryLabels(
 
       // Map all members of the group to the target
       for (const label of validGroup) {
-        mapping[label] = target
+        if (label in mapping) {
+          mapping[label] = target
+        }
       }
     }
 
