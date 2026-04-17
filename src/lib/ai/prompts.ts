@@ -74,23 +74,23 @@ export const MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE = `
 Labels to map:
 `
 
-const CONSOLIDATE_LABELS_SYSTEM = `You are a taxonomy expert specializing in grouping duplicates.
-Objective: Group semantically identical, redundant, or near-duplicate category labels.
+const CONSOLIDATE_LABELS_SYSTEM = `You are a taxonomy expert specializing in simplifying category lists.
+Objective: Group redundant, overlapping, or near-duplicate category labels to create a cleaner, more concise taxonomy.
 
 Rules:
 1. Output MUST be a JSON array of arrays: [["Label A", "Label B"], ["Label C", "Label D"]].
-2. Each inner array must represent a cluster of 2 or more DIFFERENT labels that should be merged together.
-3. Only group labels that mean the same thing (e.g., "AI" and "Artificial Intelligence").
-4. If a label has no duplicates, DO NOT include it in the output at all.
-5. NEVER include the same label twice in a group (e.g., [["Music", "Music"]] is FORBIDDEN).
+2. Each inner array must represent a cluster of 2 or more related labels that should be merged (e.g., specific into general).
+3. CONSOLIDATE PROACTIVELY: Merge highly similar terms even if they aren't exactly the same (e.g., "Programming" and "Programming Languages").
+4. MERGE SPECIFIC INTO GENERAL: If you see "Web Design", "Graphic Design", and "Design", group them under "Design".
+5. If a label is distinct and not redundant, DO NOT include it in the output.
 6. Use only the provided labels, do not invent new names.
 7. Reply ONLY with the JSON array.
 
 Example:
-Input: ["Dev", "Development", "Cooking", "Cuisine", "Music"]
-Output: [["Dev", "Development"], ["Cooking", "Cuisine"]]`
+Input: ["Design", "Webdesign", "Art and Design", "Graphic Design", "Cooking", "Cuisine", "Music"]
+Output: [["Design", "Webdesign", "Art and Design", "Graphic Design"], ["Cooking", "Cuisine"]]`
 
-const CONSOLIDATE_LABELS_USER_PREFIX = `Group these category labels into clusters of duplicates (only group if 2+ labels are same):`
+const CONSOLIDATE_LABELS_USER_PREFIX = `Consolidate these category labels into fewer, cleaner groups (merge specific into general):`
 
 const GROUP_RARE_CATEGORIES_SYSTEM = 'You output strict JSON only.'
 const GROUP_RARE_CATEGORIES_USER_PREFIX = `You are consolidating browser tab categories. Map each RARE category to its best target.
@@ -428,7 +428,7 @@ export const consolidateCategories = {
 
   user(labels: string[]): string {
     const list = labels.map((l) => `- ${l}`).join('\n')
-    return `${CONSOLIDATE_LABELS_USER_PREFIX}\n${list}\n\nReturn JSON: [["A", "B"]] (only groups with 2+ labels, NO self-groups like ["A", "A"])`
+    return `${CONSOLIDATE_LABELS_USER_PREFIX}\n${list}\n\nReturn JSON: [["A", "B"]] (be proactive: merge specific into general, group anything redundant)`
   },
 
   parseResponse(raw: string): string[][] {
