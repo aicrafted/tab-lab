@@ -17,8 +17,11 @@ import {
   SETTINGS_KEY,
   SOURCE_FILTER_KEY,
   MAP_SETTINGS_KEY,
+  KB_REMOTE_KEY,
+  KB_OVERRIDES_KEY,
   STORAGE_KEEP_KEYS,
 } from './storage-keys'
+import type { PrefilledDomain } from '../ai/domain-prefill'
 
 export { clearAll as clearCache, getAll as getAllCached } from '../db/cacheDb'
 
@@ -135,6 +138,24 @@ export async function getMapSettings(): Promise<MapSettings> {
 
 export async function setMapSettings(settings: MapSettings): Promise<void> {
   await safeLocalSet({ [MAP_SETTINGS_KEY]: settings })
+}
+
+export async function getKbRemote(): Promise<Record<string, PrefilledDomain>> {
+  const result = await chrome.storage.local.get(KB_REMOTE_KEY)
+  return (result[KB_REMOTE_KEY] as Record<string, PrefilledDomain>) ?? {}
+}
+
+export async function setKbRemote(kb: Record<string, PrefilledDomain>): Promise<void> {
+  await safeLocalSet({ [KB_REMOTE_KEY]: kb })
+}
+
+export async function getKbOverrides(): Promise<Record<string, PrefilledDomain>> {
+  const result = await chrome.storage.local.get(KB_OVERRIDES_KEY)
+  return (result[KB_OVERRIDES_KEY] as Record<string, PrefilledDomain>) ?? {}
+}
+
+export async function setKbOverrides(kb: Record<string, PrefilledDomain>): Promise<void> {
+  await safeLocalSet({ [KB_OVERRIDES_KEY]: kb })
 }
 
 async function safeLocalSet(payload: Record<string, unknown>): Promise<void> {

@@ -165,6 +165,10 @@ export interface LlmSettings {
   localNetworks: string[]
   nliCategories: NliCategory[]
   nliConfidenceThreshold: number
+  knowledge: {
+    remoteUrl: string
+    lastSyncAt: number
+  }
   providers: {
     browserMl: {
       chatModel: string
@@ -281,6 +285,10 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   },
   nliCategories: [...DEFAULT_NLI_CATEGORIES],
   nliConfidenceThreshold: 0.25,
+  knowledge: {
+    remoteUrl: 'https://raw.githubusercontent.com/aicrafted/tab-lab/refs/heads/main/public/data/domains.json',
+    lastSyncAt: 0,
+  },
   tasks: {
     chat: { provider: 'lmstudio' },
     embedding: { 
@@ -365,6 +373,10 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       },
       nliCategories: (obj.nliCategories as NliCategory[]) ?? [...DEFAULT_NLI_CATEGORIES],
       nliConfidenceThreshold: typeof obj.nliConfidenceThreshold === 'number' ? obj.nliConfidenceThreshold : 0.25,
+      knowledge: {
+        remoteUrl: asString(asObject(obj.knowledge).remoteUrl, DEFAULT_LLM_SETTINGS.knowledge.remoteUrl),
+        lastSyncAt: typeof asObject(obj.knowledge).lastSyncAt === 'number' ? (asObject(obj.knowledge).lastSyncAt as number) : 0,
+      },
     }
   }
 
