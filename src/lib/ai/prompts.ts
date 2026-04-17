@@ -137,22 +137,58 @@ Domains:`
 
 function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
   let text = raw
+
+  // Handle URL encoding if present
+  if (text.includes('%')) {
+    try {
+      text = decodeURIComponent(text)
+    } catch { 
+      // Fallback: replace common ones manually if decode fails
+      text = text.replace(/%20/g, ' ').replace(/%5f/gi, '_')
+    }
+  }
+
+  text = text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/<\|[^|>]*\|>/g, ' ')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/[{}[\]`"]/g, ' ')
+    .replace(/([a-z]{2,})([A-Z])/g, '$1 $2') // Break CamelCase (WebApp -> Web App, protects IoT, eBay)
+    .replace(/([A-Z]{2,})([A-Z][a-z]{2,})/g, '$1 $2') // Handle acronyms (AIModel -> AI Model, protects APIs)
+    .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
-  // Remove common LLM prefixes if the model fails to return clean text
-  text = text.replace(/^(category|label|output|result|choice|name|type)\s*[:=]\s*/i, '').trim()
+  // Remove common LLM prefixes/hallucinations if the model repeats them
+  text = text
+    .replace(/^(category|label|output|result|choice|name|type|title|domain|url|site)\s*[:=]\s*/i, '')
+    .split(/\b(domain|url|site|path|title|category)\s*:/i)[0] // Strip "Title: ... Domain: ..." suffixes
+    .trim()
   
   if (!text) return fallback
-  const firstPhrase = text.split(/[;|]/)[0]?.trim() || text
-  const candidate = firstPhrase.slice(0, 40).trim()
+  
+  // Split by common delimiters and take the first part
+  // This handles "Category/Subcategory" or "Item 1 & Item 2"
+  const firstPhrase = text.split(/[&/\\|;]/)[0]?.trim() || text
+  let candidate = firstPhrase.slice(0, 40).trim()
   if (!candidate) return fallback
-  if (/^(analysis|final|assistant|user|system|channel|null|undefined)$/i.test(candidate)) return fallback
-  if (/^-?\d+(\.\d+)?$/.test(candidate)) return fallback
+
+  // Enforce Title Case for each word
+  candidate = candidate
+    .split(/\s+/)
+    .map(word => {
+      if (word.length === 0) return ''
+      // If it's a pure acronym (AI, LLM) or has internal caps (APIs, IoT, WebApp), keep it as is
+      if (word.length > 1 && (word === word.toUpperCase() || /[A-Z]/.test(word.slice(1)))) {
+        return word
+      }
+      // Otherwise (all lowercase or just first letter caps), enforce Title Case
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    })
+    .join(' ')
+    .trim()
+
+  if (isInvalidCategoryLabel(candidate)) return fallback
   return candidate
 }
 
@@ -160,8 +196,9 @@ function isInvalidCategoryLabel(label: string): boolean {
   const text = label.trim()
   if (!text || text.length < 2) return true
   if (/<\|[^|>]*\|>/.test(text)) return true
-  // Re-include 'analysis' as it helped prevent over-generalization before
-  if (/^(analysis|final|assistant|user|system|channel|null|undefined)$/i.test(text)) return true
+  // Blacklist generic technical terms that are often hallucinations or bad defaults
+  if (/^(analysis|final|assistant|user|system|channel|null|undefined|category|unknown|other|result|choice)$/i.test(text)) return true
+  if (/^-?\d+(\.\d+)?$/.test(text)) return true
   return false
 }
 
