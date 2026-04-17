@@ -1,3 +1,5 @@
+import { ACTIVE_BUILD } from './constants'
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 const STORAGE_KEY = 'tabmind:logLevel'
@@ -24,7 +26,14 @@ function readConfiguredLevel(): LogLevel {
 function shouldLog(level: LogLevel): boolean {
   if (level === 'error') return true
   const configured = readConfiguredLevel()
-  return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[configured]
+  
+  // Use config from constants as default if no localStorage override
+  const defaultLevel = ACTIVE_BUILD.loglevel
+  const effectiveLevel = (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY)) 
+    ? configured 
+    : defaultLevel
+
+  return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[effectiveLevel as LogLevel]
 }
 
 function log(level: LogLevel, ns: string, msg: string, ctx?: object): void {

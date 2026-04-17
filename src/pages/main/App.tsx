@@ -44,7 +44,6 @@ import { TimelineView } from '@/components/views/TimelineView'
 import { MagazineView } from '@/components/views/MagazineView'
 import { TreemapView } from '@/components/views/TreemapView'
 import { SemanticMapView } from '@/components/views/SemanticMapView'
-import { ActivityHeatmapView } from '@/components/views/ActivityHeatmapView'
 import { DomainGraphView } from '@/components/views/DomainGraphView'
 import { ReadingQueueView } from '@/components/views/ReadingQueueView'
 import { TagConstellationView } from '@/components/views/TagConstellationView'
@@ -57,17 +56,17 @@ import { ShelfView } from '@/components/views/ShelfView'
 import { OverlapExplorerView } from '@/components/views/OverlapExplorerView'
 import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
+import { ACTIVE_BUILD } from '@/lib/core/constants'
 
 type FacetMode = 'domains' | 'categories' | 'intent' | 'platform' | 'tags'
 
-const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
+const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
   kanban: KanbanView,
   timeline: TimelineView,
   magazine: MagazineView,
   treemap: TreemapView,
   semantic: SemanticMapView,
-  heatmap: ActivityHeatmapView,
   'domain-graph': DomainGraphView,
   'reading-queue': ReadingQueueView,
   'tag-constellation': TagConstellationView,
@@ -84,6 +83,10 @@ const VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX
   'settings-knowledge': KnowledgeSettingsView,
   'settings-advanced': AdvancedSettingsView,
 }
+
+const VIEW_COMPONENTS = Object.fromEntries(
+  Object.entries(ALL_VIEW_COMPONENTS).filter(([id, comp]) => !!comp && !ACTIVE_BUILD.views.hide.includes(id as ViewId))
+) as Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element>
 
 const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
   // List is cleaner with separate entity modes; merged "both" is intentionally disabled.
@@ -552,6 +555,7 @@ export function App() {
         await setLlmSettings(s)
         setLlmSettingsState(s)
       },
+      viewMenuHost,
     }
 
     if (activeView === 'list') {
@@ -577,7 +581,11 @@ export function App() {
       )
     }
 
-    const ActiveView = VIEW_COMPONENTS[activeView]
+    const ActiveView = VIEW_COMPONENTS[activeView as keyof typeof VIEW_COMPONENTS]
+    if (!ActiveView) {
+      // Fallback to Triage if requested view is hidden/unavailable
+      return <TriageView {...common} />
+    }
     return <ActiveView {...common} />
   }
 
@@ -700,9 +708,9 @@ export function App() {
             <ViewBar activeView={activeView} onChange={handleViewChange} />
           </div>
 
-          <div className="shrink-0 pb-3">
+          <div className="shrink-0 pb-3 flex flex-col gap-3">
             {VIEW_HINTS[activeView] && (
-              <p className="mt-2 text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
+              <p className="text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
             )}
             <div ref={setViewMenuHost} />
           </div>

@@ -40,6 +40,7 @@ interface FaviconProps {
   domain: string
   /** Pre-resolved URL - only safe values (data:, https:, or chrome-extension:). */
   src?: string
+  className?: string
 }
 
 /**
@@ -58,7 +59,7 @@ export const DomainIconContext = createContext<ReadonlyMap<string, string>>(new 
  * For tabs, pass tab.favIconUrl (Chrome resolves it for you).
  * For bookmarks, leave src undefined -> falls through to domain context -> letter avatar.
  */
-export function Favicon({ domain, src }: FaviconProps) {
+export function Favicon({ domain, src, className }: FaviconProps) {
   const domainIcons = useContext(DomainIconContext)
   const domainIcon = domainIcons.get(domain)
   const letter = (domain[0] ?? '?').toUpperCase()
@@ -72,7 +73,7 @@ export function Favicon({ domain, src }: FaviconProps) {
         alt=""
         width={16}
         height={16}
-        className="h-4 w-4 shrink-0 rounded-sm object-contain"
+        className={cn("h-4 w-4 shrink-0 rounded-sm object-contain", className)}
         onError={() => markIconFailure(src)}
       />
     )
@@ -85,7 +86,7 @@ export function Favicon({ domain, src }: FaviconProps) {
         alt=""
         width={16}
         height={16}
-        className="h-4 w-4 shrink-0 rounded-sm object-contain"
+        className={cn("h-4 w-4 shrink-0 rounded-sm object-contain", className)}
         onError={() => markIconFailure(domainIcon)}
       />
     )
@@ -96,6 +97,7 @@ export function Favicon({ domain, src }: FaviconProps) {
       className={cn(
         'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[9px] font-bold leading-none select-none',
         pickColor(domain),
+        className
       )}
       aria-hidden
     >
@@ -103,3 +105,4 @@ export function Favicon({ domain, src }: FaviconProps) {
     </div>
   )
 }
+

@@ -1,15 +1,12 @@
 import { cn } from '@/lib/core/utils'
 import type { ViewId } from '@/components/views/types'
+import { ACTIVE_BUILD } from '@/lib/core/constants'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'list', label: 'List', hint: 'Classic table with sorting and filters' },
   { id: 'triage', label: 'Triage', hint: 'What needs attention: dead links, never visited, duplicates, stale' },
   { id: 'kanban', label: 'Kanban', hint: 'Columns by AI category - drag cards between them' },
-  { id: 'timeline', label: 'Timeline', hint: 'Horizontal time axis - see when you bookmarked and visited' },
-  { id: 'magazine', label: 'Magazine', hint: 'Editorial grid with thumbnails and summaries' },
-  { id: 'treemap', label: 'Treemap', hint: 'Hierarchical area chart - category to domain to pages' },
-  { id: 'semantic', label: 'Semantic Map', hint: '2D embedding projection - semantically similar pages cluster together' },
-  { id: 'heatmap', label: 'Activity Heatmap', hint: 'GitHub-style calendar of your browsing activity' },
+  { id: 'timeline', label: 'Timeline', hint: 'Horizontal time axis and activity summary - see when you bookmarked and visited' },
   { id: 'domain-graph', label: 'Domain Graph', hint: 'Nodes are domains, edges are co-visited sessions' },
   { id: 'reading-queue', label: 'Reading Queue', hint: 'Pages you saved to read later, sorted by reading time' },
   { id: 'tag-constellation', label: 'Tag Constellation', hint: 'Tags as stars, pages as lines connecting them' },
@@ -54,7 +51,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     id: 'history',
     label: 'History',
     hint: 'Timeline and activity-oriented representations over time.',
-    views: ['heatmap', 'focus-rings', 'session-story', 'timeline', 'topic-river'],
+    views: ['focus-rings', 'session-story', 'timeline', 'topic-river'],
   },
   {
     id: 'net-heavy',
@@ -84,44 +81,45 @@ interface ViewBarProps {
 }
 
 export function ViewBar({ activeView, onChange }: ViewBarProps) {
-  const activeGroupId = GROUP_BY_VIEW[activeView] ?? VIEW_GROUPS[0].id
-  const activeGroup = VIEW_GROUPS.find((group) => group.id === activeGroupId) ?? VIEW_GROUPS[0]
+  const activeIdToUse = GROUP_BY_VIEW[activeView] ?? VIEW_GROUPS[0].id
+  const activeGroup = VIEW_GROUPS.find((group) => group.id === activeIdToUse) ?? VIEW_GROUPS[0]
 
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max flex-col gap-0 pb-2">
         <div className="flex items-center gap-1">
           {VIEW_GROUPS.map((group) => {
-            const isActive = group.id === activeGroup.id
+            const filteredGroupViews = group.views.filter(v => !ACTIVE_BUILD.views.hide.includes(v))
+            if (filteredGroupViews.length === 0) return null
+
+            const isActive = group.id === activeIdToUse
             const isSettingsGroup = group.id === 'settings'
 
             return (
-              <>
-                {isSettingsGroup && <div key="spacer" className="flex-grow" />}
-                <button
-                  key={group.id}
-                  type="button"
-                  title={group.hint}
-                  onClick={() => onChange(group.views[0])}
-                  className={cn(
-                    'whitespace-nowrap rounded-t-md rounded-b-none border-b-2 px-2.5 py-1 text-base transition-colors',
-                    isActive
-                      ? 'border-primary text-primary font-semibold'
-                      : 'border-transparent text-muted-foreground hover:text-foreground',
-                    isSettingsGroup && 'ml-2',
-                  )}
-                >
-                  {group.label}
-                </button>
-              </>
+              <button
+                key={group.id}
+                type="button"
+                title={group.hint}
+                onClick={() => onChange(filteredGroupViews[0])}
+                className={cn(
+                  'whitespace-nowrap rounded-t-md rounded-b-none border-b-2 px-2.5 py-1 text-base transition-colors',
+                  isActive
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                  isSettingsGroup && 'ml-auto',
+                )}
+              >
+                {group.label}
+              </button>
             )
           })}
         </div>
 
         <div className="border-t border-primary/50 bg-primary/10 px-2 py-1.5">
           <div className="flex items-center gap-1">
-          {activeGroup.views.map((viewId) => {
+          {activeGroup.views.filter(v => !ACTIVE_BUILD.views.hide.includes(v)).map((viewId) => {
             const view = VIEW_BY_ID[viewId]
+            if (!view) return null
             return (
               <button
                 key={view.id}

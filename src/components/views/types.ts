@@ -10,7 +10,6 @@ export type ViewId =
   | 'magazine'
   | 'treemap'
   | 'semantic'
-  | 'heatmap'
   | 'domain-graph'
   | 'reading-queue'
   | 'tag-constellation'
@@ -37,4 +36,5 @@ export interface ViewProps {
   onRunEmbeddings?: () => Promise<void>
   llmSettings?: LlmSettings
   onSaveSettings?: (settings: LlmSettings) => Promise<void>
+  viewMenuHost?: HTMLElement | null
 }

@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "vite build --watch --mode development",
+    "build:dev": "vite build --mode development && node scripts/fix-commonjs-helper.mjs",
     "build": "vite build && node scripts/fix-commonjs-helper.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
