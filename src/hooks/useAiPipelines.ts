@@ -60,11 +60,11 @@ export function useAiPipelines({
     setBookmarks((prev) => applyTagsUpdates(prev, updates))
   }, [setBookmarks])
 
-  const applyTabIntentBatch = useCallback((updates: { url: string; intent: PageIntent }[]) => {
+  const applyTabIntentBatch = useCallback((updates: { url: string; intent: PageIntent | undefined }[]) => {
     setTabs((prev) => applyIntentUpdates(prev, updates))
   }, [setTabs])
 
-  const applyBookmarkIntentBatch = useCallback((updates: { url: string; intent: PageIntent }[]) => {
+  const applyBookmarkIntentBatch = useCallback((updates: { url: string; intent: PageIntent | undefined }[]) => {
     setBookmarks((prev) => applyIntentUpdates(prev, updates))
   }, [setBookmarks])
 

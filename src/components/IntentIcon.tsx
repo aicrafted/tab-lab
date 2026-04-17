@@ -32,7 +32,6 @@ const ICON_BY_INTENT: Record<PageIntent, LucideIcon> = {
   archive: Archive,
   data: Database,
   code: Code2,
-  other: Circle,
 }
 
 function asPageIntent(intent: string): PageIntent | undefined {

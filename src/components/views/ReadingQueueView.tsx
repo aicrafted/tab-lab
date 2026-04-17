@@ -16,7 +16,7 @@ type SortMode = 'oldest' | 'reading-time' | 'domain' | 'category'
 
 interface QueueItem {
   bookmark: BookmarkItem
-  intent: PageIntent
+  intent: PageIntent | undefined
   readingTime: number
   summary: string
 }

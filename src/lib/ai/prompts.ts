@@ -121,7 +121,6 @@ Choose ONE label from:
 - transactional : order confirmation, booking, ticket, tracking page, invoice, support ticket — time-sensitive, discard after done
 - video         : YouTube, Vimeo, Twitch, podcast page — primary content is video/audio
 - repository    : GitHub/GitLab repo, npm/crates.io/PyPI package page
-- other         : anything that doesn't fit clearly
 
 Reply with the single label only. No explanation.`
 const CLASSIFY_INTENT_SYSTEM_JSON = `You classify web pages by their intent. Output a JSON object with a single "intent" key.
@@ -135,7 +134,6 @@ Valid values: "article", "reference", "tool", "service", "transactional", "video
 - transactional: order, booking, tracking - time-sensitive
 - video: YouTube, Vimeo, Twitch - primary content is video
 - repository: GitHub, npm, crates.io - code asset
-- other: anything else
 
 Example output: {"intent": "reference"}`
 
@@ -143,12 +141,12 @@ const ANALYZE_METADATA_SYSTEM_JSON = `You are a web page analyzer. Extract tags,
 Output strict JSON:
 {
   "tags": ["tag1", "tag2", "tag3"],
-  "intent": "article|reference|tool|service|transactional|video|repository|other",
+  "intent": "article|reference|tool|service|transactional|video|repository",
   "platform": "social|video|code|registry|qa|blog|docs|shopping|news|ai|tool|sandbox|cloud|music|finance|ci|games|education|email|reference|null"
 }
 
 RULES:
-1. TAGS: 3-5 specific lowercase tags (1-2 words each). Avoid generic tags like "website" or "internet".
+1. TAGS: 1-3 specific lowercase tags (1-2 words each). Avoid generic tags like "website" or "internet".
    Tags CAN include product/brand names (e.g., "typescript", "react", "figma").
 2. INTENT (how the user uses this page):
    - article: read-only content (blog posts, news, reddit threads, forum discussions)
@@ -158,7 +156,6 @@ RULES:
    - transactional: one-time action (orders, tickets, receipts, tracking)
    - video: primary content is video/audio (YouTube, Twitch, podcasts)
    - repository: code asset (GitHub repo, npm, crates.io)
-   - other: anything else
    Note: prefer "tool" over "service" when the page has interactive functionality.
 3. PLATFORM (what kind of service hosts this):
    - social: social networks (Reddit, Twitter, LinkedIn, Mastodon)
@@ -305,7 +302,7 @@ function parseCategoryJson(raw: string): { category: string; strict: boolean } {
       return { category: normalizeCategoryLabel(cat), strict: true }
     }
   }
-  return { category: 'Other', strict: false }
+  return { category: 'General', strict: false }
 }
 
 function normalizeTagToken(token: string): string {
@@ -332,15 +329,15 @@ function parseTagsJson(raw: string): { tags: string[]; strict: boolean } {
   return { tags: parseTagsText(raw), strict: false }
 }
 
-function parseIntentText(raw: string): PageIntent {
+function parseIntentText(raw: string): PageIntent | undefined {
   const normalized = raw.trim().toLowerCase()
-  return VALID_INTENTS.find((intent) => normalized.includes(intent)) ?? 'other'
+  return VALID_INTENTS.find((intent) => normalized.includes(intent))
 }
 
-function parseIntentJson(raw: string): { intent: PageIntent; strict: boolean } {
+function parseIntentJson(raw: string): { intent: PageIntent | undefined; strict: boolean } {
   const parsed = parseLlmJson<{ intent?: PageIntent }>(raw, {})
   if (parsed.intent) {
-    const value = VALID_INTENTS.find((intent) => intent === parsed.intent) ?? 'other'
+    const value = VALID_INTENTS.find((intent) => intent === parsed.intent)
     return { intent: value, strict: true }
   }
   return { intent: parseIntentText(raw), strict: false }
@@ -428,15 +425,15 @@ export const classifyItem = {
     return lines.join('\n')
   },
 
-  parseResponse(raw: string, fallback = 'Other'): string {
+  parseResponse(raw: string, fallback = 'General'): string {
     const json = parseCategoryJson(raw)
-    if (json.strict && json.category !== 'Other') return json.category
+    if (json.strict && json.category !== 'General') return json.category
     return normalizeCategoryLabel(raw, fallback)
   },
 
-  parseResponseDetailed(raw: string, fallback = 'Other'): { category: string; strict: boolean } {
+  parseResponseDetailed(raw: string, fallback = 'General'): { category: string; strict: boolean } {
     const json = parseCategoryJson(raw)
-    if (json.strict && json.category !== 'Other') return json
+    if (json.strict && json.category !== 'General') return json
     return { category: normalizeCategoryLabel(raw, fallback), strict: false }
   },
 
@@ -562,12 +559,12 @@ export const classifyIntent = {
     return lines.join('\n')
   },
 
-  parseResponse(raw: string, format: 'text' | 'json'): PageIntent {
+  parseResponse(raw: string, format: 'text' | 'json'): PageIntent | undefined {
     if (format === 'json') return parseIntentJson(raw).intent
     return parseIntentText(raw)
   },
 
-  parseResponseDetailed(raw: string, format: 'text' | 'json'): { intent: PageIntent; strict: boolean } {
+  parseResponseDetailed(raw: string, format: 'text' | 'json'): { intent: PageIntent | undefined; strict: boolean } {
     if (format === 'json') return parseIntentJson(raw)
     return { intent: parseIntentText(raw), strict: false }
   },
@@ -656,7 +653,7 @@ export const analyzeMetadata = {
   user(params: { title: string; domain: string; path?: string; siteLine?: string }): string {
     return tagItem.user(params)
   },
-  parseResponse(raw: string): { tags: string[]; intent: PageIntent; platform: KnownPlatform | null } {
+  parseResponse(raw: string): { tags: string[]; intent: PageIntent | undefined; platform: KnownPlatform | null } {
     const tags = parseTagsJson(raw)
     const intent = parseIntentJson(raw)
     const platform = normalizePlatform(parseLlmJson<any>(raw, {}).platform)

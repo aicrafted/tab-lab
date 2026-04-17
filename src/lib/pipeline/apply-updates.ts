@@ -17,7 +17,7 @@ export interface TagsUpdate extends UrlUpdate {
 }
 
 export interface IntentUpdate extends UrlUpdate {
-  intent: PageIntent
+  intent: PageIntent | undefined
 }
 
 export interface ClusterIdUpdate extends UrlUpdate {

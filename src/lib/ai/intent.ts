@@ -77,13 +77,13 @@ async function classifyIntentNLI(
   item: { url: string; title: string; domain: string },
   settings: LlmSettings,
   signal?: AbortSignal,
-): Promise<PageIntent> {
+): Promise<PageIntent | undefined> {
   const providerId = settings.tasks.embedding.provider
   const provider = getEmbeddingProvider(providerId)
   const path = urlPathSnippet(item.url)
   const query = await provider.embed([item.title, item.domain, path].filter(Boolean).join(' '), settings, signal)
   const labels = await getIntentLabelEmbeddings(settings, signal)
-  let bestIntent: PageIntent = 'other'
+  let bestIntent: PageIntent | undefined = undefined
   let bestScore = -Infinity
 
   for (const [intent, embedding] of labels.entries()) {
@@ -97,7 +97,7 @@ async function classifyIntentNLI(
   return bestIntent
 }
 
-export type IntentUpdate = { url: string; intent: PageIntent }
+export type IntentUpdate = { url: string; intent: PageIntent | undefined }
 
 export async function classifyIntent(
   items: { url: string; title: string; domain: string; staticIntent?: PageIntent }[],
@@ -147,7 +147,7 @@ export async function classifyIntent(
 
     await Promise.all(batch.map(async (item) => {
       try {
-        let intent: PageIntent = 'other'
+        let intent: PageIntent | undefined = undefined
         if (useNli) {
           intent = await classifyIntentNLI(item, settings, signal)
         } else {
@@ -174,7 +174,7 @@ export async function classifyIntent(
           embedding: existing?.embedding,
           intent,
         })
-        results.push({ url: item.url, intent })
+        results.push({ url: item.url, intent: intent as PageIntent })
       } catch (err) {
         aiPipelineLog.error('classifyIntent item failed', {
           url: item.url,

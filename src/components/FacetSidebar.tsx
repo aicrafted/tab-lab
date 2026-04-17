@@ -3,6 +3,30 @@ import { SourceFilterToggle } from '@/components/SourceFilter'
 import { Favicon } from '@/components/Favicon'
 import { Input } from '@/components/ui/input'
 import {
+  Archive,
+  AudioLines,
+  BookMarked,
+  BookOpen,
+  Brain,
+  Braces,
+  Cloud,
+  Code2,
+  Database,
+  File,
+  FileText,
+  FolderGit2,
+  Globe,
+  Image as ImageIcon,
+  Mail,
+  PlayCircle,
+  Share2,
+  Shield,
+  Sparkles,
+  Store,
+  Video,
+  Wrench,
+} from 'lucide-react'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -16,6 +40,66 @@ import { cn } from '@/lib/core/utils'
 interface FacetItem {
   value: string
   count: number
+}
+
+function intentIcon(intent: string) {
+  switch (intent) {
+    case 'article':
+      return FileText
+    case 'reference':
+      return BookOpen
+    case 'tool':
+      return Wrench
+    case 'service':
+      return Store
+    case 'transactional':
+      return Sparkles
+    case 'repository':
+      return FolderGit2
+    case 'document':
+      return File
+    case 'image':
+      return ImageIcon
+    case 'audio':
+      return AudioLines
+    case 'video':
+      return Video
+    case 'archive':
+      return Archive
+    case 'data':
+      return Database
+    case 'code':
+      return Code2
+    default:
+      return Sparkles
+  }
+}
+
+function platformIcon(platform: string) {
+  switch (platform) {
+    case 'code':
+      return Braces
+    case 'social':
+      return Share2
+    case 'reference':
+      return BookMarked
+    case 'video':
+      return PlayCircle
+    case 'docs':
+      return FileText
+    case 'ai':
+      return Brain
+    case 'cloud':
+      return Cloud
+    case 'tool':
+      return Wrench
+    case 'email':
+      return Mail
+    case 'proxy':
+      return Shield
+    default:
+      return Globe
+  }
 }
 
 export interface CategoryChildFacet {
@@ -254,6 +338,14 @@ function UniversalFacetBlock({
   onTagToggle: (value: string) => void
 }) {
   const [tagQuery, setTagQuery] = useState('')
+  const selectedIntentItem = useMemo(
+    () => intents.find((item) => item.value === selectedIntent) ?? null,
+    [intents, selectedIntent],
+  )
+  const selectedPlatformItem = useMemo(
+    () => platforms.find((item) => item.value === selectedPlatform) ?? null,
+    [platforms, selectedPlatform],
+  )
   const visibleTags = useMemo(() => {
     const query = tagQuery.trim().toLowerCase()
     const filtered = query
@@ -267,26 +359,62 @@ function UniversalFacetBlock({
       <div className="grid grid-cols-2 gap-2">
         <Select value={selectedIntent ?? '__any__'} onValueChange={(value) => onIntentChange(value === '__any__' ? null : value)}>
           <SelectTrigger className="h-7 text-xs">
-            <span className="truncate">{selectedIntent ?? 'Any intent'}</span>
+            {selectedIntentItem ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                {(() => {
+                  const Icon = intentIcon(selectedIntentItem.value)
+                  return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
+                })()}
+                <span className="truncate">{selectedIntentItem.value}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground/70">{selectedIntentItem.count}</span>
+              </span>
+            ) : (
+              <span className="truncate">Any intent</span>
+            )}
           </SelectTrigger>
           <SelectContent className="text-xs">
             <SelectItem value="__any__" className="py-0.5 px-2 text-xs">Any intent</SelectItem>
             {intents.map((item) => (
               <SelectItem key={item.value} value={item.value} className="py-0.5 px-2 text-xs">
-                {item.value}
+                <span className="flex w-full min-w-0 items-center gap-1.5">
+                  {(() => {
+                    const Icon = intentIcon(item.value)
+                    return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
+                  })()}
+                  <span className="min-w-0 flex-1 truncate">{item.value}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground/70">{item.count}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={selectedPlatform ?? '__any__'} onValueChange={(value) => onPlatformChange(value === '__any__' ? null : value)}>
           <SelectTrigger className="h-7 text-xs">
-            <span className="truncate">{selectedPlatform ?? 'Any platform'}</span>
+            {selectedPlatformItem ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                {(() => {
+                  const Icon = platformIcon(selectedPlatformItem.value)
+                  return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
+                })()}
+                <span className="truncate">{selectedPlatformItem.value}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground/70">{selectedPlatformItem.count}</span>
+              </span>
+            ) : (
+              <span className="truncate">Any platform</span>
+            )}
           </SelectTrigger>
           <SelectContent className="text-xs">
             <SelectItem value="__any__" className="py-0.5 px-2 text-xs">Any platform</SelectItem>
             {platforms.map((item) => (
               <SelectItem key={item.value} value={item.value} className="py-0.5 px-2 text-xs">
-                {item.value}
+                <span className="flex w-full min-w-0 items-center gap-1.5">
+                  {(() => {
+                    const Icon = platformIcon(item.value)
+                    return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
+                  })()}
+                  <span className="min-w-0 flex-1 truncate">{item.value}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground/70">{item.count}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

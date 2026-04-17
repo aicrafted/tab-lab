@@ -90,7 +90,7 @@ export function intentFromPlatform(platform: KnownPlatform | undefined, url?: st
 
   // Heuristic: for content-heavy platforms, lists/feeds are not 'article'
   if (url && (platform === 'social' || platform === 'qa' || platform === 'blog' || platform === 'education')) {
-    if (!looksLikeSpecificItem(url)) return 'other'
+    if (!looksLikeSpecificItem(url)) return undefined
   }
 
   return base

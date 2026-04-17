@@ -197,7 +197,7 @@ export function SemanticMapView({ bookmarks, tabs, loading, projectedPoints, clu
 
   const colorKeyForPoint = (point: SemanticPoint): string => {
     if (colorMode === 'domain') return point.domain
-    if (colorMode === 'intent') return point.intent ?? 'other'
+    if (colorMode === 'intent') return point.intent ?? 'unclassified'
     return point.category
   }
 

@@ -33,7 +33,6 @@ const INTENT_TO_AXIS: Partial<Record<PageIntent, AxisName>> = {
   transactional: 'Other',
   archive: 'Other',
   repository: 'Work',
-  other: 'Other',
 }
 
 export function PersonalRadarView({ bookmarks, tabs, loading }: ViewProps) {

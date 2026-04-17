@@ -39,7 +39,7 @@ export type PipelineEvent =
 export interface PipelineCallbacks {
   onCategoryUpdate: (updates: { url: string; category: string; parentCategory?: string }[]) => void
   onTagsUpdate: (updates: { url: string; tags: string[] }[]) => void
-  onIntentUpdate: (updates: { url: string; intent: PageIntent }[]) => void
+  onIntentUpdate: (updates: { url: string; intent: PageIntent | undefined }[]) => void
   onClusterUpdate: (updates: { url: string; clusterId: number }[]) => void
   onClusterNames: (names: Map<number, string>) => void
   onProjectedPoints: (points: Map<string, [number, number]>) => void

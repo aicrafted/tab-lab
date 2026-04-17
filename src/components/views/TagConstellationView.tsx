@@ -121,7 +121,7 @@ export function TagConstellationView({ bookmarks, tabs, loading, onRunTags }: Vi
       tags: [
         getStubIntent(page.url, page.title),
         page.domain,
-      ],
+      ].filter((t): t is string => !!t),
     }))
   }, [pages, hasRealTags])
 

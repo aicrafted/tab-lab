@@ -136,7 +136,7 @@ function filterItems<T extends TabItem | BookmarkItem>(
   if (!hasUniversalFilter) return items
 
   return items.filter((item) => {
-    if (universalFilters.intent && (effectiveIntent(item) ?? 'other') !== universalFilters.intent) return false
+    if (universalFilters.intent && effectiveIntent(item) !== universalFilters.intent) return false
     if (universalFilters.platform && item.platform !== universalFilters.platform) return false
     if (universalFilters.tags.length > 0) {
       const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
@@ -501,12 +501,12 @@ export function App() {
   const intentFacet = useMemo(() => {
     const counts = new Map<string, number>()
     for (const t of sourceScopedTabs) {
-      const key = effectiveIntent(t) ?? 'other'
-      counts.set(key, (counts.get(key) ?? 0) + 1)
+      const key = effectiveIntent(t)
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     for (const b of sourceScopedBookmarks) {
-      const key = effectiveIntent(b) ?? 'other'
-      counts.set(key, (counts.get(key) ?? 0) + 1)
+      const key = effectiveIntent(b)
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     return Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count)
   }, [sourceScopedTabs, sourceScopedBookmarks])

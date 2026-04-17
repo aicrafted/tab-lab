@@ -229,7 +229,7 @@ export async function analyzeItemsTwoPass(
     category: string;
     parentCategory: string;
     tags: string[];
-    intent: PageIntent;
+    intent: PageIntent | undefined;
     platform: KnownPlatform | null;
   }[]) => void,
   domainMap?: Map<string, DomainInfo>,
@@ -257,7 +257,7 @@ export async function analyzeItemsTwoPass(
   for (let i = 0; i < uncached.length; i += BATCH) {
     if (signal?.aborted) throw new Error('Aborted')
     const batch = uncached.slice(i, i + BATCH)
-    const results: { url: string; category: string; parentCategory: string; tags: string[]; intent: PageIntent; platform: KnownPlatform | null }[] = []
+    const results: { url: string; category: string; parentCategory: string; tags: string[]; intent: PageIntent | undefined; platform: KnownPlatform | null }[] = []
 
     const hints = Array.from(seenCategories)
       .filter(c => !classifyItem.isInvalidResponse(c))
@@ -299,7 +299,6 @@ export async function analyzeItemsTwoPass(
           platform: meta.platform ?? undefined,
           processedAt: Date.now() 
         })
-        
         results.push({ 
           url: item.url, 
           category: category, 
