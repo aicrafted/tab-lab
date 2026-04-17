@@ -16,21 +16,43 @@ async function fetchRemote(
     ...(isEmbed ? { input } : extraBody),
   })
 
-  const res = await fetch(`${baseUrl}/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body,
-    signal,
-  })
+  const maxRetries = 10
+  let lastError: Error | null = null
 
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '')
-    throw new Error(`OpenAI-Compatible API ${res.status}: ${errorText}`)
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body,
+        signal,
+      })
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '')
+        // LM Studio often returns 400 or 500 when loading or swapping models
+        if ((res.status === 400 || res.status === 500 || res.status === 404 || errorText.toLowerCase().includes('loading')) && attempt < maxRetries - 1) {
+          const delay = 3000 + attempt * 2000
+          console.warn(`[AI] Model loading or busy (${res.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        throw new Error(`OpenAI-Compatible API ${res.status}: ${errorText}`)
+      }
+      return res.json()
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') throw err
+      lastError = err instanceof Error ? err : new Error(String(err))
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        continue
+      }
+    }
   }
-  return res.json()
+  throw lastError || new Error(`Failed to fetch from ${endpoint}`)
 }
 
 export abstract class OpenAiCompatibleProvider extends LlmProvider {
@@ -86,7 +108,7 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
     const model = this.getEmbeddingModel(settings)
     if (!url || !model) return []
 
-    const maxRetries = 10 
+    const maxRetries = 15
     let lastError: Error | null = null
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -101,10 +123,11 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
           signal,
         })
 
-        if (res.status === 500 && attempt < maxRetries - 1) {
-          // Model likely loading, wait and retry
-          const delay = 2000 + attempt * 1000
-          console.warn(`[AI] Embedding model loading (500), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`)
+        const errorText = res.ok ? '' : await res.text().catch(() => '')
+        if ((res.status === 500 || res.status === 400 || res.status === 404 || errorText.toLowerCase().includes('loading')) && attempt < maxRetries - 1) {
+          // Model likely loading or being swapped, wait and retry
+          const delay = 3000 + attempt * 1000
+          console.warn(`[AI] Embedding model loading or busy (${res.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`)
           await new Promise(resolve => setTimeout(resolve, delay))
           continue
         }
@@ -137,7 +160,7 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
       const res = await fetch(`${url}/models`, {
         method: 'GET',
         headers: this.getApiKey(settings) ? { Authorization: `Bearer ${this.getApiKey(settings)}` } : {},
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(5000),
       })
 
       if (!res.ok) {
@@ -196,7 +219,7 @@ export class LmStudioProvider extends OpenAiCompatibleProvider {
           messages: [{ role: 'user', content: '' }],
           max_tokens: 1,
         }),
-        signal: AbortSignal.timeout(25000), // Wait up to 25s for readiness
+        signal: AbortSignal.timeout(45000), // Wait up to 45s for readiness
       })
 
       if (res.ok) return { available: true, status: 'ready' }
