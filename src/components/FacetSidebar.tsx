@@ -1,8 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { SourceFilterToggle } from '@/components/SourceFilter'
-import { IntentIcon } from '@/components/IntentIcon'
-import { PlatformIcon } from '@/components/PlatformIcon'
 import { Favicon } from '@/components/Favicon'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -46,10 +45,16 @@ interface FacetSidebarProps {
   intents: FacetItem[]
   platforms: FacetItem[]
   tags: FacetItem[]
-  activeMode: 'domains' | 'categories' | 'intent' | 'platform' | 'tags'
+  activeMode: 'domains' | 'categories' | 'universal'
   activeValues: string[]
-  onModeChange: (mode: 'domains' | 'categories' | 'intent' | 'platform' | 'tags') => void
+  universalIntent: string | null
+  universalPlatform: string | null
+  universalTags: string[]
+  onModeChange: (mode: 'domains' | 'categories' | 'universal') => void
   onToggle: (value: string) => void
+  onUniversalIntentChange: (value: string | null) => void
+  onUniversalPlatformChange: (value: string | null) => void
+  onUniversalTagToggle: (value: string) => void
   onClear: () => void
   width: number
 }
@@ -69,27 +74,21 @@ export function FacetSidebar({
   tags,
   activeMode,
   activeValues,
+  universalIntent,
+  universalPlatform,
+  universalTags,
   onModeChange,
   onToggle,
+  onUniversalIntentChange,
+  onUniversalPlatformChange,
+  onUniversalTagToggle,
   onClear,
   width,
 }: FacetSidebarProps) {
-  const items = activeMode === 'domains'
-    ? domains
-    : activeMode === 'intent'
-      ? intents
-      : activeMode === 'platform'
-        ? platforms
-        : tags
-  const showEmpty = activeMode === 'categories'
-    ? categories.length === 0
-    : activeMode === 'intent'
-      ? intents.length === 0
-      : activeMode === 'platform'
-        ? platforms.length === 0
-        : activeMode === 'tags'
-          ? tags.length === 0
-          : false
+  const showEmpty = activeMode === 'categories' && categories.length === 0
+  const activeCount = activeMode === 'universal'
+    ? (universalIntent ? 1 : 0) + (universalPlatform ? 1 : 0) + universalTags.length
+    : activeValues.length
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
     ? bookmarkScopeFilter.folderId
     : 'root'
@@ -155,7 +154,7 @@ export function FacetSidebar({
 
       <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
         <div className="flex items-center justify-center">
-          {(['domains', 'categories', 'intent', 'platform', 'tags'] as const).map((mode, index, all) => (
+          {(['domains', 'categories', 'universal'] as const).map((mode, index, all) => (
             <div key={mode} className="flex items-center">
               <button
                 type="button"
@@ -171,11 +170,7 @@ export function FacetSidebar({
                   ? 'Domains'
                   : mode === 'categories'
                     ? 'Categories'
-                    : mode === 'intent'
-                      ? 'Intent'
-                      : mode === 'platform'
-                        ? 'Platform'
-                        : 'Tags'}
+                    : 'Labels'}
               </button>
               {index < all.length - 1 && (
                 <span className="mx-0.5 text-[10px] leading-none text-muted-foreground/45">·</span>
@@ -185,16 +180,10 @@ export function FacetSidebar({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className={cn('min-h-0 flex-1', activeMode === 'universal' ? 'overflow-hidden' : 'overflow-y-auto')}>
         {showEmpty ? (
           <p className="p-4 text-xs text-muted-foreground">
-            {activeMode === 'intent'
-              ? 'No intents yet'
-              : activeMode === 'platform'
-                ? 'No platforms yet'
-                : activeMode === 'tags'
-                  ? 'No tags yet'
-                : 'No categories yet'}
+            No categories yet
           </p>
         ) : activeMode === 'categories' ? (
           <GroupedCategoryList
@@ -202,21 +191,25 @@ export function FacetSidebar({
             activeValues={activeValues}
             onToggle={onToggle}
           />
-        ) : activeMode === 'tags' ? (
-          <CompactTagList
-            items={tags}
-            activeValues={activeValues}
-            onToggle={onToggle}
+        ) : activeMode === 'universal' ? (
+          <UniversalFacetBlock
+            intents={intents}
+            platforms={platforms}
+            tags={tags}
+            selectedIntent={universalIntent}
+            selectedPlatform={universalPlatform}
+            selectedTags={universalTags}
+            onIntentChange={onUniversalIntentChange}
+            onPlatformChange={onUniversalPlatformChange}
+            onTagToggle={onUniversalTagToggle}
           />
         ) : (
-          items.map(item => (
+          domains.map(item => (
             <FacetRow
               key={item.value}
               value={item.value}
               count={item.count}
-              showDomainIcon={activeMode === 'domains'}
-              showIntentIcon={activeMode === 'intent'}
-              showPlatformIcon={activeMode === 'platform'}
+              showDomainIcon
               active={activeValues.includes(item.value)}
               onClick={() => onToggle(item.value)}
             />
@@ -224,14 +217,14 @@ export function FacetSidebar({
         )}
       </div>
 
-      {activeValues.length > 0 && (
+      {activeCount > 0 && (
         <div className="shrink-0 border-t border-border p-2">
           <button
             type="button"
             onClick={onClear}
             className="w-full rounded px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
           >
-            Clear ({activeValues.length})
+            Clear ({activeCount})
           </button>
         </div>
       )}
@@ -239,41 +232,100 @@ export function FacetSidebar({
   )
 }
 
-function CompactTagList({
-  items,
-  activeValues,
-  onToggle,
+function UniversalFacetBlock({
+  intents,
+  platforms,
+  tags,
+  selectedIntent,
+  selectedPlatform,
+  selectedTags,
+  onIntentChange,
+  onPlatformChange,
+  onTagToggle,
 }: {
-  items: FacetItem[]
-  activeValues: string[]
-  onToggle: (value: string) => void
+  intents: FacetItem[]
+  platforms: FacetItem[]
+  tags: FacetItem[]
+  selectedIntent: string | null
+  selectedPlatform: string | null
+  selectedTags: string[]
+  onIntentChange: (value: string | null) => void
+  onPlatformChange: (value: string | null) => void
+  onTagToggle: (value: string) => void
 }) {
+  const [tagQuery, setTagQuery] = useState('')
+  const visibleTags = useMemo(() => {
+    const query = tagQuery.trim().toLowerCase()
+    const filtered = query
+      ? tags.filter((item) => item.value.toLowerCase().includes(query))
+      : tags
+    return filtered.slice(0, 150)
+  }, [tagQuery, tags])
+
   return (
-    <div className="flex flex-wrap gap-x-2 gap-y-2 p-3">
-      {items.map((item) => {
-        const active = activeValues.includes(item.value)
-        return (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onToggle(item.value)}
-            className={cn(
-              'inline-flex max-w-full items-start gap-0.5 rounded px-1 py-0.5 text-[12px] leading-none transition-colors',
-              active
-                ? 'bg-card text-primary'
-                : 'bg-transparent text-muted-foreground hover:text-foreground',
-            )}
-            title={item.count > 1 ? `${item.value} (${item.count})` : item.value}
-          >
-            <span className="truncate">{item.value}</span>
-            {item.count > 1 && (
-              <sup className={cn('tabular-nums text-[10px] leading-none', active ? 'text-primary/80' : 'text-muted-foreground/70')}>
-                {item.count}
-              </sup>
-            )}
-          </button>
-        )
-      })}
+    <div className="flex h-full min-h-0 flex-col gap-2 p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <Select value={selectedIntent ?? '__any__'} onValueChange={(value) => onIntentChange(value === '__any__' ? null : value)}>
+          <SelectTrigger className="h-7 text-xs">
+            <span className="truncate">{selectedIntent ?? 'Any intent'}</span>
+          </SelectTrigger>
+          <SelectContent className="text-xs">
+            <SelectItem value="__any__" className="py-0.5 px-2 text-xs">Any intent</SelectItem>
+            {intents.map((item) => (
+              <SelectItem key={item.value} value={item.value} className="py-0.5 px-2 text-xs">
+                {item.value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={selectedPlatform ?? '__any__'} onValueChange={(value) => onPlatformChange(value === '__any__' ? null : value)}>
+          <SelectTrigger className="h-7 text-xs">
+            <span className="truncate">{selectedPlatform ?? 'Any platform'}</span>
+          </SelectTrigger>
+          <SelectContent className="text-xs">
+            <SelectItem value="__any__" className="py-0.5 px-2 text-xs">Any platform</SelectItem>
+            {platforms.map((item) => (
+              <SelectItem key={item.value} value={item.value} className="py-0.5 px-2 text-xs">
+                {item.value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Input
+        value={tagQuery}
+        onChange={(event) => setTagQuery(event.target.value)}
+        placeholder="Search tags..."
+        className="h-7 text-xs"
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+        <div className="flex flex-wrap gap-x-2 gap-y-2">
+          {visibleTags.map((item) => {
+            const active = selectedTags.includes(item.value)
+            return (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => onTagToggle(item.value)}
+                className={cn(
+                  'inline-flex max-w-full items-start gap-0.5 rounded px-1 py-0.5 text-[12px] leading-none transition-colors',
+                  active
+                    ? 'bg-card text-primary'
+                    : 'bg-transparent text-muted-foreground hover:text-foreground',
+                )}
+                title={item.count > 1 ? `${item.value} (${item.count})` : item.value}
+              >
+                <span className="truncate">{item.value}</span>
+                {item.count > 1 && (
+                  <sup className={cn('tabular-nums text-[10px] leading-none', active ? 'text-primary/80' : 'text-muted-foreground/70')}>
+                    {item.count}
+                  </sup>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -361,16 +413,12 @@ function FacetRow({
   value,
   count,
   showDomainIcon,
-  showIntentIcon,
-  showPlatformIcon,
   active,
   onClick,
 }: {
   value: string
   count: number
   showDomainIcon: boolean
-  showIntentIcon: boolean
-  showPlatformIcon: boolean
   active: boolean
   onClick: () => void
 }) {
@@ -386,7 +434,7 @@ function FacetRow({
       {showDomainIcon && (
         <Favicon domain={value} />
       )}
-      {!showDomainIcon && !showIntentIcon && !showPlatformIcon && (
+      {!showDomainIcon && (
         <span
           className={cn(
             'h-2 w-2 shrink-0 rounded-full transition-colors',
@@ -401,8 +449,6 @@ function FacetRow({
         )}
         title={value}
       >
-        {showIntentIcon && <IntentIcon intent={value} className={active ? 'text-primary/80' : undefined} />}
-        {showPlatformIcon && <PlatformIcon platform={value} className={active ? 'text-primary/80' : undefined} />}
         <span className="truncate">{value}</span>
       </span>
       <span className="shrink-0 tabular-nums text-muted-foreground/60">

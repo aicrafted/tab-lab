@@ -58,7 +58,13 @@ import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
 import { ACTIVE_BUILD } from '@/lib/core/constants'
 
-type FacetMode = 'domains' | 'categories' | 'intent' | 'platform' | 'tags'
+type FacetMode = 'domains' | 'categories' | 'universal'
+
+interface UniversalFacetFilters {
+  intent: string | null
+  platform: string | null
+  tags: string[]
+}
 
 const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
@@ -98,39 +104,45 @@ function filterItems<T extends TabItem | BookmarkItem>(
   activeFacets: string[],
   facetMode: FacetMode,
   parentCategoryFilterMap: Map<string, Set<string>>,
+  universalFilters: UniversalFacetFilters,
 ): T[] {
-  if (activeFacets.length === 0) return items
   if (facetMode === 'domains') {
+    if (activeFacets.length === 0) return items
     return items.filter((item) => activeFacets.includes(item.domain))
   }
-  if (facetMode === 'intent') {
-    return items.filter((item) => activeFacets.includes(effectiveIntent(item) ?? 'other'))
-  }
-  if (facetMode === 'platform') {
-    return items.filter((item) => item.platform != null && activeFacets.includes(item.platform))
-  }
-  if (facetMode === 'tags') {
+  if (facetMode === 'categories') {
+    if (activeFacets.length === 0) return items
+    const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
+    const categoriesFromParents = new Set<string>()
+    for (const parent of parentTokens) {
+      const names = parentCategoryFilterMap.get(parent)
+      if (!names) {
+        categoriesFromParents.add(parent)
+        continue
+      }
+      for (const name of names) categoriesFromParents.add(name)
+    }
+
     return items.filter((item) => {
-      const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
-      return tags.some((tag) => activeFacets.includes(tag))
+      const child = item.category?.trim()
+      if (!child) return false
+      return childTokens.has(child) || categoriesFromParents.has(child)
     })
   }
 
-  const { parentTokens, childTokens } = parseCategoryFacetTokens(activeFacets)
-  const categoriesFromParents = new Set<string>()
-  for (const parent of parentTokens) {
-    const names = parentCategoryFilterMap.get(parent)
-    if (!names) {
-      categoriesFromParents.add(parent)
-      continue
-    }
-    for (const name of names) categoriesFromParents.add(name)
-  }
+  const hasUniversalFilter = Boolean(universalFilters.intent)
+    || Boolean(universalFilters.platform)
+    || universalFilters.tags.length > 0
+  if (!hasUniversalFilter) return items
 
   return items.filter((item) => {
-    const child = item.category?.trim()
-    if (!child) return false
-    return childTokens.has(child) || categoriesFromParents.has(child)
+    if (universalFilters.intent && (effectiveIntent(item) ?? 'other') !== universalFilters.intent) return false
+    if (universalFilters.platform && item.platform !== universalFilters.platform) return false
+    if (universalFilters.tags.length > 0) {
+      const tags = (item.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
+      if (!tags.some((tag) => universalFilters.tags.includes(tag))) return false
+    }
+    return true
   })
 }
 
@@ -150,6 +162,7 @@ export function App() {
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
   const [facetMode, setFacetMode] = useState<FacetMode>('domains')
   const [activeFacets, setActiveFacets] = useState<string[]>([])
+  const [universalFilters, setUniversalFilters] = useState<UniversalFacetFilters>({ intent: null, platform: null, tags: [] })
   const [viewMenuHost, setViewMenuHost] = useState<HTMLDivElement | null>(null)
   const [, startFilterTransition] = useTransition()
   const { width: sidebarWidth, startDrag } = useResizable(280, 280, 400)
@@ -529,12 +542,12 @@ export function App() {
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
   const filteredBookmarks = useMemo(() => {
-    return filterItems(sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap)
-  }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap])
+    return filterItems(sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
+  }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
 
   const filteredTabs = useMemo(() => {
-    return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap)
-  }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap])
+    return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
+  }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
 
   const handleViewChange = useCallback((view: ViewId) => {
     setActiveView(view)
@@ -685,14 +698,33 @@ export function App() {
           tags={tagsFacet}
           activeMode={facetMode}
           activeValues={activeFacets}
-          onModeChange={(m) => { setFacetMode(m); setActiveFacets([]) }}
+          universalIntent={universalFilters.intent}
+          universalPlatform={universalFilters.platform}
+          universalTags={universalFilters.tags}
+          onModeChange={(m) => {
+            setFacetMode(m)
+            setActiveFacets([])
+          }}
           onToggle={(v) => setActiveFacets((prev) => {
             if (facetMode === 'categories' || facetMode === 'domains') {
               return prev.includes(v) ? [] : [v]
             }
-            return prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+            return prev
           })}
-          onClear={() => setActiveFacets([])}
+          onUniversalIntentChange={(value) => setUniversalFilters((prev) => ({ ...prev, intent: value }))}
+          onUniversalPlatformChange={(value) => setUniversalFilters((prev) => ({ ...prev, platform: value }))}
+          onUniversalTagToggle={(value) => setUniversalFilters((prev) => (
+            prev.tags.includes(value)
+              ? { ...prev, tags: [] }
+              : { ...prev, tags: [value] }
+          ))}
+          onClear={() => {
+            if (facetMode === 'universal') {
+              setUniversalFilters({ intent: null, platform: null, tags: [] })
+              return
+            }
+            setActiveFacets([])
+          }}
           width={sidebarWidth}
         />
 

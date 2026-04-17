@@ -66,7 +66,6 @@ export const PAGE_INTENTS = [
   'archive',       // archives and disk images
   'data',          // structured data/configs and database files
   'code',          // source code files
-  'other',         // catch-all
 ] as const
 
 export type PageIntent = typeof PAGE_INTENTS[number]
@@ -86,8 +85,7 @@ export const INTENT_DESCRIPTORS: Record<PageIntent, string> = {
   video: 'video YouTube watch video stream episode channel playlist Vimeo Twitch',
   archive: 'archive ZIP download release DMG installer package',
   data: 'JSON XML YAML TOML data export database SQL dataset structured',
-  code: 'source file script configuration CSS JavaScript TypeScript',
-  other: 'miscellaneous page',
+  code: 'source file script configuration CSS JavaScript TypeScript'
 }
 
 export interface BookmarkScopeFilter {
