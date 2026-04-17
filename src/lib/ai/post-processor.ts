@@ -1,131 +1,84 @@
 import { chatComplete } from './llm'
 import { getCached, setCached } from '../core/storage'
-import { parseLlmJson } from './parsers'
-import { normalizeCategories, MAP_LABELS_TO_UMBRELLAS_SYSTEM, MAP_LABELS_TO_UMBRELLAS_USER_PREFIX, MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE } from './prompts'
+import { consolidateCategories } from './prompts'
 import type { LlmSettings } from '../core/types'
 import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
-import { cosineSimilarity, fetchEmbedding, fetchEmbeddingsBatch } from './embedder'
 
 /** 
  * New generation category post-processor.
- * Phase 1: Taxonomy Discovery (Consolidates many labels into few umbrellas)
- * Phase 2: Assignment (Maps labels to umbrellas, maintaining a single-level structure)
+ * Consolidation Phase: Groups redundant or near-duplicate labels into a single representative version.
  */
 export async function refineCategoryLabels(
-  rawLabels: string[],
+  labelsWithCounts: { label: string; count: number }[],
   settings: LlmSettings,
 ): Promise<Record<string, string>> {
-  const labels = [...new Set(rawLabels.map(l => l.trim()).filter(Boolean))]
-  if (labels.length === 0) return {}
-  if (labels.length === 1) return { [labels[0]]: labels[0] }
+  if (labelsWithCounts.length === 0) return {}
+  if (labelsWithCounts.length === 1) return { [labelsWithCounts[0].label]: labelsWithCounts[0].label }
   
-  const tracker = createLoggerProgress('refineCategoryLabels', labels.length)
+  const tracker = createLoggerProgress('refineCategoryLabels', 1)
+  aiPipelineLog.info('refine: consolidating labels', { totalLabels: labelsWithCounts.length })
 
-  // PHASE 1: Taxonomy Discovery (General/Shared)
-  // We ask the LLM to provide a list of high-level umbrella categories.
-  aiPipelineLog.info('refine phase 1: taxonomy discovery', { totalLabels: labels.length })
-  
-  const discoveryResponse = await chatComplete(
-    normalizeCategories.system(), 
-    normalizeCategories.user(labels), 
-    settings, 
-    2000, 
-    { metricKey: 'post-process-discovery' }
-  )
-  const umbrellas = normalizeCategories.parseUmbrellas(discoveryResponse)
-  
-  if (umbrellas.length === 0) {
-    aiPipelineLog.warn('taxonomy discovery yielded no results, keeping original labels')
-    tracker.done()
-    return Object.fromEntries(labels.map(l => [l, l]))
-  }
-
-  aiPipelineLog.info('refine phase 1: discovered umbrellas', { count: umbrellas.length, samples: umbrellas.slice(0, 5) })
-
-  // PHASE 2: Single-Level Assignment (New Implementation)
-  // Maps original labels to discovered umbrellas.
-  // We use a single-level structure: category = umbrella name.
-  aiPipelineLog.info('refine phase 2: flat assignment starting')
-  const mapping: Record<string, string> = {}
-  
   try {
-    // 1. Prepare embeddings for fallback
-    const allUnique = [...new Set([...umbrellas, ...labels])]
-    await fetchEmbeddingsBatch(
-      allUnique.map(l => ({ url: `label:${l}`, title: l, domain: '' })),
+    const inputLabels = new Set(labelsWithCounts.map(l => l.label))
+    
+    // 1. Get clusters of duplicates from LLM
+    const response = await chatComplete(
+      consolidateCategories.system(),
+      consolidateCategories.user(labelsWithCounts.map(l => l.label)),
       settings,
-      () => {}
+      8000, // Very large output allowed for many groups
+      { metricKey: 'post-process-consolidation' }
     )
 
-    const umbrellaVectors = await Promise.all(
-      umbrellas.map(async (u) => ({ label: u, vec: await fetchEmbedding(u, settings) }))
-    )
+    aiPipelineLog.info('refine: consolidation LLM response', { response: response.slice(0, 500) })
 
-    // 2. Perform mapping in batches via LLM
-    const BATCH_SIZE = 50
-    for (let i = 0; i < labels.length; i += BATCH_SIZE) {
-      const chunk = labels.slice(i, i + BATCH_SIZE)
-      const userMsg = `${MAP_LABELS_TO_UMBRELLAS_USER_PREFIX}${umbrellas.join(', ')}${MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE}${chunk.join(', ')}`
+    const groups = consolidateCategories.parseResponse(response)
+    const mapping: Record<string, string> = {}
+    
+    // Initialize mapping with identity (every label maps to itself)
+    for (const item of labelsWithCounts) {
+      mapping[item.label] = item.label
+    }
+
+    // 2. Process groups: pick the most frequent label as target
+    const countMap = Object.fromEntries(labelsWithCounts.map(l => [l.label, l.count]))
+
+    for (const group of groups) {
+      if (!Array.isArray(group)) continue
       
-      try {
-        const response = await chatComplete(
-          MAP_LABELS_TO_UMBRELLAS_SYSTEM,
-          userMsg,
-          settings,
-          1000,
-          { metricKey: 'post-process-assignment' }
-        )
-
-        const batchMap = parseLlmJson<Record<string, string>>(response, {})
-        
-        for (const label of chunk) {
-          const target = batchMap[label]
-          // Verify target is one of our umbrellas
-          if (target && umbrellas.includes(target)) {
-            mapping[label] = target
-          } else {
-            mapping[label] = await nliMatch(label, umbrellaVectors, settings)
-          }
-        }
-      } catch (err) {
-        aiPipelineLog.warn('LLM assignment batch failed, falling back to NLI', { chunk: chunk.slice(0, 3), err })
-        for (const label of chunk) {
-          mapping[label] = await nliMatch(label, umbrellaVectors, settings)
+      // Only keep labels that were actually in the input and are distinct in group
+      const validGroup = [...new Set(group.filter(l => inputLabels.has(l)))]
+      if (validGroup.length < 2) continue
+      
+      // Find the label in this group with the highest count
+      let target = validGroup[0]
+      let maxCount = -1
+      
+      for (const label of validGroup) {
+        const count = countMap[label] ?? 0
+        if (count > maxCount) {
+          maxCount = count
+          target = label
         }
       }
-      tracker.progress(chunk.length)
+
+      // Map all members of the group to the target
+      for (const label of validGroup) {
+        mapping[label] = target
+      }
     }
 
     tracker.done()
     return mapping
   } catch (err) {
-    aiPipelineLog.error('refineCategoryLabels phase 2 critical failure', { err })
+    aiPipelineLog.error('refineCategoryLabels critical failure', { err })
     tracker.done({ error: true })
-    return Object.fromEntries(labels.map(l => [l, l]))
+    return Object.fromEntries(labelsWithCounts.map(l => [l.label, l.label]))
   }
 }
 
-/** Fallback to find best matching umbrella via embedding similarity. */
-async function nliMatch(label: string, targets: {label: string, vec: number[]}[], settings: LlmSettings): Promise<string> {
-  try {
-    const vec = await fetchEmbedding(label, settings)
-    let best = label
-    let maxScore = -1
 
-    for (const target of targets) {
-      const score = cosineSimilarity(vec, target.vec)
-      if (score > maxScore) {
-        maxScore = score
-        best = target.label
-      }
-    }
-    // Consolidate if there's at least some similarity (0.35)
-    return maxScore > 0.35 ? best : label
-  } catch {
-    return label
-  }
-}
 
 /** 
  * Updates storage with new refined categories.

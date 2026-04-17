@@ -112,7 +112,7 @@ export async function legacy_normalizeCategoryLabels(
     )
 
     const umbrellaEmbeddings = await Promise.all(
-      umbrellas.map(async (u) => ({ label: u, vec: await fetchEmbedding(u, settings) }))
+      umbrellas.map(async (u: string) => ({ label: u, vec: await fetchEmbedding(u, settings) }))
     )
 
     const MAPPING_BATCH = 40
@@ -398,7 +398,7 @@ export async function legacy_classifyByClusters(
     
     names.set(cluster.clusterId, category)
     const updates = cluster.members.map((url) => ({ url, category, parentCategory, clusterId: cluster.clusterId }))
-    await Promise.all(updates.map(async (u) => {
+    await Promise.all(updates.map(async (u: { url: string; category: string; parentCategory?: string; clusterId: number }) => {
       const existing = await getCached(u.url)
       await setCached(u.url, { ...existing, category: u.category, parentCategory: u.parentCategory, clusterId: u.clusterId, processedAt: Date.now() })
     }))

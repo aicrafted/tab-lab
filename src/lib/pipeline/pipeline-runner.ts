@@ -355,18 +355,23 @@ export class PipelineRunner {
   ): Promise<void> {
     const uniqueUrls = [...new Set([...tabItems, ...bookmarkItems].map((item) => normalizeUrlForCache(item.url)))]
     const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
-    const items = new Map(entries.map(e => [e.url, e.entry]))
-    const labels = [...new Set(entries.map(({ entry }) => entry?.category).filter(Boolean) as string[])]
-    if (labels.length <= 1) return
+    const allLabels = entries.map(({ entry }) => entry?.category).filter(Boolean) as string[]
+    const counts = allLabels.reduce((acc, l) => {
+      acc[l] = (acc[l] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    
+    const labelsWithCounts = Object.entries(counts).map(([label, count]) => ({ label, count }))
+    if (labelsWithCounts.length <= 1) return
 
     const tracker = createLoggerProgress('normalizeCategoriesStep', 2)
     
     // Phase 1: Normalize/Merge
-    // Use the new single-level refinement logic
-    const mapping = await refineCategoryLabels(labels, settings)
+    // Use the new frequency-aware consolidation logic
+    const mapping = await refineCategoryLabels(labelsWithCounts, settings)
     
     // Convert to item format for applyRefinedCategories
-    const itemData = [...items.entries()].map(([url, entry]) => ({
+    const itemData = entries.map(({ url, entry }) => ({
       url,
       originalCategory: entry?.category?.trim() || 'Other'
     }))
@@ -539,15 +544,15 @@ export class PipelineRunner {
       const allItems = [...tabs, ...bookmarks]
       const uniqueUrls = [...new Set(allItems.map((item) => normalizeUrlForCache(item.url)))]
       const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
-      const allLabels = [...new Set(entries.map(({ entry }) => entry?.category).filter(Boolean) as string[])]
+      const counts = entries.reduce((acc, { entry }) => {
+        const label = entry?.category?.trim()
+        if (label) acc[label] = (acc[label] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      const labelsWithCounts = Object.entries(counts).map(([label, count]) => ({ label, count }))
 
-      if (allLabels.length <= 1) {
-        task.done()
-        return
-      }
-
-      aiPipelineLog.info('standalone normalize start', { totalLabels: allLabels.length, labels: allLabels })
-      const mergeMap = await refineCategoryLabels(allLabels, settings)
+      aiPipelineLog.info('standalone normalize start', { totalLabels: labelsWithCounts.length })
+      const mergeMap = await refineCategoryLabels(labelsWithCounts, settings)
 
       const urlToCategory = new Map<string, string>()
       for (const { url, entry } of entries) {

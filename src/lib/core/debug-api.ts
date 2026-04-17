@@ -101,7 +101,7 @@ function createDebugApi(): TablabDebugApi {
     ai: {
       async normalizeCategories(labels: string[]) {
         const settings = await getLlmSettings()
-        return refineCategoryLabels(labels, settings)
+        return refineCategoryLabels(labels.map(l => ({ label: l, count: 1 })), settings)
       },
 
       async classifyUrl(url: string, title: string) {

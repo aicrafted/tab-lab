@@ -74,6 +74,24 @@ export const MAP_LABELS_TO_UMBRELLAS_USER_MIDDLE = `
 Labels to map:
 `
 
+const CONSOLIDATE_LABELS_SYSTEM = `You are a taxonomy expert specializing in grouping duplicates.
+Objective: Group semantically identical, redundant, or near-duplicate category labels.
+
+Rules:
+1. Output MUST be a JSON array of arrays: [["Label A", "Label B"], ["Label C", "Label D"]].
+2. Each inner array must represent a cluster of 2 or more DIFFERENT labels that should be merged together.
+3. Only group labels that mean the same thing (e.g., "AI" and "Artificial Intelligence").
+4. If a label has no duplicates, DO NOT include it in the output at all.
+5. NEVER include the same label twice in a group (e.g., [["Music", "Music"]] is FORBIDDEN).
+6. Use only the provided labels, do not invent new names.
+7. Reply ONLY with the JSON array.
+
+Example:
+Input: ["Dev", "Development", "Cooking", "Cuisine", "Music"]
+Output: [["Dev", "Development"], ["Cooking", "Cuisine"]]`
+
+const CONSOLIDATE_LABELS_USER_PREFIX = `Group these category labels into clusters of duplicates (only group if 2+ labels are same):`
+
 const GROUP_RARE_CATEGORIES_SYSTEM = 'You output strict JSON only.'
 const GROUP_RARE_CATEGORIES_USER_PREFIX = `You are consolidating browser tab categories. Map each RARE category to its best target.
 
@@ -400,6 +418,21 @@ ${NORMALIZE_CATEGORIES_USER_SUFFIX}`
       return parsed.umbrellas
     }
     return []
+  },
+}
+
+export const consolidateCategories = {
+  system(): string {
+    return CONSOLIDATE_LABELS_SYSTEM
+  },
+
+  user(labels: string[]): string {
+    const list = labels.map((l) => `- ${l}`).join('\n')
+    return `${CONSOLIDATE_LABELS_USER_PREFIX}\n${list}\n\nReturn JSON: [["A", "B"]] (only groups with 2+ labels, NO self-groups like ["A", "A"])`
+  },
+
+  parseResponse(raw: string): string[][] {
+    return parseLlmJson<string[][]>(raw, [])
   },
 }
 
