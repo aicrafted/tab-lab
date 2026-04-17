@@ -9,11 +9,25 @@ const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 
 type KnownPlatform = DomainInfo['platform']
 
-const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. For each browser tab title, domain, and URL path you receive, reply with ONE short category label (2-4 words, Title Case) that best describes the content. Avoid using "Other" unless the page is truly ambiguous. Reply with the category label only — no explanation, no punctuation.`
-const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. For each browser tab title, domain, and URL path, output a JSON object with a single "category" key. Value must be a short category label (2-4 words, Title Case) that best describes the content.
-Avoid using "Other" unless the page is truly ambiguous.
+const CLASSIFY_ITEM_SYSTEM_TEXT = `You are a tab categorizer. Goal: provide a GENERAL TOPIC category for each page.
+Rules:
+1. Category must be a broad domain or topic (1-3 words, Title Case).
+2. DO NOT use brand names, site names, or domains (e.g., use "Social Media" instead of "Twitter").
+3. DO NOT copy the tab title or domain into the category.
+4. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General".
+Reply with the category label ONLY — no punctuation, no repeats.`
 
-Example output: {"category": "Development"}`
+const CLASSIFY_ITEM_SYSTEM_JSON = `You are a tab categorizer. Goal: assign a general TOPIC category to each browser page.
+Output strict JSON: {"category": "GENERAL TOPIC"}
+
+Rules:
+1. Category must be a broad domain or topic (1-3 words, Title Case).
+2. DO NOT include brand names, site names, or domains (e.g., use "Social Media" instead of "Twitter", "Shopping" instead of "eBay").
+3. DO NOT copy the tab title or domain directly into the category.
+4. DO NOT use too wide categories like "Search", "Web", "Miscellaneous", "General".
+5. If a specific tool, identify its nature (e.g., "Graphic Design Tool" instead of "Canva").
+
+Example: {"category": "Software Engineering"}`
 
 const CLASSIFY_CLUSTER_SYSTEM = `You classify clusters of browser pages.
 Given 2-3 representative pages from one cluster, return strict JSON:
@@ -155,7 +169,7 @@ function normalizeCategoryLabel(raw: string, fallback = 'Other'): string {
     .replace(/[{}[\]`"]/g, ' ')
     .replace(/([a-z]{2,})([A-Z])/g, '$1 $2') // Break CamelCase (WebApp -> Web App, protects IoT, eBay)
     .replace(/([A-Z]{2,})([A-Z][a-z]{2,})/g, '$1 $2') // Handle acronyms (AIModel -> AI Model, protects APIs)
-    .replace(/[_-]/g, ' ')
+    .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -329,6 +343,7 @@ export const classifyItem = {
       lines.push(`Candidates: ${candidates.join(', ')}, Other`)
       lines.push('Choose the best match from Candidates, or use "Other" if none fits.')
     }
+    lines.push('\nImportant: Respond with a general TOPIC (e.g., "Shopping"), not a brand name (e.g., "Amazon" or "eBay").')
     return lines.join('\n')
   },
 
