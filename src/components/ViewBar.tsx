@@ -22,6 +22,9 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'settings-llm', label: 'Models & Providers', hint: 'Configure LLM and Embedding providers (OpenRouter, LM Studio, etc.)' },
   { id: 'settings-knowledge', label: 'Knowledge Base', hint: 'Manage domain pre-fill knowledge and site descriptions' },
   { id: 'settings-advanced', label: 'Advanced Settings', hint: 'Network patterns, cache management, and performance' },
+  { id: 'magazine', label: 'Magazine', hint: 'Rich grid view with large previews and extracted summaries' },
+  { id: 'treemap', label: 'Treemap', hint: 'Hierarchical area map of categories and disk space' },
+  { id: 'semantic', label: 'Semantic Map', hint: '2D projection of pages based on AI semantic similarity' },
 ]
 
 export const VIEW_HINTS: Record<ViewId, string> = Object.fromEntries(
@@ -51,7 +54,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     id: 'history',
     label: 'History',
     hint: 'Timeline and activity-oriented representations over time.',
-    views: ['focus-rings', 'session-story', 'timeline', 'topic-river'],
+    views: ['timeline', 'session-story', 'topic-river', 'focus-rings'],
   },
   {
     id: 'net-heavy',

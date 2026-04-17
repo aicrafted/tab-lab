@@ -24,7 +24,7 @@ export function AdvancedSettingsView({ llmSettings, onSaveSettings }: ViewProps)
   return (
     <div className="max-w-4xl space-y-6 py-4">
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Network & Security</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Domains enrichment</h3>
         
         <div className="space-y-4 rounded-lg border border-border bg-card/50 p-6">
           <div className="space-y-2">
