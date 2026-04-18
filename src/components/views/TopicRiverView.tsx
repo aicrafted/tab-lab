@@ -63,7 +63,7 @@ interface DragZoom {
 
 const WIDTH = 1000
 const HEIGHT = 400
-const PADDING_LEFT = 70
+const PADDING_LEFT = 16
 const PADDING_RIGHT = 20
 const PADDING_TOP = 18
 const PADDING_BOTTOM = 36
@@ -82,6 +82,7 @@ const OTHER_CATEGORY_COLOR = 'hsl(210 8% 56%)'
 export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   const [mode, setMode] = useState<RiverMode>('saved')
   const [groupBy, setGroupBy] = useState<GroupBy>('categories')
+  const [hiddenCategories, setHiddenCategories] = useState<string[]>([])
   const [selectedBand, setSelectedBand] = useState<SelectedBand | null>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null)
@@ -289,21 +290,32 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     return { byBucketCategory, categories, categoryTotals }
   }, [displayUnit, groupBy, periodItems])
 
+  const hiddenSet = useMemo(() => new Set(hiddenCategories), [hiddenCategories])
+
+  const visibleCategories = useMemo(
+    () => matrix.categories.filter((category) => !hiddenSet.has(category)),
+    [hiddenSet, matrix.categories],
+  )
+
+  useEffect(() => {
+    setHiddenCategories((prev) => prev.filter((category) => matrix.categories.includes(category)))
+  }, [matrix.categories])
+
   useEffect(() => {
     if (!selectedBand) return
     const key = `${selectedBand.bucketKey}||${selectedBand.category}`
-    if (!matrix.byBucketCategory.has(key)) {
+    if (hiddenSet.has(selectedBand.category) || !matrix.byBucketCategory.has(key)) {
       setSelectedBand(null)
     }
-  }, [matrix.byBucketCategory, selectedBand])
+  }, [hiddenSet, matrix.byBucketCategory, selectedBand])
 
   const stacked = useMemo(() => {
-    if (visibleBuckets.length === 0 || matrix.categories.length === 0) return []
+    if (visibleBuckets.length === 0 || visibleCategories.length === 0) return []
 
     const totalsByBucket = new Map<string, number>()
     for (const bucket of visibleBuckets) {
       let total = 0
-      for (const category of matrix.categories) {
+      for (const category of visibleCategories) {
         const key = `${bucket.key}||${category}`
         total += matrix.byBucketCategory.get(key)?.count ?? 0
       }
@@ -317,12 +329,12 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
       PADDING_LEFT + (visibleBuckets.length === 1 ? plotWidth / 2 : (index / (visibleBuckets.length - 1)) * plotWidth)
     const yForValue = (value: number) => PADDING_TOP + plotHeight - (value / maxTotal) * plotHeight
 
-    return matrix.categories.map((category) => {
+    return visibleCategories.map((category) => {
       const topPoints: Array<{ x: number; y: number; count: number; bucket: Bucket }> = []
       const bottomPoints: Array<{ x: number; y: number; count: number; bucket: Bucket }> = []
       let running = new Array<number>(visibleBuckets.length).fill(0)
 
-      const priorCategories = matrix.categories.slice(0, matrix.categories.indexOf(category))
+      const priorCategories = visibleCategories.slice(0, visibleCategories.indexOf(category))
       for (let i = 0; i < visibleBuckets.length; i += 1) {
         const bucket = visibleBuckets[i]
         let bottom = 0
@@ -349,7 +361,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         bottomPoints,
       }
     })
-  }, [visibleBuckets, matrix])
+  }, [visibleBuckets, visibleCategories, matrix.byBucketCategory])
 
   const selectedItems = useMemo(() => {
     if (!selectedBand) return []
@@ -423,40 +435,40 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   }
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant={mode === 'saved' ? 'default' : 'outline'} onClick={() => setMode('saved')}>
-            Saved
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" variant={mode === 'saved' ? 'default' : 'outline'} onClick={() => setMode('saved')}>
+          Saved
+        </Button>
+        <Button type="button" size="sm" variant={mode === 'visited' ? 'default' : 'outline'} onClick={() => setMode('visited')}>
+          Visited
+        </Button>
+        <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
+          <SelectTrigger className="h-8 w-[170px] text-xs">
+            <span className="truncate">Group: {groupBy}</span>
+          </SelectTrigger>
+          <SelectContent className="text-xs">
+            <SelectItem value="categories" className="py-0.5 px-2 text-xs">Categories</SelectItem>
+            <SelectItem value="domains" className="py-0.5 px-2 text-xs">Domains</SelectItem>
+            <SelectItem value="tags" className="py-0.5 px-2 text-xs">Tags</SelectItem>
+            <SelectItem value="platforms" className="py-0.5 px-2 text-xs">Platforms</SelectItem>
+            <SelectItem value="intents" className="py-0.5 px-2 text-xs">Intents</SelectItem>
+          </SelectContent>
+        </Select>
+        {isZoomed && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setZoomRange({ start: 0, end: timeline.dayBuckets.length - 1 })}
+          >
+            Reset zoom
           </Button>
-          <Button type="button" size="sm" variant={mode === 'visited' ? 'default' : 'outline'} onClick={() => setMode('visited')}>
-            Visited
-          </Button>
-          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
-            <SelectTrigger className="h-8 w-[170px] text-xs">
-              <span className="truncate">Group: {groupBy}</span>
-            </SelectTrigger>
-            <SelectContent className="text-xs">
-              <SelectItem value="categories" className="py-0.5 px-2 text-xs">Categories</SelectItem>
-              <SelectItem value="domains" className="py-0.5 px-2 text-xs">Domains</SelectItem>
-              <SelectItem value="tags" className="py-0.5 px-2 text-xs">Tags</SelectItem>
-              <SelectItem value="platforms" className="py-0.5 px-2 text-xs">Platforms</SelectItem>
-              <SelectItem value="intents" className="py-0.5 px-2 text-xs">Intents</SelectItem>
-            </SelectContent>
-          </Select>
-          {isZoomed && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setZoomRange({ start: 0, end: timeline.dayBuckets.length - 1 })}
-            >
-              Reset zoom
-            </Button>
-          )}
-        </div>
+        )}
+      </div>
 
-        <div className="relative overflow-x-auto rounded-md border border-border bg-card/30 p-2">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative overflow-x-auto p-2">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -643,17 +655,41 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {matrix.categories.map((category) => (
-            <div key={category} className="inline-flex items-center gap-1.5 rounded border border-border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryColorMap.get(category) ?? TOPIC_RIVER_PALETTE[0] }} />
-              <span>{category}</span>
-              <sup className="tabular-nums text-[10px] leading-none text-muted-foreground/65">
-                {matrix.categoryTotals.get(category)}
-              </sup>
+        <aside className="p-3">
+          <h3 className="text-sm font-semibold text-foreground">Legend</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Click a group to hide or show it</p>
+          <div className="mt-3 max-h-[400px] overflow-y-auto pr-1">
+            <div className="flex flex-wrap gap-2">
+              {matrix.categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  aria-pressed={!hiddenSet.has(category)}
+                  onClick={() =>
+                    setHiddenCategories((prev) =>
+                      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] transition-colors ${
+                    hiddenSet.has(category)
+                      ? 'border-border/40 bg-background/20 text-muted-foreground/45 opacity-55 saturate-50'
+                      : 'border-border bg-background/60 text-muted-foreground hover:bg-background'
+                  }`}
+                  title={hiddenSet.has(category) ? `Show ${category}` : `Hide ${category}`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${hiddenSet.has(category) ? 'opacity-50' : ''}`}
+                    style={{ backgroundColor: categoryColorMap.get(category) ?? TOPIC_RIVER_PALETTE[0] }}
+                  />
+                  <span>{category}</span>
+                  <sup className={`tabular-nums text-[10px] leading-none ${hiddenSet.has(category) ? 'text-muted-foreground/40' : 'text-muted-foreground/65'}`}>
+                    {matrix.categoryTotals.get(category)}
+                  </sup>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        </aside>
       </div>
 
       <aside className="rounded-md border border-border bg-card/30 p-3">
