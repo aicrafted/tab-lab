@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { Bookmark, ExternalLink } from 'lucide-react'
 import { parseDomain } from '@/lib/core/utils'
+import { Favicon } from '@/components/Favicon'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]
@@ -113,13 +114,15 @@ function TabResult({
   tab: chrome.tabs.Tab
   onActivate: (id: number, windowId?: number) => void
 }) {
+  const domain = tab.url ? parseDomain(tab.url) : 'tab'
+
   return (
     <button
       type="button"
       onClick={() => onActivate(tab.id!, tab.windowId)}
       className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-xs text-[#888] hover:bg-[#1e1e1e] hover:text-[#f0e6d0]"
     >
-      <span className="shrink-0 text-[10px] text-[#EFBC0B]">TAB</span>
+      <Favicon domain={domain} src={tab.favIconUrl} />
       <span className="flex-1 truncate text-left" title={tab.title}>
         {tab.title}
       </span>
@@ -136,7 +139,7 @@ function BookmarkResult({ bookmark }: { bookmark: { id: string; title: string; u
       rel="noreferrer"
       className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-[#888] hover:bg-[#1e1e1e] hover:text-[#f0e6d0]"
     >
-      <span className="shrink-0 text-[10px] text-[#60863D]">BM</span>
+      <Bookmark className="h-3.5 w-3.5 shrink-0 text-[#60863D]" />
       <span className="flex-1 truncate" title={bookmark.title}>
         {bookmark.title}
       </span>
