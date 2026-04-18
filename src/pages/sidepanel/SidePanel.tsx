@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
-import { PanelLeft, X } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { Favicon } from '@/components/Favicon'
 import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
@@ -83,14 +83,6 @@ export function SidePanel() {
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#2a2a2a] bg-[#111]/95 px-3 py-2 backdrop-blur">
           <Favicon domain={currentTabData.domain} src={currentTabData.favIconUrl} />
           <span className="flex-1 truncate text-sm text-[#f0e6d0]">{currentTabData.domain}</span>
-          <button
-            type="button"
-            onClick={() => window.close()}
-            className="shrink-0 rounded p-1 text-[#666] hover:bg-[#1e1e1e] hover:text-[#f0e6d0] transition-colors"
-            title="Close panel"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
         </div>
       )}
 
