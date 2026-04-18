@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
-import { colorFromKey } from '@/components/views/stubs'
 
 type RiverMode = 'saved' | 'visited'
 type BucketUnit = 'week' | 'month'
@@ -44,6 +43,16 @@ interface HoverState {
   count: number
 }
 
+interface ZoomRange {
+  start: number
+  end: number
+}
+
+interface DragZoom {
+  startX: number
+  currentX: number
+}
+
 const WIDTH = 1000
 const HEIGHT = 400
 const PADDING_LEFT = 70
@@ -51,10 +60,21 @@ const PADDING_RIGHT = 20
 const PADDING_TOP = 18
 const PADDING_BOTTOM = 36
 
+const HUE_SECTORS = 19
+const MAX_TOP_CATEGORIES = 19
+const TOPIC_RIVER_PALETTE = Array.from({ length: HUE_SECTORS }, (_, index) => {
+  const hue = Math.round((index * 360) / HUE_SECTORS)
+  return `hsl(${hue} 68% 54%)`
+})
+const OTHER_CATEGORY_COLOR = 'hsl(210 8% 56%)'
+
 export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   const [mode, setMode] = useState<RiverMode>('saved')
   const [selectedBand, setSelectedBand] = useState<SelectedBand | null>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
+  const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null)
+  const [dragZoom, setDragZoom] = useState<DragZoom | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
 
   const items = useMemo<RiverItem[]>(() => {
     if (mode === 'saved') {
@@ -125,29 +145,79 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   }, [items])
 
   const matrix = useMemo(() => {
-    const byBucketCategory = new Map<string, BucketCategoryData>()
-    const categoryTotals = new Map<string, number>()
+    const rawByBucketCategory = new Map<string, BucketCategoryData>()
+    const rawCategoryTotals = new Map<string, number>()
 
     for (const item of items) {
       const bucketStart = bucketInfo.unit === 'week' ? startOfWeek(item.timestamp) : startOfMonth(item.timestamp)
       const key = `${bucketKey(bucketStart, bucketInfo.unit)}||${item.category}`
-      const current = byBucketCategory.get(key) ?? { count: 0, items: [] }
-      byBucketCategory.set(key, { count: current.count + 1, items: [...current.items, item] })
-      categoryTotals.set(item.category, (categoryTotals.get(item.category) ?? 0) + 1)
+      const current = rawByBucketCategory.get(key) ?? { count: 0, items: [] }
+      rawByBucketCategory.set(key, { count: current.count + 1, items: [...current.items, item] })
+      rawCategoryTotals.set(item.category, (rawCategoryTotals.get(item.category) ?? 0) + 1)
     }
 
-    const categories = Array.from(categoryTotals.entries())
+    const sortedCategories = Array.from(rawCategoryTotals.entries())
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([category]) => category)
+    const topCategories = sortedCategories.slice(0, MAX_TOP_CATEGORIES)
+    const topSet = new Set(topCategories)
+    const hasOther = sortedCategories.length > topCategories.length
+    const categories = hasOther ? [...topCategories, 'Other'] : topCategories
+
+    const byBucketCategory = new Map<string, BucketCategoryData>()
+    const categoryTotals = new Map<string, number>()
+    for (const category of categories) categoryTotals.set(category, 0)
+
+    for (const [rawCategory, total] of rawCategoryTotals.entries()) {
+      const displayCategory = topSet.has(rawCategory) ? rawCategory : 'Other'
+      categoryTotals.set(displayCategory, (categoryTotals.get(displayCategory) ?? 0) + total)
+    }
+
+    for (const [rawKey, value] of rawByBucketCategory.entries()) {
+      const splitAt = rawKey.indexOf('||')
+      const bucket = splitAt >= 0 ? rawKey.slice(0, splitAt) : rawKey
+      const rawCategory = splitAt >= 0 ? rawKey.slice(splitAt + 2) : ''
+      const displayCategory = topSet.has(rawCategory) ? rawCategory : 'Other'
+      const key = `${bucket}||${displayCategory}`
+      const current = byBucketCategory.get(key) ?? { count: 0, items: [] }
+      byBucketCategory.set(key, {
+        count: current.count + value.count,
+        items: [...current.items, ...value.items],
+      })
+    }
 
     return { byBucketCategory, categories, categoryTotals }
   }, [items, bucketInfo])
 
+  useEffect(() => {
+    const total = bucketInfo.buckets.length
+    if (total === 0) {
+      setZoomRange(null)
+      return
+    }
+    setZoomRange((prev) => {
+      if (!prev) return { start: 0, end: total - 1 }
+      const start = Math.max(0, Math.min(prev.start, total - 1))
+      const end = Math.max(start, Math.min(prev.end, total - 1))
+      return { start, end }
+    })
+  }, [bucketInfo.buckets.length])
+
+  const isZoomed = !!zoomRange && (zoomRange.start > 0 || zoomRange.end < bucketInfo.buckets.length - 1)
+
+  const visibleBuckets = useMemo(() => {
+    if (bucketInfo.buckets.length === 0) return [] as Bucket[]
+    if (!zoomRange) return bucketInfo.buckets
+    return bucketInfo.buckets.slice(zoomRange.start, zoomRange.end + 1)
+  }, [bucketInfo.buckets, zoomRange])
+
+  const visibleStartIndex = zoomRange?.start ?? 0
+
   const stacked = useMemo(() => {
-    if (bucketInfo.buckets.length === 0 || matrix.categories.length === 0) return []
+    if (visibleBuckets.length === 0 || matrix.categories.length === 0) return []
 
     const totalsByBucket = new Map<string, number>()
-    for (const bucket of bucketInfo.buckets) {
+    for (const bucket of visibleBuckets) {
       let total = 0
       for (const category of matrix.categories) {
         const key = `${bucket.key}||${category}`
@@ -160,17 +230,17 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
     const plotHeight = HEIGHT - PADDING_TOP - PADDING_BOTTOM
     const xForIndex = (index: number) =>
-      PADDING_LEFT + (bucketInfo.buckets.length === 1 ? plotWidth / 2 : (index / (bucketInfo.buckets.length - 1)) * plotWidth)
+      PADDING_LEFT + (visibleBuckets.length === 1 ? plotWidth / 2 : (index / (visibleBuckets.length - 1)) * plotWidth)
     const yForValue = (value: number) => PADDING_TOP + plotHeight - (value / maxTotal) * plotHeight
 
     return matrix.categories.map((category) => {
       const topPoints: Array<{ x: number; y: number; count: number; bucket: Bucket }> = []
       const bottomPoints: Array<{ x: number; y: number; count: number; bucket: Bucket }> = []
-      let running = new Array<number>(bucketInfo.buckets.length).fill(0)
+      let running = new Array<number>(visibleBuckets.length).fill(0)
 
       const priorCategories = matrix.categories.slice(0, matrix.categories.indexOf(category))
-      for (let i = 0; i < bucketInfo.buckets.length; i += 1) {
-        const bucket = bucketInfo.buckets[i]
+      for (let i = 0; i < visibleBuckets.length; i += 1) {
+        const bucket = visibleBuckets[i]
         let bottom = 0
         for (const prev of priorCategories) {
           bottom += matrix.byBucketCategory.get(`${bucket.key}||${prev}`)?.count ?? 0
@@ -178,8 +248,8 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         running[i] = bottom
       }
 
-      for (let i = 0; i < bucketInfo.buckets.length; i += 1) {
-        const bucket = bucketInfo.buckets[i]
+      for (let i = 0; i < visibleBuckets.length; i += 1) {
+        const bucket = visibleBuckets[i]
         const count = matrix.byBucketCategory.get(`${bucket.key}||${category}`)?.count ?? 0
         const bottom = running[i]
         const top = bottom + count
@@ -195,12 +265,55 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         bottomPoints,
       }
     })
-  }, [bucketInfo, matrix])
+  }, [visibleBuckets, matrix])
 
   const selectedItems = useMemo(() => {
     if (!selectedBand) return []
     return matrix.byBucketCategory.get(`${selectedBand.bucketKey}||${selectedBand.category}`)?.items ?? []
   }, [matrix.byBucketCategory, selectedBand])
+
+  const categoryColorMap = useMemo(() => {
+    const map = new Map<string, string>()
+    let paletteIndex = 0
+    for (const category of matrix.categories) {
+      if (category === 'Other') {
+        map.set(category, OTHER_CATEGORY_COLOR)
+        continue
+      }
+      map.set(category, TOPIC_RIVER_PALETTE[paletteIndex % TOPIC_RIVER_PALETTE.length])
+      paletteIndex += 1
+    }
+    return map
+  }, [matrix.categories])
+
+  const xAxisLabelStep = useMemo(() => {
+    const bucketCount = visibleBuckets.length
+    if (bucketCount <= 1) return 1
+    const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
+    const minLabelSpacing = 72
+    const maxLabels = Math.max(2, Math.floor(plotWidth / minLabelSpacing))
+    return Math.max(1, Math.ceil(bucketCount / maxLabels))
+  }, [visibleBuckets.length])
+
+  const dragRect = useMemo(() => {
+    if (!dragZoom) return null
+    const x1 = Math.max(PADDING_LEFT, Math.min(WIDTH - PADDING_RIGHT, Math.min(dragZoom.startX, dragZoom.currentX)))
+    const x2 = Math.max(PADDING_LEFT, Math.min(WIDTH - PADDING_RIGHT, Math.max(dragZoom.startX, dragZoom.currentX)))
+    return { x: x1, width: Math.max(0, x2 - x1) }
+  }, [dragZoom])
+
+  function svgXToVisibleIndex(xInSvg: number): number {
+    if (visibleBuckets.length <= 1) return 0
+    const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
+    const ratio = Math.max(0, Math.min(1, (xInSvg - PADDING_LEFT) / plotWidth))
+    return Math.round(ratio * (visibleBuckets.length - 1))
+  }
+
+  function clientXToSvgX(clientX: number): number {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return PADDING_LEFT
+    return ((clientX - rect.left) * WIDTH) / rect.width
+  }
 
   async function openItem(item: RiverItem) {
     if (item.source === 'tab' && item.tabId != null && item.windowId != null) {
@@ -232,19 +345,60 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           <span className="text-xs text-muted-foreground">
             Buckets: {bucketInfo.unit === 'week' ? 'weekly' : 'monthly'}
           </span>
+          {isZoomed && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setZoomRange({ start: 0, end: bucketInfo.buckets.length - 1 })}
+            >
+              Reset zoom
+            </Button>
+          )}
         </div>
 
         <div className="relative overflow-x-auto rounded-md border border-border bg-card/30 p-2">
-          <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-[400px] min-w-[900px] w-full">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            className="h-[400px] min-w-[900px] w-full"
+            onMouseDown={(event) => {
+              if (event.button !== 0) return
+              const target = event.target as Element
+              if (target.tagName.toLowerCase() === 'circle') return
+              const x = clientXToSvgX(event.clientX)
+              setDragZoom({ startX: x, currentX: x })
+            }}
+            onMouseMove={(event) => {
+              if (!dragZoom) return
+              const x = clientXToSvgX(event.clientX)
+              setDragZoom((prev) => (prev ? { ...prev, currentX: x } : prev))
+            }}
+            onMouseUp={(event) => {
+              if (!dragZoom) return
+              const currentX = clientXToSvgX(event.clientX)
+              const startIdx = svgXToVisibleIndex(dragZoom.startX)
+              const endIdx = svgXToVisibleIndex(currentX)
+              const from = Math.min(startIdx, endIdx)
+              const to = Math.max(startIdx, endIdx)
+              setDragZoom(null)
+              if (to - from < 1) return
+              setZoomRange({
+                start: visibleStartIndex + from,
+                end: visibleStartIndex + to,
+              })
+            }}
+            onMouseLeave={() => setDragZoom(null)}
+          >
             <rect x={0} y={0} width={WIDTH} height={HEIGHT} fill="hsl(var(--background))" />
 
             {stacked.map((band) => (
               <path
                 key={band.category}
                 d={band.path}
-                fill={colorFromKey(band.category)}
+                fill={categoryColorMap.get(band.category) ?? TOPIC_RIVER_PALETTE[0]}
                 fillOpacity={0.62}
-                stroke={colorFromKey(band.category)}
+                stroke={categoryColorMap.get(band.category) ?? TOPIC_RIVER_PALETTE[0]}
                 strokeWidth={1}
               />
             ))}
@@ -278,18 +432,35 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               }),
             )}
 
-            {bucketInfo.buckets.map((bucket, index) => {
+            {visibleBuckets.map((bucket, index) => {
               const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
-              const x = PADDING_LEFT + (bucketInfo.buckets.length === 1 ? plotWidth / 2 : (index / (bucketInfo.buckets.length - 1)) * plotWidth)
+              const x = PADDING_LEFT + (visibleBuckets.length === 1 ? plotWidth / 2 : (index / (visibleBuckets.length - 1)) * plotWidth)
+              const isLast = index === visibleBuckets.length - 1
+              const showLabel = index % xAxisLabelStep === 0 || isLast
               return (
                 <g key={bucket.key}>
                   <line x1={x} y1={PADDING_TOP} x2={x} y2={HEIGHT - PADDING_BOTTOM} stroke="hsl(var(--border))" strokeDasharray="2 4" />
-                  <text x={x} y={HEIGHT - 10} textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize="10">
-                    {bucket.label}
-                  </text>
+                  {showLabel && (
+                    <text x={x} y={HEIGHT - 10} textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize="10">
+                      {bucket.label}
+                    </text>
+                  )}
                 </g>
               )
             })}
+
+            {dragRect && dragRect.width > 0 && (
+              <rect
+                x={dragRect.x}
+                y={PADDING_TOP}
+                width={dragRect.width}
+                height={HEIGHT - PADDING_TOP - PADDING_BOTTOM}
+                fill="hsl(var(--primary) / 0.18)"
+                stroke="hsl(var(--primary))"
+                strokeWidth={1}
+                pointerEvents="none"
+              />
+            )}
           </svg>
 
           {hover && (
@@ -306,7 +477,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         <div className="flex flex-wrap gap-2">
           {matrix.categories.map((category) => (
             <div key={category} className="inline-flex items-center gap-1.5 rounded border border-border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colorFromKey(category) }} />
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryColorMap.get(category) ?? TOPIC_RIVER_PALETTE[0] }} />
               {category} ({matrix.categoryTotals.get(category)})
             </div>
           ))}
