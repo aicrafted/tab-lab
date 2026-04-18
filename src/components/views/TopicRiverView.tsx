@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { effectiveIntent } from '@/lib/ai/static-intent'
 
 type RiverMode = 'saved' | 'visited'
-type BucketUnit = 'week' | 'month'
+type BucketUnit = 'day' | 'week' | 'month'
 type GroupBy = 'categories' | 'domains' | 'tags' | 'platforms' | 'intents'
 
 interface RiverItem {
@@ -69,6 +69,7 @@ const PADDING_TOP = 18
 const PADDING_BOTTOM = 36
 const AXIS_DRAG_Y_THRESHOLD = HEIGHT - PADDING_BOTTOM - 4
 const MIN_ZOOM_BUCKETS = 4
+const DAY_MS = 86_400_000
 
 const HUE_SECTORS = 19
 const MAX_TOP_CATEGORIES = 19
@@ -141,42 +142,111 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     return [...bookmarkVisited, ...tabVisited]
   }, [bookmarks, tabs, mode])
 
-  const bucketInfo = useMemo(() => {
-    if (items.length === 0) return { unit: 'month' as BucketUnit, buckets: [] as Bucket[] }
+  const timeline = useMemo(() => {
+    if (items.length === 0) return { dayBuckets: [] as Bucket[] }
     const timestamps = items.map((item) => item.timestamp)
     const minTs = Math.min(...timestamps)
     const maxTs = Math.max(...timestamps)
-    const rangeMs = maxTs - minTs
-    const useWeekly = rangeMs < 60 * 86_400_000
-    const unit: BucketUnit = useWeekly ? 'week' : 'month'
-    const start = unit === 'week' ? startOfWeek(minTs) : startOfMonth(minTs)
-    const end = unit === 'week' ? startOfWeek(maxTs) : startOfMonth(maxTs)
+    const start = startOfDay(minTs)
+    const end = startOfDay(maxTs)
+    const dayBuckets: Bucket[] = []
+    let cursor = start
+    while (cursor <= end) {
+      dayBuckets.push({
+        key: bucketKey(cursor, 'day'),
+        start: cursor,
+        label: formatBucketLabel(cursor, 'day'),
+      })
+      cursor = addUnit(cursor, 'day')
+    }
+    return { dayBuckets }
+  }, [items])
+
+  useEffect(() => {
+    const total = timeline.dayBuckets.length
+    if (total === 0) {
+      setZoomRange(null)
+      return
+    }
+    setZoomRange((prev) => {
+      if (!prev) return { start: 0, end: total - 1 }
+      const start = Math.max(0, Math.min(prev.start, total - 1))
+      const end = Math.max(start, Math.min(prev.end, total - 1))
+      return { start, end }
+    })
+  }, [timeline.dayBuckets.length])
+
+  const isZoomed = !!zoomRange && (zoomRange.start > 0 || zoomRange.end < timeline.dayBuckets.length - 1)
+
+  const visibleDayBuckets = useMemo(() => {
+    if (timeline.dayBuckets.length === 0) return [] as Bucket[]
+    if (!zoomRange) return timeline.dayBuckets
+    return timeline.dayBuckets.slice(zoomRange.start, zoomRange.end + 1)
+  }, [timeline.dayBuckets, zoomRange])
+
+  const visibleStartIndex = zoomRange?.start ?? 0
+
+  const visibleRange = useMemo(() => {
+    if (visibleDayBuckets.length === 0) return null
+    return {
+      start: visibleDayBuckets[0].start,
+      end: visibleDayBuckets[visibleDayBuckets.length - 1].start,
+    }
+  }, [visibleDayBuckets])
+
+  const displayUnit = useMemo<BucketUnit>(() => {
+    if (!visibleRange) return 'month'
+    const spanDays = Math.max(1, Math.round((visibleRange.end - visibleRange.start) / DAY_MS) + 1)
+    if (spanDays <= 45) return 'day'
+    if (spanDays <= 180) return 'week'
+    return 'month'
+  }, [visibleRange])
+
+  const visibleBuckets = useMemo(() => {
+    if (!visibleRange) return [] as Bucket[]
+    const start = displayUnit === 'day'
+      ? startOfDay(visibleRange.start)
+      : displayUnit === 'week'
+        ? startOfWeek(visibleRange.start)
+        : startOfMonth(visibleRange.start)
+    const end = displayUnit === 'day'
+      ? startOfDay(visibleRange.end)
+      : displayUnit === 'week'
+        ? startOfWeek(visibleRange.end)
+        : startOfMonth(visibleRange.end)
     const buckets: Bucket[] = []
     let cursor = start
     while (cursor <= end) {
       buckets.push({
-        key: bucketKey(cursor, unit),
+        key: bucketKey(cursor, displayUnit),
         start: cursor,
-        label: formatBucketLabel(cursor, unit),
+        label: formatBucketLabel(cursor, displayUnit),
       })
-      cursor = addUnit(cursor, unit)
+      cursor = addUnit(cursor, displayUnit)
     }
-    return { unit, buckets }
-  }, [items])
+    return buckets
+  }, [displayUnit, visibleRange])
 
   useEffect(() => {
     setSelectedBand(null)
-  }, [mode, groupBy])
+  }, [mode, groupBy, displayUnit])
 
   const matrix = useMemo(() => {
     const rawByBucketCategory = new Map<string, BucketCategoryData>()
     const rawCategoryTotals = new Map<string, number>()
 
     for (const item of items) {
-      const bucketStart = bucketInfo.unit === 'week' ? startOfWeek(item.timestamp) : startOfMonth(item.timestamp)
+      if (visibleRange && (item.timestamp < visibleRange.start || item.timestamp > visibleRange.end + DAY_MS - 1)) {
+        continue
+      }
+      const bucketStart = displayUnit === 'day'
+        ? startOfDay(item.timestamp)
+        : displayUnit === 'week'
+          ? startOfWeek(item.timestamp)
+          : startOfMonth(item.timestamp)
       const groups = groupValues(item, groupBy)
       for (const group of groups) {
-        const key = `${bucketKey(bucketStart, bucketInfo.unit)}||${group}`
+        const key = `${bucketKey(bucketStart, displayUnit)}||${group}`
         const current = rawByBucketCategory.get(key) ?? { count: 0, items: [] }
         rawByBucketCategory.set(key, { count: current.count + 1, items: [...current.items, item] })
         rawCategoryTotals.set(group, (rawCategoryTotals.get(group) ?? 0) + 1)
@@ -214,31 +284,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     }
 
     return { byBucketCategory, categories, categoryTotals }
-  }, [items, bucketInfo, groupBy])
-
-  useEffect(() => {
-    const total = bucketInfo.buckets.length
-    if (total === 0) {
-      setZoomRange(null)
-      return
-    }
-    setZoomRange((prev) => {
-      if (!prev) return { start: 0, end: total - 1 }
-      const start = Math.max(0, Math.min(prev.start, total - 1))
-      const end = Math.max(start, Math.min(prev.end, total - 1))
-      return { start, end }
-    })
-  }, [bucketInfo.buckets.length])
-
-  const isZoomed = !!zoomRange && (zoomRange.start > 0 || zoomRange.end < bucketInfo.buckets.length - 1)
-
-  const visibleBuckets = useMemo(() => {
-    if (bucketInfo.buckets.length === 0) return [] as Bucket[]
-    if (!zoomRange) return bucketInfo.buckets
-    return bucketInfo.buckets.slice(zoomRange.start, zoomRange.end + 1)
-  }, [bucketInfo.buckets, zoomRange])
-
-  const visibleStartIndex = zoomRange?.start ?? 0
+  }, [displayUnit, groupBy, items, visibleRange])
 
   const stacked = useMemo(() => {
     if (visibleBuckets.length === 0 || matrix.categories.length === 0) return []
@@ -330,10 +376,10 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   }, [dragZoom])
 
   function svgXToVisibleIndex(xInSvg: number): number {
-    if (visibleBuckets.length <= 1) return 0
+    if (visibleDayBuckets.length <= 1) return 0
     const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
     const ratio = Math.max(0, Math.min(1, (xInSvg - PADDING_LEFT) / plotWidth))
-    return Math.round(ratio * (visibleBuckets.length - 1))
+    return Math.round(ratio * (visibleDayBuckets.length - 1))
   }
 
   function clientXToSvgX(clientX: number): number {
@@ -392,7 +438,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => setZoomRange({ start: 0, end: bucketInfo.buckets.length - 1 })}
+              onClick={() => setZoomRange({ start: 0, end: timeline.dayBuckets.length - 1 })}
             >
               Reset zoom
             </Button>
@@ -409,10 +455,11 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               const target = event.target as Element
               const y = clientYToSvgY(event.clientY)
               const isAxisDrag = y >= AXIS_DRAG_Y_THRESHOLD
+              if (!isAxisDrag && target.closest('[data-band-hit="1"]')) return
               if (!isAxisDrag && target.tagName.toLowerCase() === 'circle') return
               if (isAxisDrag) event.preventDefault()
               const x = clientXToSvgX(event.clientX)
-              const current = zoomRange ?? { start: 0, end: bucketInfo.buckets.length - 1 }
+              const current = zoomRange ?? { start: 0, end: timeline.dayBuckets.length - 1 }
               setDragZoom({
                 startX: x,
                 currentX: x,
@@ -426,7 +473,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               setDragZoom((prev) => {
                 if (!prev) return prev
                 if (prev.mode === 'pan') {
-                  const total = bucketInfo.buckets.length
+                  const total = timeline.dayBuckets.length
                   if (total > 1) {
                     const startIdx = svgXToVisibleIndex(prev.startX)
                     const currentIdx = svgXToVisibleIndex(x)
@@ -460,7 +507,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
             }}
             onMouseLeave={() => setDragZoom(null)}
             onWheel={(event) => {
-              const total = bucketInfo.buckets.length
+              const total = timeline.dayBuckets.length
               if (total <= 1) return
               event.preventDefault()
 
@@ -502,12 +549,20 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
                 const bottom = band.bottomPoints[index]
                 const y = (point.y + bottom.y) / 2
                 const count = point.count
+                const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT
+                const stepWidth = visibleBuckets.length <= 1 ? plotWidth : plotWidth / (visibleBuckets.length - 1)
+                const hitWidth = Math.max(14, Math.min(36, stepWidth * 0.9))
+                const bandHeight = Math.abs(bottom.y - point.y)
+                const hitHeight = Math.max(20, bandHeight + 8)
                 return (
-                  <circle
+                  <rect
                     key={`${band.category}-${point.bucket.key}`}
-                    cx={point.x}
-                    cy={y}
-                    r={8}
+                    data-band-hit="1"
+                    x={point.x - hitWidth / 2}
+                    y={y - hitHeight / 2}
+                    width={hitWidth}
+                    height={hitHeight}
+                    rx={4}
                     fill="transparent"
                     className="cursor-pointer"
                     onMouseMove={(event) =>
@@ -661,6 +716,11 @@ function startOfMonth(timestamp: number): number {
   return new Date(date.getFullYear(), date.getMonth(), 1).getTime()
 }
 
+function startOfDay(timestamp: number): number {
+  const date = new Date(timestamp)
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
 function startOfWeek(timestamp: number): number {
   const date = new Date(timestamp)
   const day = date.getDay()
@@ -671,6 +731,9 @@ function startOfWeek(timestamp: number): number {
 
 function addUnit(timestamp: number, unit: BucketUnit): number {
   const date = new Date(timestamp)
+  if (unit === 'day') {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
+  }
   if (unit === 'week') {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7).getTime()
   }
@@ -679,6 +742,9 @@ function addUnit(timestamp: number, unit: BucketUnit): number {
 
 function bucketKey(timestamp: number, unit: BucketUnit): string {
   const date = new Date(timestamp)
+  if (unit === 'day') {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
   if (unit === 'week') {
     return `${date.getFullYear()}-W${String(weekNumber(date)).padStart(2, '0')}`
   }
@@ -687,7 +753,7 @@ function bucketKey(timestamp: number, unit: BucketUnit): string {
 
 function formatBucketLabel(timestamp: number, unit: BucketUnit): string {
   const date = new Date(timestamp)
-  if (unit === 'week') {
+  if (unit === 'week' || unit === 'day') {
     return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
   }
   return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
