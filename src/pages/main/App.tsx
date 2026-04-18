@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
+import { TableView } from '@/components/TableView'
 import { LlmSettingsView } from '@/components/views/settings/LlmSettingsView'
 import { KnowledgeSettingsView } from '@/components/views/settings/KnowledgeSettingsView'
 import { AdvancedSettingsView } from '@/components/views/settings/AdvancedSettingsView'
@@ -68,7 +69,7 @@ interface UniversalFacetFilters {
 
 const VIEW_HINTS_COLLAPSED_KEY = 'tablab.view-hints.collapsed'
 
-const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
+const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list' | 'table'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
   kanban: KanbanView,
   timeline: TimelineView,
@@ -94,11 +95,11 @@ const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) =>
 
 const VIEW_COMPONENTS = Object.fromEntries(
   Object.entries(ALL_VIEW_COMPONENTS).filter(([id, comp]) => !!comp && !ACTIVE_BUILD.views.hide.includes(id as ViewId))
-) as Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element>
+) as Record<Exclude<ViewId, 'list' | 'table'>, (props: ViewProps) => JSX.Element>
 
 const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
-  // List is cleaner with separate entity modes; merged "both" is intentionally disabled.
-  list: ['bookmarks', 'tabs'],
+  list: ['bookmarks', 'tabs', 'both'],
+  table: ['bookmarks', 'tabs', 'both'],
 }
 
 function filterItems<T extends TabItem | BookmarkItem>(
@@ -157,7 +158,7 @@ export function App() {
   const [, setLlmError] = useState<string | undefined>(undefined)
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
-  const [activeView, setActiveView] = useState<ViewId>('list')
+  const [activeView, setActiveView] = useState<ViewId>('table')
   const [sourceFilter, setSourceFilterState] = useState<SourceFilter>('both')
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
@@ -593,9 +594,9 @@ export function App() {
       viewMenuHost,
     }
 
-    if (activeView === 'list') {
+    if (activeView === 'table') {
       return (
-        <ListView
+        <TableView
           bookmarks={filteredBookmarks}
           tabs={filteredTabs}
           localUrlSet={localUrlSet}
@@ -612,6 +613,16 @@ export function App() {
             setTabs((prev) => prev.filter((t) => t.id !== id))
           }}
           onActivateTab={activateTab}
+        />
+      )
+    }
+    if (activeView === 'list') {
+      return (
+        <ListView
+          bookmarks={filteredBookmarks}
+          tabs={filteredTabs}
+          sourceFilter={sourceFilter}
+          loading={loading}
         />
       )
     }

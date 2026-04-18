@@ -4,6 +4,7 @@ export type SourceFilter = 'bookmarks' | 'tabs' | 'both'
 
 export type ViewId =
   | 'list'
+  | 'table'
   | 'triage'
   | 'kanban'
   | 'timeline'

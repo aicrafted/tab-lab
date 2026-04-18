@@ -3,7 +3,8 @@ import type { ViewId } from '@/components/views/types'
 import { ACTIVE_BUILD } from '@/lib/core/constants'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
-  { id: 'list', label: 'List', hint: 'Classic table with sorting and filters' },
+  { id: 'table', label: 'Table', hint: 'Classic table with sorting and filters' },
+  { id: 'list', label: 'List', hint: 'Grouped list layout by category, folder, domain, or source' },
   { id: 'triage', label: 'Triage', hint: 'What needs attention: dead links, never visited, duplicates, stale' },
   { id: 'kanban', label: 'Kanban', hint: 'Columns by AI category - drag cards between them' },
   { id: 'timeline', label: 'Timeline', hint: 'Horizontal time axis and activity summary - see when you bookmarked and visited' },
@@ -40,7 +41,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     id: 'basic',
     label: 'Basic',
     hint: 'Core working views for everyday sorting and cleanup.',
-    views: ['list', 'triage', 'kanban', 'reading-queue', 'shelf-view'],
+    views: ['table', 'list', 'triage', 'kanban', 'reading-queue', 'shelf-view'],
   },
   {
     id: 'domains-tags-intents',
