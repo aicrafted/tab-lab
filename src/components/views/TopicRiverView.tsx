@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/Favicon'
 import type { ViewProps } from '@/components/views/types'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { effectiveIntent } from '@/lib/ai/static-intent'
 
 type RiverMode = 'saved' | 'visited'
 type BucketUnit = 'week' | 'month'
+type GroupBy = 'categories' | 'domains' | 'tags' | 'platforms' | 'intents'
 
 interface RiverItem {
   id: string
@@ -13,6 +16,9 @@ interface RiverItem {
   url: string
   domain: string
   category: string
+  platform?: string
+  tags: string[]
+  intent: string
   timestamp: number
   favIconUrl?: string
   tabId?: number
@@ -51,6 +57,8 @@ interface ZoomRange {
 interface DragZoom {
   startX: number
   currentX: number
+  mode: 'select' | 'pan'
+  rangeStart: ZoomRange
 }
 
 const WIDTH = 1000
@@ -59,6 +67,8 @@ const PADDING_LEFT = 70
 const PADDING_RIGHT = 20
 const PADDING_TOP = 18
 const PADDING_BOTTOM = 36
+const AXIS_DRAG_Y_THRESHOLD = HEIGHT - PADDING_BOTTOM - 4
+const MIN_ZOOM_BUCKETS = 4
 
 const HUE_SECTORS = 19
 const MAX_TOP_CATEGORIES = 19
@@ -70,6 +80,7 @@ const OTHER_CATEGORY_COLOR = 'hsl(210 8% 56%)'
 
 export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
   const [mode, setMode] = useState<RiverMode>('saved')
+  const [groupBy, setGroupBy] = useState<GroupBy>('categories')
   const [selectedBand, setSelectedBand] = useState<SelectedBand | null>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null)
@@ -87,6 +98,9 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           url: bookmark.url,
           domain: bookmark.domain,
           category: bookmark.category?.trim() || bookmark.domain,
+          platform: bookmark.platform,
+          tags: bookmark.tags ?? [],
+          intent: effectiveIntent(bookmark) ?? 'other',
           timestamp: bookmark.dateAdded,
         }))
     }
@@ -100,6 +114,9 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         url: bookmark.url,
         domain: bookmark.domain,
         category: bookmark.category?.trim() || bookmark.domain,
+        platform: bookmark.platform,
+        tags: bookmark.tags ?? [],
+        intent: effectiveIntent(bookmark) ?? 'other',
         timestamp: bookmark.lastVisited as number,
       }))
 
@@ -112,6 +129,9 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
         url: tab.url,
         domain: tab.domain,
         category: tab.category?.trim() || tab.domain,
+        platform: tab.platform,
+        tags: tab.tags ?? [],
+        intent: effectiveIntent(tab) ?? 'other',
         timestamp: tab.lastAccessed,
         favIconUrl: tab.favIconUrl,
         tabId: tab.id,
@@ -144,16 +164,23 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     return { unit, buckets }
   }, [items])
 
+  useEffect(() => {
+    setSelectedBand(null)
+  }, [mode, groupBy])
+
   const matrix = useMemo(() => {
     const rawByBucketCategory = new Map<string, BucketCategoryData>()
     const rawCategoryTotals = new Map<string, number>()
 
     for (const item of items) {
       const bucketStart = bucketInfo.unit === 'week' ? startOfWeek(item.timestamp) : startOfMonth(item.timestamp)
-      const key = `${bucketKey(bucketStart, bucketInfo.unit)}||${item.category}`
-      const current = rawByBucketCategory.get(key) ?? { count: 0, items: [] }
-      rawByBucketCategory.set(key, { count: current.count + 1, items: [...current.items, item] })
-      rawCategoryTotals.set(item.category, (rawCategoryTotals.get(item.category) ?? 0) + 1)
+      const groups = groupValues(item, groupBy)
+      for (const group of groups) {
+        const key = `${bucketKey(bucketStart, bucketInfo.unit)}||${group}`
+        const current = rawByBucketCategory.get(key) ?? { count: 0, items: [] }
+        rawByBucketCategory.set(key, { count: current.count + 1, items: [...current.items, item] })
+        rawCategoryTotals.set(group, (rawCategoryTotals.get(group) ?? 0) + 1)
+      }
     }
 
     const sortedCategories = Array.from(rawCategoryTotals.entries())
@@ -187,7 +214,7 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     }
 
     return { byBucketCategory, categories, categoryTotals }
-  }, [items, bucketInfo])
+  }, [items, bucketInfo, groupBy])
 
   useEffect(() => {
     const total = bucketInfo.buckets.length
@@ -315,6 +342,12 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     return ((clientX - rect.left) * WIDTH) / rect.width
   }
 
+  function clientYToSvgY(clientY: number): number {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect || rect.height <= 0) return HEIGHT
+    return ((clientY - rect.top) * HEIGHT) / rect.height
+  }
+
   async function openItem(item: RiverItem) {
     if (item.source === 'tab' && item.tabId != null && item.windowId != null) {
       await chrome.tabs.update(item.tabId, { active: true })
@@ -342,9 +375,18 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           <Button type="button" size="sm" variant={mode === 'visited' ? 'default' : 'outline'} onClick={() => setMode('visited')}>
             Visited
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Buckets: {bucketInfo.unit === 'week' ? 'weekly' : 'monthly'}
-          </span>
+          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
+            <SelectTrigger className="h-8 w-[170px] text-xs">
+              <span className="truncate">Group: {groupBy}</span>
+            </SelectTrigger>
+            <SelectContent className="text-xs">
+              <SelectItem value="categories" className="py-0.5 px-2 text-xs">Categories</SelectItem>
+              <SelectItem value="domains" className="py-0.5 px-2 text-xs">Domains</SelectItem>
+              <SelectItem value="tags" className="py-0.5 px-2 text-xs">Tags</SelectItem>
+              <SelectItem value="platforms" className="py-0.5 px-2 text-xs">Platforms</SelectItem>
+              <SelectItem value="intents" className="py-0.5 px-2 text-xs">Intents</SelectItem>
+            </SelectContent>
+          </Select>
           {isZoomed && (
             <Button
               type="button"
@@ -361,21 +403,49 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           <svg
             ref={svgRef}
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-            className="h-[400px] min-w-[900px] w-full"
+            className="h-[400px] min-w-[900px] w-full select-none"
             onMouseDown={(event) => {
               if (event.button !== 0) return
               const target = event.target as Element
-              if (target.tagName.toLowerCase() === 'circle') return
+              const y = clientYToSvgY(event.clientY)
+              const isAxisDrag = y >= AXIS_DRAG_Y_THRESHOLD
+              if (!isAxisDrag && target.tagName.toLowerCase() === 'circle') return
+              if (isAxisDrag) event.preventDefault()
               const x = clientXToSvgX(event.clientX)
-              setDragZoom({ startX: x, currentX: x })
+              const current = zoomRange ?? { start: 0, end: bucketInfo.buckets.length - 1 }
+              setDragZoom({
+                startX: x,
+                currentX: x,
+                mode: isAxisDrag ? 'pan' : 'select',
+                rangeStart: current,
+              })
             }}
             onMouseMove={(event) => {
               if (!dragZoom) return
               const x = clientXToSvgX(event.clientX)
-              setDragZoom((prev) => (prev ? { ...prev, currentX: x } : prev))
+              setDragZoom((prev) => {
+                if (!prev) return prev
+                if (prev.mode === 'pan') {
+                  const total = bucketInfo.buckets.length
+                  if (total > 1) {
+                    const startIdx = svgXToVisibleIndex(prev.startX)
+                    const currentIdx = svgXToVisibleIndex(x)
+                    const delta = currentIdx - startIdx
+                    const span = prev.rangeStart.end - prev.rangeStart.start
+                    const maxStart = Math.max(0, total - (span + 1))
+                    const nextStart = Math.max(0, Math.min(maxStart, prev.rangeStart.start - delta))
+                    setZoomRange({ start: nextStart, end: nextStart + span })
+                  }
+                }
+                return { ...prev, currentX: x }
+              })
             }}
             onMouseUp={(event) => {
               if (!dragZoom) return
+              if (dragZoom.mode === 'pan') {
+                setDragZoom(null)
+                return
+              }
               const currentX = clientXToSvgX(event.clientX)
               const startIdx = svgXToVisibleIndex(dragZoom.startX)
               const endIdx = svgXToVisibleIndex(currentX)
@@ -389,6 +459,30 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               })
             }}
             onMouseLeave={() => setDragZoom(null)}
+            onWheel={(event) => {
+              const total = bucketInfo.buckets.length
+              if (total <= 1) return
+              event.preventDefault()
+
+              const current = zoomRange ?? { start: 0, end: total - 1 }
+              const currentSpan = current.end - current.start + 1
+              const minSpan = Math.min(total, Math.max(1, MIN_ZOOM_BUCKETS))
+              const spanStep = Math.max(1, Math.round(currentSpan * 0.18))
+              const nextSpan = event.deltaY < 0
+                ? Math.max(minSpan, currentSpan - spanStep)
+                : Math.min(total, currentSpan + spanStep)
+
+              if (nextSpan === currentSpan) return
+
+              const anchorInVisible = svgXToVisibleIndex(clientXToSvgX(event.clientX))
+              const anchorGlobal = visibleStartIndex + anchorInVisible
+              const ratio = currentSpan <= 1 ? 0 : (anchorGlobal - current.start) / (currentSpan - 1)
+              const unclampedStart = Math.round(anchorGlobal - ratio * (nextSpan - 1))
+              const maxStart = Math.max(0, total - nextSpan)
+              const nextStart = Math.max(0, Math.min(maxStart, unclampedStart))
+              const nextEnd = nextStart + nextSpan - 1
+              setZoomRange({ start: nextStart, end: nextEnd })
+            }}
           >
             <rect x={0} y={0} width={WIDTH} height={HEIGHT} fill="hsl(var(--background))" />
 
@@ -449,7 +543,16 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
               )
             })}
 
-            {dragRect && dragRect.width > 0 && (
+            <rect
+              x={PADDING_LEFT}
+              y={AXIS_DRAG_Y_THRESHOLD}
+              width={WIDTH - PADDING_LEFT - PADDING_RIGHT}
+              height={HEIGHT - AXIS_DRAG_Y_THRESHOLD}
+              fill="transparent"
+              className={dragZoom?.mode === 'pan' ? 'cursor-grabbing' : 'cursor-grab'}
+            />
+
+            {dragZoom?.mode === 'select' && dragRect && dragRect.width > 0 && (
               <rect
                 x={dragRect.x}
                 y={PADDING_TOP}
@@ -478,7 +581,10 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
           {matrix.categories.map((category) => (
             <div key={category} className="inline-flex items-center gap-1.5 rounded border border-border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryColorMap.get(category) ?? TOPIC_RIVER_PALETTE[0] }} />
-              {category} ({matrix.categoryTotals.get(category)})
+              <span>{category}</span>
+              <sup className="tabular-nums text-[10px] leading-none text-muted-foreground/65">
+                {matrix.categoryTotals.get(category)}
+              </sup>
             </div>
           ))}
         </div>
@@ -593,6 +699,23 @@ function weekNumber(date: Date): number {
   d.setUTCDate(d.getUTCDate() + 4 - dayNum)
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7)
+}
+
+function groupValues(item: RiverItem, groupBy: GroupBy): string[] {
+  if (groupBy === 'domains') {
+    return [item.domain]
+  }
+  if (groupBy === 'platforms') {
+    return [item.platform?.trim() || 'unknown']
+  }
+  if (groupBy === 'intents') {
+    return [item.intent || 'other']
+  }
+  if (groupBy === 'tags') {
+    const normalized = Array.from(new Set(item.tags.map((tag) => tag.trim()).filter(Boolean)))
+    return normalized.length > 0 ? normalized : ['untagged']
+  }
+  return [item.category]
 }
 
 
