@@ -231,14 +231,17 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     setSelectedBand(null)
   }, [mode, groupBy, displayUnit])
 
+  const periodItems = useMemo(() => {
+    if (!visibleRange) return [] as RiverItem[]
+    const endInclusive = visibleRange.end + DAY_MS - 1
+    return items.filter((item) => item.timestamp >= visibleRange.start && item.timestamp <= endInclusive)
+  }, [items, visibleRange])
+
   const matrix = useMemo(() => {
     const rawByBucketCategory = new Map<string, BucketCategoryData>()
     const rawCategoryTotals = new Map<string, number>()
 
-    for (const item of items) {
-      if (visibleRange && (item.timestamp < visibleRange.start || item.timestamp > visibleRange.end + DAY_MS - 1)) {
-        continue
-      }
+    for (const item of periodItems) {
       const bucketStart = displayUnit === 'day'
         ? startOfDay(item.timestamp)
         : displayUnit === 'week'
@@ -284,7 +287,15 @@ export function TopicRiverView({ bookmarks, tabs, loading }: ViewProps) {
     }
 
     return { byBucketCategory, categories, categoryTotals }
-  }, [displayUnit, groupBy, items, visibleRange])
+  }, [displayUnit, groupBy, periodItems])
+
+  useEffect(() => {
+    if (!selectedBand) return
+    const key = `${selectedBand.bucketKey}||${selectedBand.category}`
+    if (!matrix.byBucketCategory.has(key)) {
+      setSelectedBand(null)
+    }
+  }, [matrix.byBucketCategory, selectedBand])
 
   const stacked = useMemo(() => {
     if (visibleBuckets.length === 0 || matrix.categories.length === 0) return []
