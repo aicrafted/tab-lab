@@ -37,7 +37,7 @@ import { isLocalUrl } from '@/lib/core/local-network'
 import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
 import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
-import { Brain, Database, Eraser, Hash, RefreshCw, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, ChevronDown, ChevronUp, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -56,7 +56,7 @@ import { ShelfView } from '@/components/views/ShelfView'
 import { OverlapExplorerView } from '@/components/views/OverlapExplorerView'
 import { ShadowMapView } from '@/components/views/ShadowMapView'
 import { SessionStoryView } from '@/components/views/SessionStoryView'
-import { ACTIVE_BUILD } from '@/lib/core/constants'
+import { ACTIVE_BUILD, IS_DEV } from '@/lib/core/constants'
 
 type FacetMode = 'domains' | 'categories' | 'universal'
 
@@ -65,6 +65,8 @@ interface UniversalFacetFilters {
   platform: string | null
   tags: string[]
 }
+
+const VIEW_HINTS_COLLAPSED_KEY = 'tablab.view-hints.collapsed'
 
 const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
@@ -168,6 +170,7 @@ export function App() {
   const { width: sidebarWidth, startDrag } = useResizable(280, 280, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
   const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
+  const [hintsCollapsed, setHintsCollapsed] = useState(false)
 
   // Build domain → favicon map from open tabs (for bookmark favicon fallback)
   const domainIconMap = useMemo(() => {
@@ -217,6 +220,23 @@ export function App() {
     return () => { active = false }
   }, [llmSettings, settingsHydrated])
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VIEW_HINTS_COLLAPSED_KEY)
+      if (stored === '1') setHintsCollapsed(true)
+    } catch {
+      // Ignore storage access issues and keep default state.
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_HINTS_COLLAPSED_KEY, hintsCollapsed ? '1' : '0')
+    } catch {
+      // Ignore storage access issues.
+    }
+  }, [hintsCollapsed])
+
   const handleSourceFilterChange = useCallback((value: SourceFilter) => {
     startFilterTransition(() => {
       setSourceFilterState(value)
@@ -244,8 +264,17 @@ export function App() {
     handleClearCache,
     handleClassify,
     handleRunDomainKnowledge,
-    handleRunLabels,
+    handleRedomainKnowledge,
+    handleReclassify,
+    handleReintent,
+    handlePostProcessCategories,
+    handleNormalizeCategories,
+    handleGroupRareCategories,
+    handleSplitCategories,
     handleRunTags,
+    handleRunLabels,
+    handleRetag,
+    handleReembedAll,
     handleStopPipeline,
   } = useAiPipelines({
     bookmarks,
@@ -269,9 +298,26 @@ export function App() {
   const aiActionItems: AiActionItem[] = [
     { key: 'full', label: 'Run full AI pipeline', icon: Wand2, title: 'Run full processing pipeline (domains -> embeddings -> labels -> classification)', onClick: () => runAutoAiPipeline(tabs, bookmarks, tabs) },
     { key: 'domains', label: 'Domains enrichment', icon: Database, title: 'Fetch and cache domain metadata', onClick: handleRunDomainKnowledge },
+    ...(IS_DEV ? [
+      { key: 'redomains', label: 'Re-Domains', icon: Database, title: 'Clear and rebuild domain knowledge cache', onClick: handleRedomainKnowledge },
+    ] : []),
     { key: 'embeddings', label: 'Build semantic', icon: Brain, title: 'Generate embeddings and 2D projection', onClick: () => runEmbeddingPass(tabs, bookmarks, llmSettings) },
+    ...(IS_DEV ? [
+      { key: 'reembed', label: 'Re-embed', icon: Brain, title: 'Clear embedding cache and re-embed all pages', onClick: handleReembedAll },
+    ] : []),
     { key: 'labels', label: 'Labels inference', icon: Hash, title: 'Classify pages by tags and intent', onClick: handleRunLabels },
+    ...(IS_DEV ? [
+      { key: 'retag', label: 'Re-Tags', icon: Hash, title: 'Clear only tags cache and run tagging again', onClick: handleRetag },
+      { key: 'reintent', label: 'Re-Intent', icon: Tag, title: 'Clear only intent cache and classify intent again', onClick: handleReintent },
+    ] : []),
     { key: 'classify', label: 'Classify', icon: Wand2, title: 'Assign topical categories to all pages', onClick: handleClassify },
+    ...(IS_DEV ? [
+      { key: 'reclassify', label: 'Re-Classify', icon: Wand2, title: 'Clear only category cache and classify again', onClick: handleReclassify },
+      { key: 'postcategories', label: 'Post-Categories', icon: Wand2, title: 'Run ALL category post-processing (normalize + group rare)', onClick: handlePostProcessCategories },
+      { key: 'normalize', label: 'Normalize', icon: RefreshCw, title: 'Normalize category labels (Phase 1: Discovery + Phase 2: Vector mapping)', onClick: handleNormalizeCategories },
+      { key: 'grouprare', label: 'Group Rare', icon: Tag, title: 'Group sparse categories into frequent ones', onClick: handleGroupRareCategories },
+      { key: 'split', label: 'Split Clusters', icon: Hash, title: 'Split large categories using sub-clustering', onClick: handleSplitCategories },
+    ] : []),
     { key: 'clear', label: 'Clear cache', icon: Eraser, title: 'Clear all cached AI data', onClick: handleClearCache, danger: true },
   ]
 
@@ -718,7 +764,23 @@ export function App() {
 
           <div className="shrink-0 pb-3 flex flex-col gap-3">
             {VIEW_HINTS[activeView] && (
-              <p className="text-xs text-muted-foreground/70">{VIEW_HINTS[activeView]}</p>
+              <div className="rounded-md border border-border/40 bg-card/10 px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className={`text-xs leading-5 text-muted-foreground/55 ${hintsCollapsed ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''}`}>
+                    {VIEW_HINTS[activeView]}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setHintsCollapsed((prev) => !prev)}
+                    className="h-6 shrink-0 px-1.5 text-muted-foreground/55 hover:text-muted-foreground"
+                    title={hintsCollapsed ? 'Expand hints' : 'Collapse hints to one line'}
+                  >
+                    {hintsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
             )}
             <div ref={setViewMenuHost} />
           </div>

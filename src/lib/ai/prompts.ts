@@ -6,7 +6,6 @@ export type { PageIntent, KnownPlatform }
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
 
 const VALID_PLATFORMS = new Set<string>(KNOWN_PLATFORMS)
-const KNOWN_PLATFORMS_TEXT = KNOWN_PLATFORMS.join(', ')
 
 // type KnownPlatform = DomainInfo['platform']
 
@@ -182,7 +181,8 @@ const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you c
 - "domain": copy the domain EXACTLY as it appears in the input list — do not alter spelling, TLD, or subdomains
 - "category": short label (1-4 words, Title Case) describing the site's main purpose (required)
 - "description": 3-7 words describing what the site is (required)
-- "platform": one of [${KNOWN_PLATFORMS_TEXT}] — pick the best match; omit only if none fits
+- "platform": classify the domain's service type using one of these values (omit if none fits):
+  social=social networks (Reddit, Twitter, LinkedIn) | video=video hosting (YouTube, Twitch) | code=code hosting/dev tools (GitHub, GitLab) | registry=package managers (npm, PyPI, crates.io) | qa=Q&A sites (Stack Overflow) | blog=articles/blogs (Medium, Substack, dev.to) | docs=official documentation (ReadTheDocs, MDN) | shopping=e-commerce (Amazon, eBay) | news=news media (BBC, TechCrunch, HN) | ai=AI tools/model hubs (ChatGPT, HuggingFace) | tool=general SaaS apps (Figma, Notion, Linear) | sandbox=code playgrounds (CodePen, StackBlitz) | cloud=cloud providers (AWS, GCP, Azure) | music=music streaming (Spotify, SoundCloud) | finance=banking/trading (Stripe, Robinhood) | ci=CI/CD platforms (CircleCI, Vercel) | games=gaming stores/communities (Steam, itch.io) | education=learning platforms (Coursera, Udemy) | email=webmail clients (Gmail, Outlook) | reference=encyclopedias/wikis (Wikipedia)
 
 Skip only: IP addresses, localhost, clearly private/internal hostnames.
 Include everything else you know — companies, brands, shops, media, tools from any country.

@@ -11,7 +11,11 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'reading-queue', label: 'Reading Queue', hint: 'Pages you saved to read later, sorted by reading time' },
   { id: 'tag-constellation', label: 'Tag Constellation', hint: 'Tags as stars, pages as lines connecting them' },
   { id: 'personal-radar', label: 'Personal Radar', hint: "Spider chart of your collection's profile across zones" },
-  { id: 'topic-river', label: 'Topic River', hint: 'Stream graph of categories over time' },
+  {
+    id: 'topic-river',
+    label: 'Topic River',
+    hint: 'Shows how interests evolve over time as one continuous stream: the horizontal axis is time, stacked layers are categories/tags, and layer thickness at each point reflects how many pages were active in that period. Use drag to select zoom, drag on the bottom axis to pan, wheel to zoom in/out, click legend items to hide/show groups, and click a layer segment to open pages for that time slice.',
+  },
   { id: 'domain-drill-down', label: 'Domain Drill-Down', hint: 'Drill into domain structures like owner/repo and subreddit' },
   { id: 'focus-rings', label: 'Focus Rings', hint: "Concentric rings from hot to forgotten pages" },
   { id: 'tag-cooccurrence', label: 'Tag Co-occurrence', hint: 'Tag pair matrix for overlap frequency' },

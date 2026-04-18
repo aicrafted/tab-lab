@@ -370,8 +370,41 @@ export function InteractiveStreamGraph<T>({
     return ((clientY - rect.top) * HEIGHT) / rect.height
   }
 
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    const onWheel = (event: WheelEvent) => {
+      const total = timeline.dayBuckets.length
+      if (total <= 1) return
+      event.preventDefault()
+
+      const current = zoomRange ?? { start: 0, end: total - 1 }
+      const currentSpan = current.end - current.start + 1
+      const minSpan = Math.min(total, Math.max(1, MIN_ZOOM_BUCKETS))
+      const spanStep = Math.max(1, Math.round(currentSpan * 0.18))
+      const nextSpan = event.deltaY < 0
+        ? Math.max(minSpan, currentSpan - spanStep)
+        : Math.min(total, currentSpan + spanStep)
+
+      if (nextSpan === currentSpan) return
+
+      const anchorInVisible = svgXToVisibleIndex(clientXToSvgX(event.clientX))
+      const anchorGlobal = visibleStartIndex + anchorInVisible
+      const ratio = currentSpan <= 1 ? 0 : (anchorGlobal - current.start) / (currentSpan - 1)
+      const unclampedStart = Math.round(anchorGlobal - ratio * (nextSpan - 1))
+      const maxStart = Math.max(0, total - nextSpan)
+      const nextStart = Math.max(0, Math.min(maxStart, unclampedStart))
+      const nextEnd = nextStart + nextSpan - 1
+      setZoomRange({ start: nextStart, end: nextEnd })
+    }
+
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+  }, [timeline.dayBuckets.length, visibleStartIndex, zoomRange, visibleDayBuckets.length])
+
   const legend = (
-    <aside className="p-3">
+    <aside className={legendSide === 'bottom' ? 'px-4 py-3' : 'p-3'}>
       <div className="max-h-[400px] overflow-y-auto pr-1">
         <div className="flex flex-wrap gap-2">
           {matrix.groups.map((group) => (
@@ -409,21 +442,22 @@ export function InteractiveStreamGraph<T>({
   return (
     <div className={legendSide === 'bottom' ? 'space-y-3' : 'grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]'}>
       {legendSide === 'left' && legend}
-      <div className="relative overflow-x-auto p-2">
+      <div className="relative overflow-x-auto py-2">
         <Button
           type="button"
           size="sm"
           variant="outline"
           disabled={!isZoomed}
           onClick={() => setZoomRange({ start: 0, end: timeline.dayBuckets.length - 1 })}
-          className="absolute left-10 top-9 z-10 h-6 rounded border-border px-2 py-0 text-[11px]"
+          className="absolute left-9 top-9 z-10 h-6 rounded border-border px-2 py-0 text-[11px]"
         >
           Reset zoom
         </Button>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className="h-[400px] min-w-[900px] w-full select-none"
+          preserveAspectRatio="xMinYMin meet"
+          className="block h-[400px] min-w-[900px] w-full select-none"
           onMouseDown={(event) => {
             if (event.button !== 0) return
             const target = event.target as Element
@@ -474,36 +508,12 @@ export function InteractiveStreamGraph<T>({
             const to = Math.max(startIdx, endIdx)
             setDragZoom(null)
             if (to - from < 1) return
-            setZoomRange({
-              start: visibleStartIndex + from,
-              end: visibleStartIndex + to,
-            })
-          }}
-          onMouseLeave={() => setDragZoom(null)}
-          onWheel={(event) => {
-            const total = timeline.dayBuckets.length
-            if (total <= 1) return
-            event.preventDefault()
-
-            const current = zoomRange ?? { start: 0, end: total - 1 }
-            const currentSpan = current.end - current.start + 1
-            const minSpan = Math.min(total, Math.max(1, MIN_ZOOM_BUCKETS))
-            const spanStep = Math.max(1, Math.round(currentSpan * 0.18))
-            const nextSpan = event.deltaY < 0
-              ? Math.max(minSpan, currentSpan - spanStep)
-              : Math.min(total, currentSpan + spanStep)
-
-            if (nextSpan === currentSpan) return
-
-            const anchorInVisible = svgXToVisibleIndex(clientXToSvgX(event.clientX))
-            const anchorGlobal = visibleStartIndex + anchorInVisible
-            const ratio = currentSpan <= 1 ? 0 : (anchorGlobal - current.start) / (currentSpan - 1)
-            const unclampedStart = Math.round(anchorGlobal - ratio * (nextSpan - 1))
-            const maxStart = Math.max(0, total - nextSpan)
-            const nextStart = Math.max(0, Math.min(maxStart, unclampedStart))
-            const nextEnd = nextStart + nextSpan - 1
-            setZoomRange({ start: nextStart, end: nextEnd })
-          }}
+              setZoomRange({
+                start: visibleStartIndex + from,
+                end: visibleStartIndex + to,
+              })
+            }}
+            onMouseLeave={() => setDragZoom(null)}
         >
           <rect x={0} y={0} width={WIDTH} height={HEIGHT} fill="hsl(var(--background))" />
 
