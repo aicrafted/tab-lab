@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FolderTree, Globe, Layers, Monitor } from 'lucide-react'
 import { Favicon } from '@/components/Favicon'
@@ -15,6 +15,9 @@ const GROUP_MODE_LABEL: Record<GroupMode, string> = {
   source: 'Source',
   window: 'Window',
 }
+
+const GROUP_MIN_WIDTH_PX = 280
+const GROUP_COLUMN_GAP_PX = 28
 
 interface ListViewProps {
   bookmarks: BookmarkItem[]
@@ -46,6 +49,8 @@ export function ListView({
   viewMenuHost = null,
 }: ListViewProps) {
   const [groupMode, setGroupMode] = useState<GroupMode>(() => defaultGroupModeForSource(sourceFilter))
+  const [columnCount, setColumnCount] = useState(1)
+  const groupsContainerRef = useRef<HTMLDivElement | null>(null)
 
   const availableModes = useMemo(() => modesForSource(sourceFilter), [sourceFilter])
 
@@ -110,6 +115,44 @@ export function ListView({
       }))
   }, [groupMode, items])
 
+  useEffect(() => {
+    const el = groupsContainerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+
+    const updateColumns = () => {
+      const width = el.clientWidth
+      if (!width) return
+      const next = Math.max(
+        1,
+        Math.floor((width + GROUP_COLUMN_GAP_PX) / (GROUP_MIN_WIDTH_PX + GROUP_COLUMN_GAP_PX)),
+      )
+      setColumnCount(next)
+    }
+
+    updateColumns()
+    const observer = new ResizeObserver(() => updateColumns())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const groupedColumns = useMemo(() => {
+    const colCount = Math.max(1, columnCount)
+    const columns = Array.from({ length: colCount }, () => [] as typeof groups)
+    const weights = Array.from({ length: colCount }, () => 0)
+
+    for (const group of groups) {
+      let targetIdx = 0
+      for (let i = 1; i < colCount; i += 1) {
+        if (weights[i] < weights[targetIdx]) targetIdx = i
+      }
+      columns[targetIdx].push(group)
+      // Rough height estimate to keep columns visually balanced.
+      weights[targetIdx] += 2 + group.items.length
+    }
+
+    return columns
+  }, [columnCount, groups])
+
   async function openItem(item: ListItem) {
     if (item.source === 'tab' && item.tabId != null && item.windowId != null) {
       await chrome.tabs.update(item.tabId, { active: true })
@@ -163,36 +206,44 @@ export function ListView({
       </div>
         ))}
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] items-start gap-x-7 gap-y-4">
-        {groups.map((group) => (
-          <section key={group.name} className="min-w-0 self-start">
-            <header className="mb-2 flex items-center justify-between border-b border-border/45 pb-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <GroupIcon mode={groupMode} />
-                <h3 className="min-w-0 text-sm font-medium text-foreground" title={group.name}>
-                  <GroupName mode={groupMode} name={group.name} />
-                </h3>
-              </div>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{group.items.length}</span>
-            </header>
-            <div>
-              {group.items.map((item, index) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => void openItem(item)}
-                  className={`flex w-full items-start gap-2 px-0 py-1.5 text-left text-muted-foreground/85 transition-colors hover:bg-card/20 hover:text-foreground ${index < group.items.length - 1 ? 'border-b border-border/15' : ''}`}
-                  title={item.url}
-                >
-                  <Favicon domain={item.domain} src={item.favIconUrl} className="mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium leading-5 text-foreground/78">{item.title}</div>
-                    <div className="truncate text-[11px] leading-4 text-muted-foreground/45">{item.domain}</div>
+      <div
+        ref={groupsContainerRef}
+        className="grid items-start gap-x-7"
+        style={{ gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(0, 1fr))` }}
+      >
+        {groupedColumns.map((columnGroups, columnIdx) => (
+          <div key={`col-${columnIdx}`} className="min-w-0 space-y-4">
+            {columnGroups.map((group) => (
+              <section key={group.name} className="min-w-0">
+                <header className="mb-2 flex items-center justify-between border-b border-border/45 pb-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <GroupIcon mode={groupMode} />
+                    <h3 className="min-w-0 text-sm font-medium text-foreground" title={group.name}>
+                      <GroupName mode={groupMode} name={group.name} />
+                    </h3>
                   </div>
-                </button>
-              ))}
-            </div>
-          </section>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{group.items.length}</span>
+                </header>
+                <div>
+                  {group.items.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => void openItem(item)}
+                      className={`flex w-full items-start gap-2 px-0 py-1.5 text-left text-muted-foreground/85 transition-colors hover:bg-card/20 hover:text-foreground ${index < group.items.length - 1 ? 'border-b border-border/15' : ''}`}
+                      title={item.url}
+                    >
+                      <Favicon domain={item.domain} src={item.favIconUrl} className="mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-medium leading-5 text-foreground/78">{item.title}</div>
+                        <div className="truncate text-[11px] leading-4 text-muted-foreground/45">{item.domain}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         ))}
       </div>
     </section>
