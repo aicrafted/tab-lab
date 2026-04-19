@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { cn } from '@/lib/core/utils'
 
 const AVATAR_COLORS = [
@@ -63,10 +63,15 @@ export function Favicon({ domain, src, className }: FaviconProps) {
   const domainIcons = useContext(DomainIconContext)
   const domainIcon = domainIcons.get(domain)
   const letter = (domain[0] ?? '?').toUpperCase()
+  const [fallbackTier, setFallbackTier] = useState(0)
   const canUseSrc = Boolean(src) && !isIconOnCooldown(src)
   const canUseDomainIcon = Boolean(domainIcon) && domainIcon !== src && !isIconOnCooldown(domainIcon)
 
-  if (canUseSrc && src) {
+  useEffect(() => {
+    setFallbackTier(0)
+  }, [domain, domainIcon, src])
+
+  if (fallbackTier <= 0 && canUseSrc && src) {
     return (
       <img
         src={src}
@@ -74,12 +79,15 @@ export function Favicon({ domain, src, className }: FaviconProps) {
         width={16}
         height={16}
         className={cn("h-4 w-4 shrink-0 rounded-sm object-contain", className)}
-        onError={() => markIconFailure(src)}
+        onError={() => {
+          markIconFailure(src)
+          setFallbackTier(1)
+        }}
       />
     )
   }
 
-  if (canUseDomainIcon && domainIcon) {
+  if (fallbackTier <= 1 && canUseDomainIcon && domainIcon) {
     return (
       <img
         src={domainIcon}
@@ -87,7 +95,10 @@ export function Favicon({ domain, src, className }: FaviconProps) {
         width={16}
         height={16}
         className={cn("h-4 w-4 shrink-0 rounded-sm object-contain", className)}
-        onError={() => markIconFailure(domainIcon)}
+        onError={() => {
+          markIconFailure(domainIcon)
+          setFallbackTier(2)
+        }}
       />
     )
   }

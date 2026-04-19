@@ -61,7 +61,6 @@ export function TableView({
       bookmarks={bookmarks}
       tabs={tabs}
       localUrlSet={localUrlSet}
-      sourceFilterLabel={sourceFilter}
       settings={settings}
       loading={loading}
       onDeleteBookmark={(id) => void onDeleteBookmark(id)}

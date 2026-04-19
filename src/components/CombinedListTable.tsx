@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { ExternalLink, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/DataTable'
 import { Favicon } from '@/components/Favicon'
@@ -11,6 +11,7 @@ import { cn, formatAge, formatDate } from '@/lib/core/utils'
 import type { BookmarkItem, LlmSettings, PageIntent, TabItem } from '@/lib/core/types'
 
 type SourceKind = 'bookmark' | 'tab' | 'both'
+const ZOMBIE_DAYS = 7
 
 interface CombinedRow {
   key: string
@@ -19,9 +20,10 @@ interface CombinedRow {
   domain: string
   favIconUrl?: string
   source: SourceKind
+  bookmarks: BookmarkItem[]
+  tabs: TabItem[]
   bookmarkIds: string[]
   tabIds: number[]
-  windowIds: number[]
   folder: string
   category?: string
   intent?: PageIntent
@@ -33,13 +35,13 @@ interface CombinedRow {
   visitCount?: number
   isDuplicate?: boolean
   isOpen?: boolean
+  newestActivity: number
 }
 
 interface CombinedListTableProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
   localUrlSet: Set<string>
-  sourceFilterLabel: string
   settings: LlmSettings
   loading?: boolean
   onDeleteBookmark: (id: string) => void
@@ -61,9 +63,10 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         domain: b.domain,
         favIconUrl: undefined,
         source: 'bookmark',
+        bookmarks: [b],
+        tabs: [],
         bookmarkIds: [b.id],
         tabIds: [],
-        windowIds: [],
         folder: b.folder ?? '',
         category: b.category,
         intent: b.intent,
@@ -74,12 +77,13 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         visitCount: b.visitCount,
         isDuplicate: b.isDuplicate,
         isOpen: b.isOpen,
+        newestActivity: Math.max(b.dateAdded, b.lastVisited ?? 0),
       })
       continue
     }
 
+    current.bookmarks.push(b)
     current.bookmarkIds.push(b.id)
-    current.source = current.tabIds.length > 0 ? 'both' : 'bookmark'
     if (!current.folder && b.folder) current.folder = b.folder
     if (!current.category && b.category) current.category = b.category
     if (!current.intent && b.intent) current.intent = b.intent
@@ -89,6 +93,7 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
     if ((b.visitCount ?? 0) > (current.visitCount ?? 0)) current.visitCount = b.visitCount
     if (b.isDuplicate) current.isDuplicate = true
     if (b.isOpen) current.isOpen = true
+    current.newestActivity = Math.max(current.newestActivity, b.dateAdded, b.lastVisited ?? 0)
     for (const tag of b.tags ?? []) {
       if (!current.tags.includes(tag)) current.tags.push(tag)
     }
@@ -104,9 +109,10 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         domain: t.domain,
         favIconUrl: t.favIconUrl,
         source: 'tab',
+        bookmarks: [],
+        tabs: [t],
         bookmarkIds: [],
         tabIds: [t.id],
-        windowIds: [t.windowId],
         folder: t.bookmarkFolder ?? '',
         category: t.category,
         intent: t.intent,
@@ -116,13 +122,13 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
         visitCount: t.visitCount,
         isDuplicate: t.isDuplicate,
         isOpen: true,
+        newestActivity: t.lastAccessed,
       })
       continue
     }
 
+    current.tabs.push(t)
     current.tabIds.push(t.id)
-    current.windowIds.push(t.windowId)
-    current.source = current.bookmarkIds.length > 0 ? 'both' : 'tab'
     if (!current.title && t.title) current.title = t.title
     if (!current.favIconUrl && t.favIconUrl) current.favIconUrl = t.favIconUrl
     if (!current.category && t.category) current.category = t.category
@@ -132,19 +138,36 @@ function mergeRows(bookmarks: BookmarkItem[], tabs: TabItem[]): CombinedRow[] {
     if ((t.visitCount ?? 0) > (current.visitCount ?? 0)) current.visitCount = t.visitCount
     if (t.isDuplicate) current.isDuplicate = true
     current.isOpen = true
+    current.newestActivity = Math.max(current.newestActivity, t.lastAccessed)
     for (const tag of t.tags ?? []) {
       if (!current.tags.includes(tag)) current.tags.push(tag)
     }
   }
 
-  return Array.from(byUrl.values())
+  return Array.from(byUrl.values()).map((row) => {
+    const sortedTabs = [...row.tabs].sort((a, b) => b.lastAccessed - a.lastAccessed)
+    const sortedBookmarks = [...row.bookmarks].sort((a, b) => b.dateAdded - a.dateAdded)
+    const source: SourceKind = sortedTabs.length > 0 && sortedBookmarks.length > 0
+      ? 'both'
+      : sortedTabs.length > 0
+        ? 'tab'
+        : 'bookmark'
+
+    return {
+      ...row,
+      source,
+      tabs: sortedTabs,
+      bookmarks: sortedBookmarks,
+      tabIds: sortedTabs.map((tab) => tab.id),
+      bookmarkIds: sortedBookmarks.map((bookmark) => bookmark.id),
+    }
+  })
 }
 
 export function CombinedListTable({
   bookmarks,
   tabs,
   localUrlSet,
-  sourceFilterLabel,
   settings,
   loading,
   onDeleteBookmark,
@@ -154,6 +177,7 @@ export function CombinedListTable({
 }: CombinedListTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
+  const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
   const { results, state, error, search, clear } = useSemanticSearch(settings)
 
   useEffect(() => {
@@ -176,7 +200,7 @@ export function CombinedListTable({
   const merged = useMemo(() => mergeRows(bookmarks, tabs), [bookmarks, tabs])
 
   const filteredData = useMemo(() => {
-    if (!semanticEnabled || !query.trim()) return merged
+    if (!query.trim()) return merged
     const needle = query.trim().toLowerCase()
     const lexicalMatch = (item: CombinedRow) =>
       item.title.toLowerCase().includes(needle) ||
@@ -186,96 +210,143 @@ export function CombinedListTable({
       item.folder.toLowerCase().includes(needle) ||
       item.tags.join(' ').toLowerCase().includes(needle)
 
+    if (!semanticEnabled) return merged.filter(lexicalMatch)
+
     const combined = merged.filter((item) => lexicalMatch(item) || semanticScores.has(item.url))
     return combined.sort((a, b) => {
       const sb = semanticScores.get(b.url) ?? -1
       const sa = semanticScores.get(a.url) ?? -1
       if (sa !== sb) return sb - sa
-      return (b.lastAccessed ?? b.dateAdded ?? 0) - (a.lastAccessed ?? a.dateAdded ?? 0)
+      return b.newestActivity - a.newestActivity
     })
   }, [merged, query, semanticEnabled, semanticScores])
 
+  const onToggleExpanded = (url: string) => {
+    setExpandedUrls((prev) => {
+      const next = new Set(prev)
+      if (next.has(url)) next.delete(url)
+      else next.add(url)
+      return next
+    })
+  }
+
   const columns = useMemo<ColumnDef<CombinedRow>[]>(() => [
     {
-      id: 'favicon',
-      header: '',
-      enableSorting: false,
-      size: 24,
-      cell: ({ row }) => <Favicon domain={row.original.domain} src={row.original.favIconUrl} />,
-    },
-    {
-      accessorKey: 'title',
+      id: 'title',
       header: 'Title',
-      cell: ({ row }) => (
-        <button
-          type="button"
-          onClick={() => {
-            if (row.original.tabIds.length > 0) onActivateTab(row.original.tabIds[0])
-            else void chrome.tabs.create({ url: row.original.url })
-          }}
-          className="flex w-full min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
-          title={row.original.url}
-        >
-          <span className="truncate">{row.original.title}</span>
-          {semanticScores.has(row.original.url) && (
-            <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
-              {Math.round((semanticScores.get(row.original.url) ?? 0) * 100)}%
-            </span>
-          )}
-          <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
-        </button>
-      ),
-    },
-    {
-      id: 'source',
-      header: 'Source',
-      accessorFn: (row) => row.source,
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.source}
-        </span>
-      ),
-    },
-    {
-      accessorKey: 'domain',
-      header: 'Domain',
-      cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <span>{row.original.domain}</span>
-          {localUrlSet.has(row.original.url) && (
-            <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>
-          )}
-        </span>
-      ),
-    },
-    {
-      accessorKey: 'folder',
-      header: 'Folder',
-      cell: ({ row }) => (
-        <span className="max-w-[160px] truncate text-xs text-muted-foreground" title={row.original.folder}>
-          {row.original.folder || '—'}
-        </span>
-      ),
-    },
-    {
-      accessorKey: 'category',
-      header: 'Category',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.category ?? <span className="opacity-30">—</span>}
-        </span>
-      ),
-    },
-    {
-      id: 'intent',
-      header: 'Intent',
-      enableSorting: false,
+      accessorFn: (row) => row.title,
       cell: ({ row }) => {
-        const intent = effectiveIntent(row.original)
+        const item = row.original
+        const topTab = item.tabs[0]
+        const hasDuplicates = item.tabs.length > 1 || item.bookmarks.length > 1
+        const isExpanded = expandedUrls.has(item.url)
+        const intent = effectiveIntent(item)
         return (
-          <span className="text-sm" title={intent ?? ''}>
-            {intent ? <IntentIcon intent={intent} /> : <span className="opacity-30">—</span>}
-          </span>
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              {hasDuplicates ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleExpanded(item.url)}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-foreground"
+                  title={isExpanded ? 'Collapse duplicates' : 'Expand duplicates'}
+                >
+                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+              ) : null}
+              <Favicon domain={item.domain} src={item.favIconUrl} />
+              <button
+                type="button"
+                onClick={() => {
+                  if (topTab) onActivateTab(topTab.id)
+                  else void chrome.tabs.create({ url: item.url })
+                }}
+                className="flex w-full min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
+                title={item.url}
+              >
+                <span className="truncate">{item.title}</span>
+                {semanticScores.has(item.url) && (
+                  <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
+                    {Math.round((semanticScores.get(item.url) ?? 0) * 100)}%
+                  </span>
+                )}
+                <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground/65">
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span title={intent ?? ''}>
+                  <IntentIcon intent={intent} className="h-3 w-3" />
+                </span>
+                <span className="capitalize">{item.source}</span>
+                {localUrlSet.has(item.url) && (
+                  <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>
+                )}
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate hover:text-foreground hover:underline"
+                  title={item.url}
+                >
+                  {item.domain}
+                </a>
+                {item.folder && (
+                  <>
+                    <span aria-hidden="true" className="opacity-40">·</span>
+                    <span className="max-w-[220px] truncate" title={item.folder}>{item.folder}</span>
+                  </>
+                )}
+              </span>
+            </div>
+            {hasDuplicates && isExpanded && (
+              <div className="ml-7 space-y-1 rounded border border-border/60 bg-card/30 p-2">
+                {item.tabs.slice(1).map((tab) => (
+                  <div key={tab.id} className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => onActivateTab(tab.id)}
+                      className="min-w-0 flex-1 truncate text-left text-muted-foreground hover:text-foreground hover:underline"
+                      title={tab.url}
+                    >
+                      {tab.title}
+                    </button>
+                    <span className="shrink-0 text-muted-foreground/70">#{tab.windowId}</span>
+                    <button
+                      type="button"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-destructive"
+                      title="Close duplicate tab"
+                      onClick={() => onCloseTab(tab.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {item.bookmarks.slice(1).map((bookmark) => (
+                  <div key={bookmark.id} className="flex items-center gap-2 text-xs">
+                    <a
+                      href={bookmark.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground hover:underline"
+                      title={bookmark.url}
+                    >
+                      {bookmark.title}
+                    </a>
+                    <span className="shrink-0 text-muted-foreground/70">{formatDate(bookmark.dateAdded)}</span>
+                    <button
+                      type="button"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-destructive"
+                      title="Delete duplicate bookmark"
+                      onClick={() => onDeleteBookmark(bookmark.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )
       },
     },
@@ -283,39 +354,39 @@ export function CombinedListTable({
       id: 'status',
       header: 'Status',
       enableSorting: false,
-      cell: ({ row }) => (
-        <div className="flex flex-wrap gap-1">
-          {localUrlSet.has(row.original.url) && <Badge variant="outline" className="rounded text-[10px] opacity-70">LAN</Badge>}
-          {row.original.tabIds.length > 0 && <Badge variant="accent" className="text-[10px]">open</Badge>}
-          {row.original.bookmarkIds.length > 0 && <Badge variant="primary" className="text-[10px]">saved</Badge>}
-          {row.original.isDuplicate && <Badge variant="muted" className="text-[10px]">dup</Badge>}
+      cell: ({ row }) => {
+        const item = row.original
+        const isZombie = item.lastAccessed != null && (Date.now() - item.lastAccessed > ZOMBIE_DAYS * 86_400_000)
+        return (
+        <div className="flex gap-1 whitespace-nowrap">
+          {item.tabIds.length > 0 && <Badge variant="outline" className="rounded border-border/70 bg-card/40 text-[10px] text-muted-foreground">open</Badge>}
+          {item.bookmarkIds.length > 0 && <Badge variant="primary" className="rounded text-[10px]">saved</Badge>}
+          {item.tabs.length > 1 && <Badge variant="muted" className="rounded text-[10px]">tabs ×{item.tabs.length}</Badge>}
+          {item.bookmarks.length > 1 && <Badge variant="muted" className="rounded text-[10px]">bookmarks ×{item.bookmarks.length}</Badge>}
+          {isZombie && <Badge variant="outline" className="rounded text-[10px] opacity-60">zombie</Badge>}
         </div>
-      ),
+      )},
     },
     {
-      accessorKey: 'dateAdded',
-      header: 'Added',
-      cell: ({ row }) => (
+      id: 'lastActivity',
+      accessorFn: (row) => row.newestActivity,
+      header: 'Last activity',
+      cell: ({ row }) => {
+        const item = row.original
+        const value = item.lastAccessed ?? item.lastVisited ?? item.dateAdded
+        return (
         <span className="text-xs text-muted-foreground">
-          {row.original.dateAdded ? formatDate(row.original.dateAdded) : <span className="opacity-30">—</span>}
+          {value ? formatAge(value) : <span className="opacity-30">—</span>}
         </span>
-      ),
+      )},
     },
     {
-      accessorKey: 'lastAccessed',
-      header: 'Last accessed',
+      id: 'category',
+      accessorFn: (row) => row.category ?? '',
+      header: 'Category',
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
-          {row.original.lastAccessed ? formatAge(row.original.lastAccessed) : <span className="opacity-30">—</span>}
-        </span>
-      ),
-    },
-    {
-      accessorKey: 'visitCount',
-      header: 'Visits',
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.visitCount ?? <span className="opacity-30">—</span>}
+          {row.original.category ?? <span className="opacity-30">—</span>}
         </span>
       ),
     },
@@ -373,7 +444,7 @@ export function CombinedListTable({
         </div>
       ),
     },
-  ], [localUrlSet, onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
+  ], [expandedUrls, localUrlSet, onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
 
   const toolbar = (
     <div className="flex items-center gap-2">
@@ -389,20 +460,18 @@ export function CombinedListTable({
       >
         Semantic
       </button>
-      <span className="text-xs text-muted-foreground">{sourceFilterLabel}</span>
       {semanticEnabled && state === 'embedding' && <span className="text-xs text-muted-foreground">Embedding query…</span>}
       {semanticEnabled && state === 'no-cache' && <span className="text-xs text-muted-foreground">No embeddings cache. Run embeddings in Lab.</span>}
       {semanticEnabled && state === 'error' && <span className="text-xs text-destructive">Error: {error}</span>}
     </div>
   )
 
-  const initialSorting: SortingState = [{ id: 'lastAccessed', desc: true }]
+  const initialSorting: SortingState = [{ id: 'lastActivity', desc: true }]
 
   return (
     <DataTable
       columns={columns}
       data={filteredData}
-      searchKey={semanticEnabled ? undefined : 'title'}
       searchPlaceholder={semanticEnabled ? 'Search merged list (lexical + semantic)…' : 'Search merged list…'}
       searchValue={query}
       onSearchChange={setQuery}

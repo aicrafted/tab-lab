@@ -148,7 +148,7 @@ function makeColumns(
       cell: ({ row }) => (
         <div className="flex gap-1 whitespace-nowrap">
           {row.original.representative.isOpen && (
-            <Badge variant="accent" className="rounded text-[10px]">open</Badge>
+            <Badge variant="outline" className="rounded border-border/70 bg-card/40 text-[10px] text-muted-foreground">open</Badge>
           )}
           {row.original.duplicateCount > 0 && (
             <Badge variant="muted" className="rounded text-[10px]">×{row.original.bookmarks.length}</Badge>
