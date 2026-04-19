@@ -215,7 +215,7 @@ export function ListView({
           <div key={`col-${columnIdx}`} className="min-w-0 space-y-4">
             {columnGroups.map((group) => (
               <section key={group.name} className="min-w-0">
-                <header className="mb-2 flex items-center justify-between border-b border-border/45 pb-2">
+                <header className="mb-2.5 flex items-center justify-between rounded-sm border-b border-border/45 bg-gradient-to-t from-primary/10 to-transparent px-2 pt-1.5 pb-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <GroupIcon mode={groupMode} />
                     <h3 className="min-w-0 text-sm font-medium text-foreground" title={group.name}>
