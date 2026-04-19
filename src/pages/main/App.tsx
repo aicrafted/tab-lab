@@ -623,6 +623,7 @@ export function App() {
           tabs={filteredTabs}
           sourceFilter={sourceFilter}
           loading={loading}
+          viewMenuHost={viewMenuHost}
         />
       )
     }
