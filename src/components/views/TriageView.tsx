@@ -10,6 +10,10 @@ const STALE_BOOKMARK_AFTER_MS = 180 * 86_400_000
 const STALE_TAB_AFTER_MS = 30 * 86_400_000
 const TRIAGE_SECTION_MIN_WIDTH_PX = 360
 const TRIAGE_COLUMN_GAP_PX = 20
+const isStaleBookmark = (bookmark: BookmarkItem, cutoff: number) => {
+  const marker = bookmark.lastVisited ?? bookmark.dateAdded
+  return marker < cutoff
+}
 
 interface MultiFolderEntry {
   url: string
@@ -74,7 +78,7 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
   const staleBookmarkCutoff = Date.now() - STALE_BOOKMARK_AFTER_MS
   const staleTabCutoff = Date.now() - STALE_TAB_AFTER_MS
   const staleBookmarks = useMemo(
-    () => visibleBookmarks.filter((bookmark) => bookmark.lastVisited != null && bookmark.lastVisited < staleBookmarkCutoff),
+    () => visibleBookmarks.filter((bookmark) => isStaleBookmark(bookmark, staleBookmarkCutoff)),
     [visibleBookmarks, staleBookmarkCutoff],
   )
   const staleTabs = useMemo(

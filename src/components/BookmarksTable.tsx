@@ -10,12 +10,16 @@ import type { BookmarkItem, LlmSettings } from '@/lib/core/types'
 import { cn, formatDate, formatAge } from '@/lib/core/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 const STALE_BOOKMARK_MS = 180 * 86_400_000
+const isStaleBookmark = (bookmark: BookmarkItem, now: number) => {
+  const marker = bookmark.lastVisited ?? bookmark.dateAdded
+  return marker < now - STALE_BOOKMARK_MS
+}
 
 const BOOKMARK_TRIAGE_PREDICATES: Record<string, (b: BookmarkItem) => boolean> = {
   duplicates: (b) => b.isDuplicate === true,
   'never-opened': (b) => b.lastVisited == null && b.visitCount == null,
   transactional: (b) => effectiveIntent(b) === 'transactional',
-  stale: (b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS,
+  stale: (b) => isStaleBookmark(b, Date.now()),
   'open-now': (b) => b.isOpen === true,
 }
 

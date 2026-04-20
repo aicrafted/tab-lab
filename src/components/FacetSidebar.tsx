@@ -166,6 +166,16 @@ const TAB_CHIPS = [
   { id: 'stale', label: 'Stale', hint: 'Not accessed in over 30 days' },
 ] as const
 
+const BOTH_CHIPS = [
+  { id: 'duplicates', label: 'Duplicates', hint: 'Duplicate URLs across bookmarks and open tabs' },
+  { id: 'never-opened', label: 'Never opened', hint: 'Bookmarks you have never visited' },
+  { id: 'transactional', label: 'Transactional', hint: 'Orders, bookings, tickets across bookmarks and tabs' },
+  { id: 'stale', label: 'Stale', hint: 'Bookmarks not visited in 6+ months or tabs not accessed in 30+ days' },
+  { id: 'open-now', label: 'Open now', hint: 'Bookmarked URL is currently open in a tab' },
+  { id: 'multi-folder', label: 'Multi-folder', hint: 'Saved in two or more bookmark folders' },
+  { id: 'bookmarked', label: 'Bookmarked', hint: 'Open tab URL already saved as a bookmark' },
+] as const
+
 export function FacetSidebar({
   sourceFilter,
   onSourceFilterChange,
@@ -214,12 +224,7 @@ export function FacetSidebar({
   const visibleChips = useMemo(() => {
     if (sourceFilter === 'tabs') return TAB_CHIPS
     if (sourceFilter === 'bookmarks') return BOOKMARK_CHIPS
-    const merged = [...BOOKMARK_CHIPS, ...TAB_CHIPS]
-    const byId = new Map<string, (typeof merged)[number]>()
-    for (const chip of merged) {
-      if (!byId.has(chip.id)) byId.set(chip.id, chip)
-    }
-    return Array.from(byId.values())
+    return BOTH_CHIPS
   }, [sourceFilter])
   const showTriage = visibleChips.some((chip) => (triageChipCounts[chip.id] ?? 0) > 0)
 
@@ -283,10 +288,7 @@ export function FacetSidebar({
         </div>
 
         {showTriage && (
-          <div className="shrink-0 border-b border-border px-2 py-2">
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-              Triage
-            </div>
+          <div className="shrink-0 border-b border-border py-2">
             <div className="flex flex-wrap gap-1">
               {visibleChips.map((chip) => (
                 <TriageChip
@@ -703,11 +705,11 @@ function TriageChip({
       title={hint}
       onClick={onClick}
       className={cn(
-        'rounded border px-2 py-0.5 text-xs transition-colors',
+        'rounded px-2 py-0.5 text-xs transition-colors',
         count === 0 && 'pointer-events-none cursor-default opacity-40',
         active
-          ? 'border-amber-600/60 bg-amber-600/20 text-amber-300'
-          : 'border-border text-muted-foreground hover:border-border/80 hover:text-foreground',
+          ? 'bg-amber-600/20 text-amber-300'
+          : 'text-muted-foreground hover:bg-card hover:text-foreground',
       )}
     >
       {label}

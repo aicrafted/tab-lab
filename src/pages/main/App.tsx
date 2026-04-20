@@ -103,6 +103,10 @@ const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
 }
 const STALE_BOOKMARK_MS = 180 * 86_400_000
 const STALE_TAB_MS = 30 * 86_400_000
+const isStaleBookmark = (bookmark: BookmarkItem, now: number) => {
+  const marker = bookmark.lastVisited ?? bookmark.dateAdded
+  return marker < now - STALE_BOOKMARK_MS
+}
 
 function filterItems<T extends TabItem | BookmarkItem>(
   items: T[],
@@ -602,7 +606,7 @@ export function App() {
     'never-opened': filteredBookmarks.filter((b) => b.lastVisited == null && b.visitCount == null).length,
     transactional: filteredBookmarks.filter((b) => effectiveIntent(b) === 'transactional').length
       + filteredTabs.filter((t) => effectiveIntent(t) === 'transactional').length,
-    stale: filteredBookmarks.filter((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS).length
+    stale: filteredBookmarks.filter((b) => isStaleBookmark(b, Date.now())).length
       + filteredTabs.filter((t) => t.lastAccessed < Date.now() - STALE_TAB_MS).length,
     'open-now': filteredBookmarks.filter((b) => b.isOpen === true).length,
     'multi-folder': filteredBookmarks.filter((b) => multiFolderUrls.has(b.url)).length,

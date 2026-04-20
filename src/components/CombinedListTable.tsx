@@ -14,6 +14,10 @@ type SourceKind = 'bookmark' | 'tab' | 'both'
 const ZOMBIE_DAYS = 7
 const STALE_BOOKMARK_MS = 180 * 86_400_000
 const STALE_TAB_MS = 30 * 86_400_000
+const isStaleBookmark = (bookmark: BookmarkItem, now: number) => {
+  const marker = bookmark.lastVisited ?? bookmark.dateAdded
+  return marker < now - STALE_BOOKMARK_MS
+}
 
 interface CombinedRow {
   key: string
@@ -244,7 +248,7 @@ export function CombinedListTable({
         )
       case 'stale':
         return filteredData.filter((row) =>
-          row.bookmarks.some((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS)
+          row.bookmarks.some((b) => isStaleBookmark(b, Date.now()))
           || row.tabs.some((t) => t.lastAccessed < Date.now() - STALE_TAB_MS),
         )
       case 'open-now':
