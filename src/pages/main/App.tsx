@@ -172,6 +172,7 @@ export function App() {
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
   const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
   const [hintsCollapsed, setHintsCollapsed] = useState(false)
+  const [manualFacetsCollapsed, setManualFacetsCollapsed] = useState(false)
 
   // Build domain → favicon map from open tabs (for bookmark favicon fallback)
   const domainIconMap = useMemo(() => {
@@ -439,6 +440,8 @@ export function App() {
     () => VIEW_SOURCE_FILTER_POLICY[activeView] ?? ['bookmarks', 'tabs', 'both'],
     [activeView],
   )
+  const isSettingsView = activeView.startsWith('settings-')
+  const facetsCollapsed = isSettingsView || manualFacetsCollapsed
 
   useEffect(() => {
     if (allowedSourceFilters.includes(sourceFilter)) return
@@ -763,14 +766,18 @@ export function App() {
             setActiveFacets([])
           }}
           width={sidebarWidth}
+          collapsed={facetsCollapsed}
+          onCollapsedChange={isSettingsView ? undefined : setManualFacetsCollapsed}
         />
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          onMouseDown={startDrag}
-          className="relative w-2 shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/35 after:transition-colors hover:after:bg-border/70"
-        />
+        {!facetsCollapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={startDrag}
+            className="relative w-2 shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/35 after:transition-colors hover:after:bg-border/70"
+          />
+        )}
 
         <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden px-6">
           <div className="shrink-0">

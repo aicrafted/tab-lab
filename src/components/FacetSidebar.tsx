@@ -25,6 +25,8 @@ import {
   Store,
   Video,
   Wrench,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import {
   Select,
@@ -141,6 +143,8 @@ interface FacetSidebarProps {
   onUniversalTagToggle: (value: string) => void
   onClear: () => void
   width: number
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 export function FacetSidebar({
@@ -168,6 +172,8 @@ export function FacetSidebar({
   onUniversalTagToggle,
   onClear,
   width,
+  collapsed = false,
+  onCollapsedChange,
 }: FacetSidebarProps) {
   const showEmpty = activeMode === 'categories' && categories.length === 0
   const activeCount = activeMode === 'universal'
@@ -182,136 +188,175 @@ export function FacetSidebar({
   const bookmarkScopeLabel = selectedFolder
     ? selectedFolder.path
     : 'Root (all bookmarks)'
+  const collapsedWidth = 40
 
   return (
     <div
-      className="ml-6 flex h-full flex-col border-r border-border bg-background"
-      style={{ width }}
+      className="ml-6 relative h-full shrink-0 overflow-hidden border-r border-border bg-background transition-[width] duration-300 ease-out"
+      style={{ width: collapsed ? collapsedWidth : width }}
     >
-      <div className="shrink-0 border-b border-border pb-3">
-        <div className="pr-2 pb-3">
-          <Select
-            value={bookmarkScopeValue}
-            onValueChange={(value) => {
-              if (value === 'root') {
-                onBookmarkScopeChange({ mode: 'root' })
-                return
-              }
-              const folder = bookmarkFolderOptions.find((option) => option.id === value)
-              onBookmarkScopeChange({
-                mode: 'folder',
-                folderId: value,
-                ...(folder ? { folderPath: folder.path } : {}),
-              })
-            }}
-          >
-            <SelectTrigger className="h-7 w-full max-w-full text-xs">
-              <span className="truncate" title={selectedFolder?.path ?? 'Root (all bookmarks)'}>
-                {bookmarkScopeLabel}
-              </span>
-            </SelectTrigger>
-            <SelectContent className="text-xs">
-              <SelectItem value="root" className="py-0.5 px-2 text-xs">Root (all bookmarks)</SelectItem>
-              {bookmarkFolderOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id} className="py-0.5 px-2 text-xs">
-                  <span
-                    className="inline-block truncate"
-                    style={{ paddingLeft: `${option.depth * 12}px` }}
-                    title={option.path}
-                  >
-                    {option.title}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div
+        className={cn(
+          'absolute inset-0 flex flex-col transition-all duration-200 ease-out',
+          collapsed ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100',
+        )}
+      >
+        <div className="shrink-0 border-b border-border pb-3">
+          <div className="pr-2 pb-3">
+            <Select
+              value={bookmarkScopeValue}
+              onValueChange={(value) => {
+                if (value === 'root') {
+                  onBookmarkScopeChange({ mode: 'root' })
+                  return
+                }
+                const folder = bookmarkFolderOptions.find((option) => option.id === value)
+                onBookmarkScopeChange({
+                  mode: 'folder',
+                  folderId: value,
+                  ...(folder ? { folderPath: folder.path } : {}),
+                })
+              }}
+            >
+              <SelectTrigger className="h-7 w-full max-w-full text-xs">
+                <span className="truncate" title={selectedFolder?.path ?? 'Root (all bookmarks)'}>
+                  {bookmarkScopeLabel}
+                </span>
+              </SelectTrigger>
+              <SelectContent className="text-xs">
+                <SelectItem value="root" className="py-0.5 px-2 text-xs">Root (all bookmarks)</SelectItem>
+                {bookmarkFolderOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id} className="py-0.5 px-2 text-xs">
+                    <span
+                      className="inline-block truncate"
+                      style={{ paddingLeft: `${option.depth * 12}px` }}
+                      title={option.path}
+                    >
+                      {option.title}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="mt-2">
+            <SourceFilterToggle
+              value={sourceFilter}
+              onChange={onSourceFilterChange}
+              allowedOptions={allowedSourceFilters}
+              counts={sourceCounts}
+            />
+          </div>
         </div>
-        <div className="mt-2">
-          <SourceFilterToggle
-            value={sourceFilter}
-            onChange={onSourceFilterChange}
-            allowedOptions={allowedSourceFilters}
-            counts={sourceCounts}
-          />
-        </div>
-      </div>
 
-      <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
-        <div className="flex items-center justify-center">
-          {(['domains', 'categories', 'universal'] as const).map((mode, index, all) => (
-            <div key={mode} className="flex items-center">
+        <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
+          <div className="flex items-center justify-center">
+            {(['domains', 'categories', 'universal'] as const).map((mode, index, all) => (
+              <div key={mode} className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => onModeChange(mode)}
+                  className={cn(
+                    'border-b-2 border-transparent px-1 pt-1 pb-1  font-medium leading-none transition-colors',
+                    activeMode === mode
+                      ? 'border-primary text-primary'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {mode === 'domains'
+                    ? 'Domains'
+                    : mode === 'categories'
+                      ? 'Categories'
+                      : 'Labels'}
+                </button>
+                {index < all.length - 1 && (
+                  <span className="mx-0.5 text-[10px] leading-none text-muted-foreground/45">·</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={cn('min-h-0 flex-1', activeMode === 'universal' ? 'overflow-hidden' : 'overflow-y-auto')}>
+          {showEmpty ? (
+            <p className="p-4 text-xs text-muted-foreground">
+              No categories yet
+            </p>
+          ) : activeMode === 'categories' ? (
+            <GroupedCategoryList
+              groups={categories}
+              activeValues={activeValues}
+              onToggle={onToggle}
+            />
+          ) : activeMode === 'universal' ? (
+            <UniversalFacetBlock
+              intents={intents}
+              platforms={platforms}
+              tags={tags}
+              selectedIntent={universalIntent}
+              selectedPlatform={universalPlatform}
+              selectedTags={universalTags}
+              onIntentChange={onUniversalIntentChange}
+              onPlatformChange={onUniversalPlatformChange}
+              onTagToggle={onUniversalTagToggle}
+            />
+          ) : (
+            domains.map(item => (
+              <FacetRow
+                key={item.value}
+                value={item.value}
+                count={item.count}
+                showDomainIcon
+                active={activeValues.includes(item.value)}
+                onClick={() => onToggle(item.value)}
+              />
+            ))
+          )}
+        </div>
+
+        {(activeCount > 0 || onCollapsedChange) && (
+          <div className="shrink-0 border-t border-border p-2">
+            {activeCount > 0 && (
               <button
                 type="button"
-                onClick={() => onModeChange(mode)}
-                className={cn(
-                  'border-b-2 border-transparent px-1 pt-1 pb-1  font-medium leading-none transition-colors',
-                  activeMode === mode
-                    ? 'border-primary text-primary'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+                onClick={onClear}
+                className="w-full rounded px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
               >
-                {mode === 'domains'
-                  ? 'Domains'
-                  : mode === 'categories'
-                    ? 'Categories'
-                    : 'Labels'}
+                Clear ({activeCount})
               </button>
-              {index < all.length - 1 && (
-                <span className="mx-0.5 text-[10px] leading-none text-muted-foreground/45">·</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className={cn('min-h-0 flex-1', activeMode === 'universal' ? 'overflow-hidden' : 'overflow-y-auto')}>
-        {showEmpty ? (
-          <p className="p-4 text-xs text-muted-foreground">
-            No categories yet
-          </p>
-        ) : activeMode === 'categories' ? (
-          <GroupedCategoryList
-            groups={categories}
-            activeValues={activeValues}
-            onToggle={onToggle}
-          />
-        ) : activeMode === 'universal' ? (
-          <UniversalFacetBlock
-            intents={intents}
-            platforms={platforms}
-            tags={tags}
-            selectedIntent={universalIntent}
-            selectedPlatform={universalPlatform}
-            selectedTags={universalTags}
-            onIntentChange={onUniversalIntentChange}
-            onPlatformChange={onUniversalPlatformChange}
-            onTagToggle={onUniversalTagToggle}
-          />
-        ) : (
-          domains.map(item => (
-            <FacetRow
-              key={item.value}
-              value={item.value}
-              count={item.count}
-              showDomainIcon
-              active={activeValues.includes(item.value)}
-              onClick={() => onToggle(item.value)}
-            />
-          ))
+            )}
+            {onCollapsedChange && (
+              <button
+                type="button"
+                onClick={() => onCollapsedChange(true)}
+                className="mt-1.5 flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+                title="Collapse facets"
+              >
+                <PanelLeftClose className="h-3.5 w-3.5" />
+                <span>Collapse facets</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {activeCount > 0 && (
-        <div className="shrink-0 border-t border-border p-2">
+      <div
+        className={cn(
+          'absolute inset-0 flex items-end justify-center pb-2 transition-all duration-200 ease-out',
+          collapsed ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0',
+        )}
+      >
+        {onCollapsedChange && (
           <button
             type="button"
-            onClick={onClear}
-            className="w-full rounded px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+            onClick={() => onCollapsedChange(false)}
+            className="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
+            title="Expand facets"
           >
-            Clear ({activeCount})
+            <PanelLeftOpen className="h-4 w-4" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
