@@ -644,7 +644,10 @@ export function App() {
           <div className="flex items-center gap-3">
             <img src="/icons/icon-48.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
             <h1 className="text-xl font-bold tracking-tight text-foreground">TabLab</h1>
-            <span className="text-sm text-muted-foreground">Lab for bookmark hoarders</span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm text-muted-foreground">Lab for bookmark hoarders</span>
+              <span className="text-xs text-muted-foreground/50">v{chrome.runtime.getManifest().version}</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
