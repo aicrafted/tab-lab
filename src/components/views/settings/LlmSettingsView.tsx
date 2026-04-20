@@ -226,7 +226,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
       <div className="grid gap-8 xl:grid-cols-12 lg:grid-cols-2">
         {/* PROVIDERS COLUMN */}
-        <div className="xl:col-span-4 space-y-6">
+        <div className="xl:col-span-4 xl:row-span-2 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
 
           {/* Browser-local ML */}
@@ -464,8 +464,103 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
           </div>
         </div>
 
+        {/* GEMINI COLUMN */}
+        <div className="xl:col-span-4 space-y-6">
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Gemini Nano</h3>
+
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Configuration</h3>
+            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+              <div className="space-y-1.5 w-24">
+                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={geminiNano.temperature}
+                  onChange={(e) => setGeminiNano({ ...geminiNano, temperature: parseFloat(e.target.value) || 0 })}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Diagnostics</h3>
+            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+              <div className="flex items-start gap-4">
+                <div className={`shrink-0 p-2 rounded-lg ${geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' :
+                    geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
+                      geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
+                        'bg-destructive/10 text-destructive'
+                  }`}>
+                  {geminiStatus === 'ready' ? <ShieldCheck className="h-5 w-5" /> :
+                    geminiStatus === 'checking' ? <Loader2 className="h-5 w-5 animate-spin" /> :
+                      <ShieldX className="h-5 w-5" />}
+                </div>
+
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs font-bold uppercase tracking-tight">
+                    {geminiStatus === 'ready' ? 'System Ready' :
+                      geminiStatus === 'after-download' ? 'Downloading Model...' :
+                        geminiStatus === 'checking' ? 'Analyzing...' :
+                          'System Unsupported'}
+                  </p>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Native Chrome AI for private inference. Requires specific browser flags.
+                  </p>
+                </div>
+                <Button variant="ghost" size="icon" onClick={checkGemini} className="h-8 w-8">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+
+              {geminiStatus === 'unavailable' && (
+                <div className="rounded-lg border border-destructive/10 bg-destructive/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-destructive uppercase tracking-widest">
+                    <Info className="h-3 w-3" />
+                    Required Actions
+                  </div>
+                  <ul className="text-[10px] text-muted-foreground space-y-2 list-none">
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">1</span>
+                      <span>Use <b>Chrome Canary/Dev</b> (127+)</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">2</span>
+                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> to <b>Enabled BypassPrefavorite</b></span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">3</span>
+                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button></span>
+                    </li>
+                    <li className="bg-destructive/10 p-2 rounded-md text-destructive mt-3 font-medium border border-destructive/20">
+                      ⚠️ <b>Extension Origin Policy:</b> Chrome blocks Prompt API on <code className="text-[9px]">chrome-extension://</code> pages.
+                      If diagnostics show "none" but it works on standard sites, this restriction is active.
+                    </li>
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1 opacity-60">
+                <p className="text-[9px] font-medium uppercase text-muted-foreground">
+                  APIs: <span className="text-foreground">{geminiInfo.apis.length > 0 ? geminiInfo.apis.join(', ') : 'none'}</span>
+                </p>
+                {geminiInfo.caps?.message && (
+                  <p className={`text-[9px] font-medium uppercase mt-1 ${geminiStatus === 'ready' || geminiStatus === 'after-download'
+                      ? 'text-muted-foreground'
+                      : 'text-destructive'
+                    }`}>
+                    {' '}
+                    <span className="text-foreground">{geminiInfo.caps.message}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ASSIGNMENTS COLUMN */}
-        <div className="xl:col-span-3 space-y-6">
+        <div className="xl:col-span-4 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Assignments</h3>
 
           <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
@@ -612,104 +707,10 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             </div>
           </div>
 
-          <div className="space-y-4 pt-4">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Configuration</h3>
-            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
-              <div className="space-y-1.5 w-24">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={geminiNano.temperature}
-                  onChange={(e) => setGeminiNano({ ...geminiNano, temperature: parseFloat(e.target.value) || 0 })}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Gemini Nano Diagnostics</h3>
-            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
-              <div className="flex items-start gap-4">
-                <div className={`shrink-0 p-2 rounded-lg ${geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' :
-                    geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
-                      geminiStatus === 'checking' ? 'bg-secondary/10 text-secondary' :
-                        'bg-destructive/10 text-destructive'
-                  }`}>
-                  {geminiStatus === 'ready' ? <ShieldCheck className="h-5 w-5" /> :
-                    geminiStatus === 'checking' ? <Loader2 className="h-5 w-5 animate-spin" /> :
-                      <ShieldX className="h-5 w-5" />}
-                </div>
-
-                <div className="flex-1 space-y-1">
-                  <p className="text-xs font-bold uppercase tracking-tight">
-                    {geminiStatus === 'ready' ? 'System Ready' :
-                      geminiStatus === 'after-download' ? 'Downloading Model...' :
-                        geminiStatus === 'checking' ? 'Analyzing...' :
-                          'System Unsupported'}
-                  </p>
-                  <p className="text-[10px] leading-relaxed text-muted-foreground">
-                    Native Chrome AI for private inference. Requires specific browser flags.
-                  </p>
-                </div>
-                <Button variant="ghost" size="icon" onClick={checkGemini} className="h-8 w-8">
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-
-              {geminiStatus === 'unavailable' && (
-                <div className="rounded-lg border border-destructive/10 bg-destructive/5 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-[10px] font-bold text-destructive uppercase tracking-widest">
-                    <Info className="h-3 w-3" />
-                    Required Actions
-                  </div>
-                  <ul className="text-[10px] text-muted-foreground space-y-2 list-none">
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">1</span>
-                      <span>Use <b>Chrome Canary/Dev</b> (127+)</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">2</span>
-                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#optimization-guide-on-device-model')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#optimization-guide-on-device-model</button> to <b>Enabled BypassPrefavorite</b></span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">3</span>
-                      <span>Enable <button onClick={() => handleOpenFlag('chrome://flags/#prompt-api-for-gemini-nano')} className="text-primary hover:underline font-mono bg-background px-1 rounded">#prompt-api-for-gemini-nano</button></span>
-                    </li>
-                    <li className="bg-destructive/10 p-2 rounded-md text-destructive mt-3 font-medium border border-destructive/20">
-                      ⚠️ <b>Extension Origin Policy:</b> Chrome blocks Prompt API on <code className="text-[9px]">chrome-extension://</code> pages.
-                      If diagnostics show "none" but it works on standard sites, this restriction is active.
-                    </li>
-                  </ul>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-x-4 gap-y-1 opacity-60">
-                <p className="text-[9px] font-medium uppercase text-muted-foreground">
-                  APIs: <span className="text-foreground">{geminiInfo.apis.length > 0 ? geminiInfo.apis.join(', ') : 'none'}</span>
-                </p>
-                <p className="text-[9px] font-medium uppercase text-muted-foreground">
-                  Availability: <span className="text-foreground">
-                    {typeof geminiInfo.caps === 'string' ? geminiInfo.caps : geminiInfo.caps?.available || 'unknown'}
-                  </span>
-                </p>
-                {geminiInfo.caps?.message && (
-                  <p className={`text-[9px] font-medium uppercase mt-1 ${geminiStatus === 'ready' || geminiStatus === 'after-download'
-                      ? 'text-muted-foreground'
-                      : 'text-destructive'
-                    }`}>
-                    {geminiStatus === 'ready' || geminiStatus === 'after-download' ? 'Status' : 'Error'}: {' '}
-                    <span className="text-foreground">{geminiInfo.caps.message}</span>
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* NLI TAXONOMY COLUMN */}
-        <div className="xl:col-span-5 space-y-6">
+        <div className="lg:col-span-2 xl:col-span-8 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Taxonomy</h3>
           <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
             <div className="space-y-4">

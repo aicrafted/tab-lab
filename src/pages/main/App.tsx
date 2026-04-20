@@ -584,6 +584,7 @@ export function App() {
     const common: ViewProps = {
       bookmarks: filteredBookmarks,
       tabs: filteredTabs,
+      sourceFilter,
       loading,
       projectedPoints,
       clusterNames,

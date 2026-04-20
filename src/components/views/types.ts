@@ -30,6 +30,7 @@ export type ViewId =
 export interface ViewProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
+  sourceFilter?: SourceFilter
   loading: boolean
   projectedPoints?: Map<string, [number, number]>
   clusterNames?: Map<number, string>

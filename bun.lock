@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "tab-mind",
+      "name": "tab-lab",
       "dependencies": {
         "@mlc-ai/web-llm": "^0.2.79",
         "@radix-ui/react-select": "^2.1.2",

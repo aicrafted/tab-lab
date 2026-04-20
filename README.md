@@ -63,15 +63,16 @@ Everything runs locally:
 ### Prerequisites
 
 - Chrome 120+ (or any Chromium-based browser with extensions)
-- Node.js 18+, pnpm
+- Node.js 18+
+- Bun
 
 ### Install & build
 
 ```bash
 git clone https://github.com/aicrafted/tab-lab
 cd tab-lab
-pnpm install
-pnpm build
+bun install
+bun run build
 ```
 
 ### Load in Chrome
@@ -93,8 +94,8 @@ Click the settings icon in the extension header. Options:
 ## Development
 
 ```bash
-pnpm dev        # watch mode — rebuilds on save
-pnpm typecheck  # TypeScript check without emitting
+bun run dev        # watch mode — rebuilds on save
+bun run typecheck  # TypeScript check without emitting
 ```
 
 After each build, reload the extension in `chrome://extensions` (click the refresh icon).
@@ -123,4 +124,4 @@ src/
 
 MIT — [github.com/aicrafted/tab-lab](https://github.com/aicrafted/tab-lab)
 
-© 2025 AICrafted
+© 2026 AICrafted
