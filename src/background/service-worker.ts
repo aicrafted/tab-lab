@@ -89,4 +89,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })()
     return true // keep channel open for async response
   }
+
+  if (msg.type === 'extractPageText') {
+    void (async () => {
+      try {
+        const tabId: number = msg.tabId
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            const clone = document.body.cloneNode(true) as HTMLElement
+            clone.querySelectorAll('script,style,nav,footer,header,aside').forEach((el) => el.remove())
+            return clone.innerText.replace(/\s{3,}/g, '\n\n').trim().slice(0, 12_000)
+          },
+        })
+        sendResponse({ text: results[0]?.result ?? '' })
+      } catch (err) {
+        sendResponse({ error: String(err) })
+      }
+    })()
+    return true
+  }
 })

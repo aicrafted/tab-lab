@@ -7,7 +7,10 @@ import { SimilarTabs } from './sections/SimilarTabs'
 import { RelatedBookmarks } from './sections/RelatedBookmarks'
 import { Search } from './sections/Search'
 import { RecentTabs } from './sections/RecentTabs'
+import { PageSummary } from './sections/PageSummary'
 import { parseDomain } from '@/lib/core/utils'
+import type { LlmSettings } from '@/lib/core/types'
+import { getLlmSettings } from '@/lib/core/storage'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]
@@ -22,6 +25,7 @@ export function SidePanel() {
   const [activeTabId, setActiveTabId] = useState<number | null>(null)
   const [currentWindowId, setCurrentWindowId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [llmSettings, setLlmSettings] = useState<LlmSettings | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -44,6 +48,14 @@ export function SidePanel() {
   }, [loadData])
 
   useBrowserStateSync(loadData)
+
+  useEffect(() => {
+    void getLlmSettings().then((settings) => {
+      setLlmSettings(settings)
+    }).catch(() => {
+      setLlmSettings(null)
+    })
+  }, [])
 
   useEffect(() => {
     const handler = (msg: { type: string; tabId: number }) => {
@@ -87,6 +99,13 @@ export function SidePanel() {
       )}
 
       <div className="flex-1 space-y-1 p-2">
+        {currentTabData && llmSettings && (
+          <PageSummary
+            tabId={currentTabData.id}
+            url={currentTabData.url}
+            llmSettings={llmSettings}
+          />
+        )}
         {currentTabData && data && (
           <Search data={data} currentTabId={currentTabData.id} currentWindowId={currentWindowId} />
         )}
