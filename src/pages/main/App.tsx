@@ -639,8 +639,8 @@ export function App() {
   return (
     <DomainIconContext.Provider value={domainIconMap}>
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <div className="shrink-0 px-6 py-4">
-        <header className="flex items-center justify-between gap-4 pb-3">
+      <div className="shrink-0 px-6 py-2">
+        <header className="flex items-center justify-between gap-4 pb-2">
           <div className="flex items-center gap-3">
             <img src="/icons/icon-48.png" alt="TabLab" className="h-6 w-6 rounded-sm" />
             <h1 className="text-xl font-bold tracking-tight text-foreground">TabLab</h1>
