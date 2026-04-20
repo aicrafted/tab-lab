@@ -11,6 +11,14 @@ import type { TabItem, LlmSettings } from '@/lib/core/types'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
 
 const ZOMBIE_DAYS = 7
+const STALE_TAB_MS = 30 * 86_400_000
+
+const TAB_TRIAGE_PREDICATES: Record<string, (t: TabItem) => boolean> = {
+  'duplicate-tabs': (t) => t.isDuplicate === true,
+  bookmarked: (t) => t.isBookmarked === true,
+  transactional: (t) => effectiveIntent(t) === 'transactional',
+  stale: (t) => t.lastAccessed < Date.now() - STALE_TAB_MS,
+}
 
 const GROUP_COLORS: Record<string, string> = {
   blue:   'bg-blue-900/40 text-blue-300',
@@ -274,9 +282,14 @@ interface TabsTableProps {
 export function TabsTable({ data, localUrlSet, settings, loading, onClose, onActivate, menuHost }: TabsTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
+  const [triageFilter, setTriageFilter] = useState<string | null>(null)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
   const [currentWindowId, setCurrentWindowId] = useState<number | null>(null)
   const { results, state, error, search, clear } = useSemanticSearch(settings)
+
+  useEffect(() => {
+    setTriageFilter(null)
+  }, [data])
 
   useEffect(() => {
     if (!semanticEnabled || !query.trim()) {
@@ -343,6 +356,18 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
   }, [data, query, semanticEnabled, semanticScores])
 
   const groupedData = useMemo(() => groupByUrl(filteredTabs), [filteredTabs])
+  const triageGroupedData = useMemo(() => {
+    if (!triageFilter) return groupedData
+    const predicate = TAB_TRIAGE_PREDICATES[triageFilter]
+    return predicate ? groupedData.filter((group) => predicate(group.representative)) : groupedData
+  }, [groupedData, triageFilter])
+
+  const chipCounts = useMemo(() => ({
+    'duplicate-tabs': data.filter((t) => t.isDuplicate === true).length,
+    bookmarked: data.filter((t) => t.isBookmarked === true).length,
+    transactional: data.filter((t) => effectiveIntent(t) === 'transactional').length,
+    stale: data.filter((t) => t.lastAccessed < Date.now() - STALE_TAB_MS).length,
+  }), [data])
 
   const onToggleExpanded = (url: string) => {
     setExpandedUrls((prev) => {
@@ -358,8 +383,15 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
     [onClose, onActivate, semanticScores, localUrlSet, currentWindowId, expandedUrls],
   )
 
+  const tabChips = [
+    { id: 'duplicate-tabs', label: 'Duplicate tabs', hint: 'Same URL open in multiple tabs' },
+    { id: 'bookmarked', label: 'Bookmarked', hint: 'Already saved as a bookmark' },
+    { id: 'transactional', label: 'Transactional', hint: 'Orders, bookings, tickets — safe to close when done' },
+    { id: 'stale', label: 'Stale', hint: 'Not accessed in over 30 days' },
+  ] as const
+
   const toolbar = (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         className={cn(
@@ -375,6 +407,17 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
       {semanticEnabled && state === 'embedding' && <span className="text-xs text-muted-foreground">Embedding query…</span>}
       {semanticEnabled && state === 'no-cache' && <span className="text-xs text-muted-foreground">No embeddings cache. Run embeddings in Lab.</span>}
       {semanticEnabled && state === 'error' && <span className="text-xs text-destructive">Error: {error}</span>}
+      {tabChips.length > 0 && <span className="h-4 w-px bg-border" />}
+      {tabChips.map((chip) => (
+        <TriageChip
+          key={chip.id}
+          label={chip.label}
+          hint={chip.hint}
+          active={triageFilter === chip.id}
+          count={chipCounts[chip.id]}
+          onClick={() => setTriageFilter((prev) => (prev === chip.id ? null : chip.id))}
+        />
+      ))}
     </div>
   )
 
@@ -383,7 +426,7 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
   return (
     <DataTable
       columns={columns}
-      data={groupedData}
+      data={triageGroupedData}
       searchPlaceholder={semanticEnabled ? 'Search tabs (lexical + semantic)…' : 'Search tabs…'}
       searchValue={query}
       onSearchChange={setQuery}
@@ -392,6 +435,42 @@ export function TabsTable({ data, localUrlSet, settings, loading, onClose, onAct
       initialSorting={initialSorting}
       menuHost={menuHost}
     />
+  )
+}
+
+function TriageChip({
+  label,
+  hint,
+  active,
+  count,
+  onClick,
+}: {
+  label: string
+  hint: string
+  active: boolean
+  count: number
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        'rounded border px-2 py-1 text-xs transition-colors',
+        active
+          ? 'border-amber-600/60 bg-amber-600/20 text-amber-300'
+          : 'border-border text-muted-foreground hover:border-border/80 hover:text-foreground',
+        count === 0 && !active && 'cursor-default opacity-40 pointer-events-none',
+      )}
+    >
+      {label}
+      {count > 0 && (
+        <span className={cn('ml-1', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
+          {count}
+        </span>
+      )}
+    </button>
   )
 }
 

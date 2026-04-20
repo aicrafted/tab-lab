@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, FolderTree, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { BookmarkItem, TabItem } from '@/lib/core/types'
@@ -8,6 +8,8 @@ import { formatAge, formatDate } from '@/lib/core/utils'
 
 const STALE_BOOKMARK_AFTER_MS = 180 * 86_400_000
 const STALE_TAB_AFTER_MS = 30 * 86_400_000
+const TRIAGE_SECTION_MIN_WIDTH_PX = 360
+const TRIAGE_COLUMN_GAP_PX = 20
 
 interface MultiFolderEntry {
   url: string
@@ -20,6 +22,8 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
   const [removedIds, setRemovedIds] = useState<string[]>([])
   const [removedTabIds, setRemovedTabIds] = useState<number[]>([])
   const [openFolders, setOpenFolders] = useState<string[]>([])
+  const [columnCount, setColumnCount] = useState(1)
+  const sectionsContainerRef = useRef<HTMLDivElement | null>(null)
 
   const showBookmarks = sourceFilter !== 'tabs'
   const showTabs = sourceFilter !== 'bookmarks'
@@ -122,6 +126,26 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
       ? 'No triage issues found in current bookmarks.'
       : 'No triage issues found.'
 
+  useEffect(() => {
+    const el = sectionsContainerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+
+    const updateColumns = () => {
+      const width = el.clientWidth
+      if (!width) return
+      const next = Math.max(
+        1,
+        Math.floor((width + TRIAGE_COLUMN_GAP_PX) / (TRIAGE_SECTION_MIN_WIDTH_PX + TRIAGE_COLUMN_GAP_PX)),
+      )
+      setColumnCount(next)
+    }
+
+    updateColumns()
+    const observer = new ResizeObserver(() => updateColumns())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   async function removeBookmark(id: string) {
     try {
       await chrome.bookmarks.remove(id)
@@ -170,9 +194,13 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
     return <div className="p-8 text-sm text-muted-foreground">{emptyMessage}</div>
   }
 
-  return (
-    <div className="space-y-3">
-      {showTabs && duplicateTabs.length > 0 && (
+  const sections: Array<{ key: string; weight: number; content: JSX.Element }> = []
+
+  if (showTabs && duplicateTabs.length > 0) {
+    sections.push({
+      key: 'duplicate-tabs',
+      weight: 2 + duplicateTabs.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Duplicate tabs ({duplicateTabs.length})
@@ -192,9 +220,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             ))}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {showTabs && alreadyBookmarked.length > 0 && (
+  if (showTabs && alreadyBookmarked.length > 0) {
+    sections.push({
+      key: 'already-bookmarked-tabs',
+      weight: 2 + alreadyBookmarked.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Already bookmarked ({alreadyBookmarked.length}) — these tabs are already saved in bookmarks.
@@ -220,9 +254,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             ))}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {showBookmarks && duplicateBookmarks.length > 0 && (
+  if (showBookmarks && duplicateBookmarks.length > 0) {
+    sections.push({
+      key: 'duplicate-bookmarks',
+      weight: 2 + duplicateBookmarks.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Duplicate bookmarks ({duplicateBookmarks.length})
@@ -242,9 +282,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             ))}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {((showBookmarks && staleBookmarks.length > 0) || (showTabs && staleTabs.length > 0)) && (
+  if ((showBookmarks && staleBookmarks.length > 0) || (showTabs && staleTabs.length > 0)) {
+    sections.push({
+      key: 'stale',
+      weight: 3 + (showBookmarks ? staleBookmarks.length : 0) + (showTabs ? staleTabs.length : 0),
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Stale ({(showBookmarks ? staleBookmarks.length : 0) + (showTabs ? staleTabs.length : 0)})
@@ -303,9 +349,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             )}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {((showBookmarks && transactionalBookmarks.length > 0) || (showTabs && transactionalTabs.length > 0)) && (
+  if ((showBookmarks && transactionalBookmarks.length > 0) || (showTabs && transactionalTabs.length > 0)) {
+    sections.push({
+      key: 'transactional',
+      weight: 3 + (showBookmarks ? transactionalBookmarks.length : 0) + (showTabs ? transactionalTabs.length : 0),
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             🎫 Transactional ({(showBookmarks ? transactionalBookmarks.length : 0) + (showTabs ? transactionalTabs.length : 0)}) — orders, bookings, tickets. Safe to delete when done.
@@ -364,9 +416,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             )}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {showBookmarks && neverOpened.length > 0 && (
+  if (showBookmarks && neverOpened.length > 0) {
+    sections.push({
+      key: 'never-opened',
+      weight: 2 + neverOpened.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Never opened ({neverOpened.length})
@@ -392,9 +450,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             ))}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {showBookmarks && openNow.length > 0 && (
+  if (showBookmarks && openNow.length > 0) {
+    sections.push({
+      key: 'open-now',
+      weight: 2 + openNow.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             Open right now ({openNow.length})
@@ -414,9 +478,15 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             ))}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
 
-      {showBookmarks && multiFolder.length > 0 && (
+  if (showBookmarks && multiFolder.length > 0) {
+    sections.push({
+      key: 'multi-folder',
+      weight: 2 + multiFolder.length,
+      content: (
         <details open className="rounded-md border border-border bg-card/50">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
             In multiple folders ({multiFolder.length})
@@ -459,7 +529,36 @@ export function TriageView({ bookmarks, tabs, loading, sourceFilter = 'both' }: 
             })}
           </div>
         </details>
-      )}
+      ),
+    })
+  }
+
+  const columns = Array.from({ length: Math.max(1, columnCount) }, () => [] as typeof sections)
+  const weights = Array.from({ length: Math.max(1, columnCount) }, () => 0)
+  for (const section of sections) {
+    let targetIdx = 0
+    for (let i = 1; i < columns.length; i += 1) {
+      if (weights[i] < weights[targetIdx]) targetIdx = i
+    }
+    columns[targetIdx].push(section)
+    weights[targetIdx] += section.weight
+  }
+
+  return (
+    <div
+      ref={sectionsContainerRef}
+      className="grid items-start gap-x-5"
+      style={{ gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(0, 1fr))` }}
+    >
+      {columns.map((columnSections, columnIdx) => (
+        <div key={`triage-col-${columnIdx}`} className="min-w-0 space-y-3">
+          {columnSections.map((section) => (
+            <div key={section.key} className="min-w-0">
+              {section.content}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

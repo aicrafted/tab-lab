@@ -9,6 +9,15 @@ import { effectiveIntent } from '@/lib/ai/static-intent'
 import type { BookmarkItem, LlmSettings } from '@/lib/core/types'
 import { cn, formatDate, formatAge } from '@/lib/core/utils'
 import { useSemanticSearch } from '@/hooks/useSemanticSearch'
+const STALE_BOOKMARK_MS = 180 * 86_400_000
+
+const BOOKMARK_TRIAGE_PREDICATES: Record<string, (b: BookmarkItem) => boolean> = {
+  duplicates: (b) => b.isDuplicate === true,
+  'never-opened': (b) => b.lastVisited == null && b.visitCount == null,
+  transactional: (b) => effectiveIntent(b) === 'transactional',
+  stale: (b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS,
+  'open-now': (b) => b.isOpen === true,
+}
 
 interface BookmarkGroupRow {
   key: string
@@ -258,8 +267,13 @@ interface BookmarksTableProps {
 export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete, menuHost }: BookmarksTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
+  const [triageFilter, setTriageFilter] = useState<string | null>(null)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
   const { results, state, error, search, clear } = useSemanticSearch(settings)
+
+  useEffect(() => {
+    setTriageFilter(null)
+  }, [data])
 
   useEffect(() => {
     if (!semanticEnabled || !query.trim()) {
@@ -300,6 +314,37 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
   }, [data, query, semanticEnabled, semanticScores])
 
   const groupedData = useMemo(() => groupByUrl(filteredBookmarks), [filteredBookmarks])
+  const multiFolderUrls = useMemo(() => {
+    const byUrl = new Map<string, Set<string>>()
+    for (const bookmark of data) {
+      const set = byUrl.get(bookmark.url) ?? new Set<string>()
+      if (bookmark.folder) set.add(bookmark.folder)
+      byUrl.set(bookmark.url, set)
+    }
+    return new Set(
+      Array.from(byUrl.entries())
+        .filter(([, folders]) => folders.size > 1)
+        .map(([url]) => url),
+    )
+  }, [data])
+
+  const triageGroupedData = useMemo(() => {
+    if (!triageFilter) return groupedData
+    if (triageFilter === 'multi-folder') {
+      return groupedData.filter((group) => multiFolderUrls.has(group.representative.url))
+    }
+    const predicate = BOOKMARK_TRIAGE_PREDICATES[triageFilter]
+    return predicate ? groupedData.filter((group) => predicate(group.representative)) : groupedData
+  }, [groupedData, triageFilter, multiFolderUrls])
+
+  const chipCounts = useMemo(() => ({
+    duplicates: data.filter((b) => b.isDuplicate === true).length,
+    'never-opened': data.filter((b) => b.lastVisited == null && b.visitCount == null).length,
+    transactional: data.filter((b) => effectiveIntent(b) === 'transactional').length,
+    stale: data.filter((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS).length,
+    'open-now': data.filter((b) => b.isOpen === true).length,
+    'multi-folder': data.filter((b) => multiFolderUrls.has(b.url)).length,
+  }), [data, multiFolderUrls])
 
   const onToggleExpanded = (url: string) => {
     setExpandedUrls((prev) => {
@@ -315,8 +360,17 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
     [onDelete, semanticScores, localUrlSet, expandedUrls],
   )
 
+  const bookmarkChips = [
+    { id: 'duplicates', label: 'Duplicates', hint: 'Multiple bookmarks with the same URL' },
+    { id: 'never-opened', label: 'Never opened', hint: 'Bookmarks you have never visited' },
+    { id: 'transactional', label: 'Transactional', hint: 'Orders, bookings, tickets — safe to delete when done' },
+    { id: 'stale', label: 'Stale', hint: 'Not visited in over 6 months' },
+    { id: 'open-now', label: 'Open now', hint: 'URL is currently open in a tab' },
+    { id: 'multi-folder', label: 'Multi-folder', hint: 'Saved in two or more bookmark folders' },
+  ] as const
+
   const toolbar = (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         className={cn(
@@ -332,6 +386,17 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
       {semanticEnabled && state === 'embedding' && <span className="text-xs text-muted-foreground">Embedding query…</span>}
       {semanticEnabled && state === 'no-cache' && <span className="text-xs text-muted-foreground">No embeddings cache. Run embeddings in Lab.</span>}
       {semanticEnabled && state === 'error' && <span className="text-xs text-destructive">Error: {error}</span>}
+      {bookmarkChips.length > 0 && <span className="h-4 w-px bg-border" />}
+      {bookmarkChips.map((chip) => (
+        <TriageChip
+          key={chip.id}
+          label={chip.label}
+          hint={chip.hint}
+          active={triageFilter === chip.id}
+          count={chipCounts[chip.id]}
+          onClick={() => setTriageFilter((prev) => (prev === chip.id ? null : chip.id))}
+        />
+      ))}
     </div>
   )
 
@@ -340,7 +405,7 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
   return (
     <DataTable
       columns={columns}
-      data={groupedData}
+      data={triageGroupedData}
       searchPlaceholder={semanticEnabled ? 'Search bookmarks (lexical + semantic)…' : 'Search bookmarks…'}
       searchValue={query}
       onSearchChange={setQuery}
@@ -349,6 +414,42 @@ export function BookmarksTable({ data, localUrlSet, settings, loading, onDelete,
       initialSorting={initialSorting}
       menuHost={menuHost}
     />
+  )
+}
+
+function TriageChip({
+  label,
+  hint,
+  active,
+  count,
+  onClick,
+}: {
+  label: string
+  hint: string
+  active: boolean
+  count: number
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        'rounded border px-2 py-1 text-xs transition-colors',
+        active
+          ? 'border-amber-600/60 bg-amber-600/20 text-amber-300'
+          : 'border-border text-muted-foreground hover:border-border/80 hover:text-foreground',
+        count === 0 && !active && 'cursor-default opacity-40 pointer-events-none',
+      )}
+    >
+      {label}
+      {count > 0 && (
+        <span className={cn('ml-1', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
+          {count}
+        </span>
+      )}
+    </button>
   )
 }
 
