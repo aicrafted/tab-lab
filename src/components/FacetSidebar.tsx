@@ -312,7 +312,7 @@ export function FacetSidebar({
                   type="button"
                   onClick={() => onModeChange(mode)}
                   className={cn(
-                    'border-b-2 border-transparent px-1 pt-1 pb-1  font-medium leading-none transition-colors',
+                    'border-b-2 border-transparent px-2.5 pt-1 pb-1 font-medium leading-none transition-colors',
                     activeMode === mode
                       ? 'border-primary text-primary'
                       : 'text-muted-foreground hover:text-foreground',
@@ -325,7 +325,7 @@ export function FacetSidebar({
                       : 'Labels'}
                 </button>
                 {index < all.length - 1 && (
-                  <span className="mx-0.5 text-[10px] leading-none text-muted-foreground/45">·</span>
+                  <span className="mx-1 text-[10px] leading-none text-muted-foreground/45">·</span>
                 )}
               </div>
             ))}
@@ -708,13 +708,13 @@ function TriageChip({
         'rounded px-2 py-0.5 text-xs transition-colors',
         count === 0 && 'pointer-events-none cursor-default opacity-40',
         active
-          ? 'bg-amber-600/20 text-amber-300'
+          ? 'bg-primary/20 text-primary'
           : 'text-muted-foreground hover:bg-card hover:text-foreground',
       )}
     >
       {label}
       {count > 0 && (
-        <sup className={cn('ml-0.5 tabular-nums text-[10px] leading-none', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
+        <sup className={cn('ml-0.5 tabular-nums text-[10px] leading-none', active ? 'text-primary/70' : 'text-muted-foreground/60')}>
           {count}
         </sup>
       )}

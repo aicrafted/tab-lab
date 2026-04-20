@@ -28,7 +28,7 @@ export function SourceFilterToggle({ value, onChange, allowedOptions, counts }: 
           onClick={() => onChange(option.id)}
           className={cn(
             'rounded px-2 py-0.5 text-xs transition-colors',
-            value === option.id ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+            value === option.id ? 'bg-amber-600/20 text-amber-300' : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {option.label}
