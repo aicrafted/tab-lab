@@ -9,7 +9,8 @@ import {
   type SortingState,
   type ColumnFiltersState,
 } from '@tanstack/react-table'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -55,6 +56,8 @@ export function DataTable<TData, TValue>({
   initialPageSize = 100,
   menuHost = null,
 }: DataTableProps<TData, TValue>) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null)
   const [sorting, setSorting] = useState<SortingState>(initialSorting)
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [pagination, setPagination] = useState({
@@ -77,7 +80,35 @@ export function DataTable<TData, TValue>({
     state: { sorting, columnFilters, pagination },
   })
 
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root || typeof window === 'undefined') return
+    let parent = root.parentElement
+    while (parent) {
+      const style = window.getComputedStyle(parent)
+      if (/(auto|scroll)/.test(style.overflowY)) {
+        setScrollElement(parent)
+        return
+      }
+      parent = parent.parentElement
+    }
+    setScrollElement(null)
+  }, [])
+
   const filteredCount = table.getFilteredRowModel().rows.length
+  const rows = table.getRowModel().rows
+  const shouldVirtualize = !loading && rows.length > 80 && scrollElement != null
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 56,
+    overscan: 10,
+  })
+  const virtualRows = shouldVirtualize ? rowVirtualizer.getVirtualItems() : []
+  const paddingTop = shouldVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0
+  const paddingBottom = shouldVirtualize && virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+    : 0
   const pageIndex = table.getState().pagination.pageIndex
   const pageSize = table.getState().pagination.pageSize
   const pageStart = filteredCount === 0 ? 0 : pageIndex * pageSize + 1
@@ -126,7 +157,7 @@ export function DataTable<TData, TValue>({
   )
 
   return (
-    <div className="pr-2">
+    <div ref={rootRef} className="pr-2">
       {menuHost ? createPortal(controls, menuHost) : controls}
 
       <div className="rounded-md border border-border">
@@ -177,31 +208,54 @@ export function DataTable<TData, TValue>({
                   Loading…
                 </TableCell>
               </TableRow>
-            ) : table.getRowModel().rows.length > 0 ? (
-              table.getRowModel().rows.map(row => (
-                <TableRow key={row.id} className="[content-visibility:auto] [contain-intrinsic-size:48px]">
-                  {row.getVisibleCells().map(cell => {
-                    const isFavicon = cell.column.id === 'favicon'
-                    const isTitle = cell.column.id === 'title'
-                    const isTags = cell.column.id === 'tags'
-                    const isTitleOrTags = isTitle || isTags
-                    return (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        'align-top',
-                        isFavicon && 'w-8 min-w-8 px-2',
-                        isTitle && 'w-1/2 min-w-[250px] max-w-0',
-                        isTags && 'w-1/2 max-w-0',
-                        !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
-                      )}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                    )
-                  })}
-                </TableRow>
-              ))
+            ) : rows.length > 0 ? (
+              <>
+                {shouldVirtualize && paddingTop > 0 && (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} style={{ height: `${paddingTop}px`, padding: 0 }} />
+                  </TableRow>
+                )}
+
+                {(shouldVirtualize
+                  ? virtualRows.map((virtualRow) => rows[virtualRow.index]!)
+                  : rows
+                ).map(row => (
+                  <TableRow
+                    key={row.id}
+                    ref={shouldVirtualize ? (node) => {
+                      if (node) rowVirtualizer.measureElement(node)
+                    } : undefined}
+                    className="[content-visibility:auto] [contain-intrinsic-size:48px]"
+                  >
+                    {row.getVisibleCells().map(cell => {
+                      const isFavicon = cell.column.id === 'favicon'
+                      const isTitle = cell.column.id === 'title'
+                      const isTags = cell.column.id === 'tags'
+                      const isTitleOrTags = isTitle || isTags
+                      return (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          'align-top',
+                          isFavicon && 'w-8 min-w-8 px-2',
+                          isTitle && 'w-1/2 min-w-[250px] max-w-0',
+                          isTags && 'w-1/2 max-w-0',
+                          !isTitleOrTags && !isFavicon && 'whitespace-nowrap',
+                        )}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+
+                {shouldVirtualize && paddingBottom > 0 && (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} style={{ height: `${paddingBottom}px`, padding: 0 }} />
+                  </TableRow>
+                )}
+              </>
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-32 text-center text-muted-foreground">
