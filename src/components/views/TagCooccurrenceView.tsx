@@ -70,7 +70,7 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
     }
     const initial = Array.from(tagCounts.entries())
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 30)
+      .slice(0, 24)
       .map(([tag]) => tag)
     const topSet = new Set(initial)
 
@@ -132,17 +132,22 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
   }
 
   const n = model.tags.length
-  const cellSize = Math.max(14, Math.floor(620 / n))
-  const rowLabelSpace = 92
-  const colLabelSpace = 58
+  const cellSize = Math.max(10, Math.min(22, Math.floor(460 / n)))
+  const rowLabelSpace = 84
+  const colLabelSpace = 48
   const width = rowLabelSpace + n * cellSize + 12
   const height = colLabelSpace + n * cellSize + 12
+  const svgStyle: React.CSSProperties = {
+    height: '100%',
+    width: 'auto',
+    maxWidth: 'none',
+  }
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="space-y-3">
-        <div className="relative overflow-auto rounded-md border border-border bg-card/30 p-1.5">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[900px]">
+    <section className="grid h-full min-h-0 gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="flex min-h-0 flex-col gap-3">
+        <div className="relative min-h-[320px] flex-1 overflow-auto p-1">
+          <svg viewBox={`0 0 ${width} ${height}`} className="block" style={svgStyle}>
             <rect x={0} y={0} width={width} height={height} fill="hsl(var(--background))" />
             {model.tags.map((tag, row) => (
               <text
@@ -150,7 +155,7 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
                 x={rowLabelSpace - 6}
                 y={colLabelSpace + row * cellSize + cellSize * 0.7}
                 textAnchor="end"
-                className="cursor-pointer fill-muted-foreground text-[9px]"
+                className="cursor-pointer fill-muted-foreground text-[8px]"
                 onClick={() => setHighlightTag((prev) => (prev === tag ? null : tag))}
               >
                 {tag}
@@ -162,7 +167,7 @@ export function TagCooccurrenceView({ bookmarks, tabs, loading, onRunTags }: Vie
                 x={rowLabelSpace + col * cellSize + cellSize * 0.6}
                 y={colLabelSpace - 6}
                 transform={`rotate(-50 ${rowLabelSpace + col * cellSize + cellSize * 0.6} ${colLabelSpace - 6})`}
-                className="cursor-pointer fill-muted-foreground text-[9px]"
+                className="cursor-pointer fill-muted-foreground text-[8px]"
                 onClick={() => setHighlightTag((prev) => (prev === tag ? null : tag))}
               >
                 {tag}

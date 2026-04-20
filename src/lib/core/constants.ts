@@ -30,8 +30,7 @@ export const BUILD = {
     loglevel: 'warn' as const,
     'console-api': false,
     views: {
-      hide: [
-        'topic-river',
+      hide: [       
         'tag-constellation', 'domain-graph', 'reading-queue',         
         'focus-rings', 'shadow-map', 'magazine',
         'settings-knowledge', 'settings-advanced'
