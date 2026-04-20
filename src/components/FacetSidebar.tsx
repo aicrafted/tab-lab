@@ -239,7 +239,7 @@ export function FacetSidebar({
           collapsed ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100',
         )}
       >
-        <div className="shrink-0 border-b border-border pb-3">
+        <div className="shrink-0 border-b border-border pb-2">
           <div className="pr-2 pb-3">
             <Select
               value={bookmarkScopeValue}
@@ -304,7 +304,7 @@ export function FacetSidebar({
           </div>
         )}
 
-        <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
+        <div className="shrink-0 border-b border-border px-1 pt-1 pb-0">
           <div className="flex items-center justify-center">
             {(['domains', 'categories', 'universal'] as const).map((mode, index, all) => (
               <div key={mode} className="flex items-center">
@@ -714,9 +714,9 @@ function TriageChip({
     >
       {label}
       {count > 0 && (
-        <span className={cn('ml-1', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
+        <sup className={cn('ml-0.5 tabular-nums text-[10px] leading-none', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
           {count}
-        </span>
+        </sup>
       )}
     </button>
   )
