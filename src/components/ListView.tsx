@@ -18,6 +18,7 @@ const GROUP_MODE_LABEL: Record<GroupMode, string> = {
 
 const GROUP_MIN_WIDTH_PX = 280
 const GROUP_COLUMN_GAP_PX = 28
+const GROUP_PAGE_SIZE = 5
 
 interface ListViewProps {
   bookmarks: BookmarkItem[]
@@ -49,6 +50,8 @@ export function ListView({
   viewMenuHost = null,
 }: ListViewProps) {
   const [groupMode, setGroupMode] = useState<GroupMode>(() => defaultGroupModeForSource(sourceFilter))
+  const [minGroupSize, setMinGroupSize] = useState(1)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [columnCount, setColumnCount] = useState(1)
   const groupsContainerRef = useRef<HTMLDivElement | null>(null)
 
@@ -57,6 +60,14 @@ export function ListView({
   useEffect(() => {
     setGroupMode(defaultGroupModeForSource(sourceFilter))
   }, [sourceFilter])
+
+  useEffect(() => {
+    setMinGroupSize(1)
+  }, [sourceFilter, groupMode])
+
+  useEffect(() => {
+    setExpandedGroups(new Set())
+  }, [groupMode, sourceFilter])
 
   const items = useMemo<ListItem[]>(() => {
     const bookmarkItems: ListItem[] = sourceFilter === 'tabs'
@@ -115,6 +126,11 @@ export function ListView({
       }))
   }, [groupMode, items])
 
+  const visibleGroups = useMemo(
+    () => (minGroupSize <= 1 ? groups : groups.filter((group) => group.items.length >= minGroupSize)),
+    [groups, minGroupSize],
+  )
+
   useEffect(() => {
     const el = groupsContainerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -137,10 +153,10 @@ export function ListView({
 
   const groupedColumns = useMemo(() => {
     const colCount = Math.max(1, columnCount)
-    const columns = Array.from({ length: colCount }, () => [] as typeof groups)
+    const columns = Array.from({ length: colCount }, () => [] as typeof visibleGroups)
     const weights = Array.from({ length: colCount }, () => 0)
 
-    for (const group of groups) {
+    for (const group of visibleGroups) {
       let targetIdx = 0
       for (let i = 1; i < colCount; i += 1) {
         if (weights[i] < weights[targetIdx]) targetIdx = i
@@ -151,7 +167,7 @@ export function ListView({
     }
 
     return columns
-  }, [columnCount, groups])
+  }, [columnCount, visibleGroups])
 
   async function openItem(item: ListItem) {
     if (item.source === 'tab' && item.tabId != null && item.windowId != null) {
@@ -187,6 +203,20 @@ export function ListView({
                 ))}
               </SelectContent>
             </Select>
+            <Select value={String(minGroupSize)} onValueChange={(value) => setMinGroupSize(Number(value))}>
+              <SelectTrigger className="h-8 w-[130px] text-xs">
+                <span className="truncate">
+                  {minGroupSize <= 1 ? 'Min size: All' : `Min size: ${minGroupSize}+`}
+                </span>
+              </SelectTrigger>
+              <SelectContent className="text-xs">
+                {[1, 2, 5, 10, 20].map((size) => (
+                  <SelectItem key={size} value={String(size)} className="py-0.5 px-2 text-xs">
+                    {size === 1 ? 'All' : `${size}+ items`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ), viewMenuHost)
         : (
@@ -203,49 +233,88 @@ export function ListView({
             ))}
           </SelectContent>
         </Select>
+        <Select value={String(minGroupSize)} onValueChange={(value) => setMinGroupSize(Number(value))}>
+          <SelectTrigger className="h-8 w-[130px] text-xs">
+            <span className="truncate">
+              {minGroupSize <= 1 ? 'Min size: All' : `Min size: ${minGroupSize}+`}
+            </span>
+          </SelectTrigger>
+          <SelectContent className="text-xs">
+            {[1, 2, 5, 10, 20].map((size) => (
+              <SelectItem key={size} value={String(size)} className="py-0.5 px-2 text-xs">
+                {size === 1 ? 'All' : `${size}+ items`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
         ))}
 
-      <div
-        ref={groupsContainerRef}
-        className="grid items-start gap-x-7"
-        style={{ gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(0, 1fr))` }}
-      >
-        {groupedColumns.map((columnGroups, columnIdx) => (
-          <div key={`col-${columnIdx}`} className="min-w-0 space-y-4">
-            {columnGroups.map((group) => (
-              <section key={group.name} className="min-w-0">
-                <header className="mb-2.5 flex items-center justify-between rounded-sm border-b border-border/45 bg-gradient-to-t from-primary/10 to-transparent px-2 pt-1.5 pb-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <GroupIcon mode={groupMode} />
-                    <h3 className="min-w-0 text-sm font-medium text-foreground" title={group.name}>
-                      <GroupName mode={groupMode} name={group.name} />
-                    </h3>
-                  </div>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{group.items.length}</span>
-                </header>
-                <div>
-                  {group.items.map((item, index) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => void openItem(item)}
-                      className={`flex w-full items-start gap-2 px-0 py-1.5 text-left text-muted-foreground/85 transition-colors hover:bg-card/20 hover:text-foreground ${index < group.items.length - 1 ? 'border-b border-border/15' : ''}`}
-                      title={item.url}
-                    >
-                      <Favicon domain={item.domain} src={item.favIconUrl} className="mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-medium leading-5 text-foreground/78">{item.title}</div>
-                        <div className="truncate text-[11px] leading-4 text-muted-foreground/45">{item.domain}</div>
+      {visibleGroups.length === 0 && groups.length > 0 ? (
+        <p className="p-4 text-sm text-muted-foreground">
+          No groups with {minGroupSize}+ items. Try lowering the minimum size.
+        </p>
+      ) : (
+        <div
+          ref={groupsContainerRef}
+          className="grid items-start gap-x-7"
+          style={{ gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(0, 1fr))` }}
+        >
+          {groupedColumns.map((columnGroups, columnIdx) => (
+            <div key={`col-${columnIdx}`} className="min-w-0 space-y-4">
+              {columnGroups.map((group) => {
+                const isExpanded = expandedGroups.has(group.name)
+                const wouldHide = group.items.length - GROUP_PAGE_SIZE
+                const visibleItems = (isExpanded || wouldHide < 10) ? group.items : group.items.slice(0, GROUP_PAGE_SIZE)
+                const hiddenCount = group.items.length - visibleItems.length
+                return (
+                  <section key={group.name} className="min-w-0">
+                    <header className="mb-2.5 flex items-center justify-between rounded-sm border-b border-border/45 bg-gradient-to-t from-primary/10 to-transparent px-2 pt-1.5 pb-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <GroupIcon mode={groupMode} />
+                        <h3 className="min-w-0 text-sm font-medium text-foreground" title={group.name}>
+                          <GroupName mode={groupMode} name={group.name} />
+                        </h3>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        ))}
-      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{group.items.length}</span>
+                    </header>
+                    <div>
+                      {visibleItems.map((item, index) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => void openItem(item)}
+                          className={`flex w-full items-start gap-2 px-0 py-1.5 text-left text-muted-foreground/85 transition-colors hover:bg-card/20 hover:text-foreground ${index < visibleItems.length - 1 ? 'border-b border-border/15' : ''}`}
+                          title={item.url}
+                        >
+                          <Favicon domain={item.domain} src={item.favIconUrl} className="mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-medium leading-5 text-foreground/78">{item.title}</div>
+                            <div className="truncate text-[11px] leading-4 text-muted-foreground/45">{item.domain}</div>
+                          </div>
+                        </button>
+                      ))}
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedGroups((prev) => {
+                            const next = new Set(prev)
+                            next.add(group.name)
+                            return next
+                          })}
+                          className="mt-1 flex w-full items-center justify-center rounded py-1 text-[11px] text-muted-foreground/60 transition-colors hover:bg-card/30 hover:text-muted-foreground"
+                        >
+                          +{hiddenCount} more
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
