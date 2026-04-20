@@ -306,7 +306,7 @@ export function CombinedListTable({
                 className="flex w-full min-w-0 items-center gap-1.5 truncate text-left text-foreground hover:text-primary hover:underline"
                 title={item.url}
               >
-                <span className="truncate">{item.title}</span>
+                {item.title}
                 {semanticScores.has(item.url) && (
                   <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
                     {Math.round((semanticScores.get(item.url) ?? 0) * 100)}%

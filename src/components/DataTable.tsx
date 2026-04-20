@@ -179,7 +179,7 @@ export function DataTable<TData, TValue>({
               </TableRow>
             ) : table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map(row => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="[content-visibility:auto] [contain-intrinsic-size:48px]">
                   {row.getVisibleCells().map(cell => {
                     const isFavicon = cell.column.id === 'favicon'
                     const isTitle = cell.column.id === 'title'

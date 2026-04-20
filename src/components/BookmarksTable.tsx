@@ -91,7 +91,7 @@ function makeColumns(
                 className="flex w-full min-w-0 items-center gap-1.5 truncate text-foreground hover:text-primary hover:underline"
                 title={top.url}
               >
-                <span className="truncate">{top.title}</span>
+                {top.title}
                 {semanticScores.has(top.url) && (
                   <span className="shrink-0 rounded bg-emerald-600/20 px-1 py-0.5 text-[10px] text-emerald-300">
                     {Math.round((semanticScores.get(top.url) ?? 0) * 100)}%
