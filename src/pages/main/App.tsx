@@ -447,6 +447,7 @@ export function App() {
     () => VIEW_SOURCE_FILTER_POLICY[activeView] ?? ['bookmarks', 'tabs', 'both'],
     [activeView],
   )
+  const triageFacetSupported = activeView === 'table'
   const isSettingsView = activeView.startsWith('settings-')
   const facetsCollapsed = isSettingsView || manualFacetsCollapsed
 
@@ -460,6 +461,11 @@ export function App() {
   useEffect(() => {
     setTriageFilter(null)
   }, [sourceFilter])
+
+  useEffect(() => {
+    if (triageFacetSupported) return
+    setTriageFilter(null)
+  }, [triageFacetSupported])
 
   // --- Facet computation ---
   const domainsFacet = useMemo(() => {
@@ -802,6 +808,7 @@ export function App() {
           triageFilter={triageFilter}
           onTriageFilterChange={setTriageFilter}
           triageChipCounts={triageChipCounts}
+          showTriageFilters={triageFacetSupported}
           allowedSourceFilters={allowedSourceFilters}
           sourceCounts={sourceCounts}
           bookmarkScopeFilter={bookmarkScopeFilter}

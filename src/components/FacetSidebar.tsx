@@ -121,6 +121,7 @@ interface FacetSidebarProps {
   triageFilter: string | null
   onTriageFilterChange: (value: string | null) => void
   triageChipCounts: Record<string, number>
+  showTriageFilters?: boolean
   allowedSourceFilters?: SourceFilter[]
   sourceCounts: {
     bookmarks: number
@@ -182,6 +183,7 @@ export function FacetSidebar({
   triageFilter,
   onTriageFilterChange,
   triageChipCounts,
+  showTriageFilters = true,
   allowedSourceFilters,
   sourceCounts,
   bookmarkScopeFilter,
@@ -226,7 +228,7 @@ export function FacetSidebar({
     if (sourceFilter === 'bookmarks') return BOOKMARK_CHIPS
     return BOTH_CHIPS
   }, [sourceFilter])
-  const showTriage = visibleChips.some((chip) => (triageChipCounts[chip.id] ?? 0) > 0)
+  const showTriage = showTriageFilters && visibleChips.some((chip) => (triageChipCounts[chip.id] ?? 0) > 0)
 
   return (
     <div
