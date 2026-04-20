@@ -19,7 +19,6 @@ const BOOKMARK_TRIAGE_PREDICATES: Record<string, (b: BookmarkItem) => boolean> =
   duplicates: (b) => b.isDuplicate === true,
   'never-opened': (b) => b.lastVisited == null && b.visitCount == null,
   transactional: (b) => effectiveIntent(b) === 'transactional',
-  stale: (b) => isStaleBookmark(b, Date.now()),
   'open-now': (b) => b.isOpen === true,
 }
 
@@ -326,8 +325,12 @@ export function BookmarksTable({
   const groupedData = useMemo(() => groupByUrl(filteredBookmarks), [filteredBookmarks])
   const triageGroupedData = useMemo(() => {
     if (!triageFilter) return groupedData
+    const now = Date.now()
     if (triageFilter === 'multi-folder') {
       return groupedData.filter((group) => multiFolderUrls.has(group.representative.url))
+    }
+    if (triageFilter === 'stale') {
+      return groupedData.filter((group) => isStaleBookmark(group.representative, now))
     }
     const predicate = BOOKMARK_TRIAGE_PREDICATES[triageFilter]
     return predicate ? groupedData.filter((group) => predicate(group.representative)) : groupedData

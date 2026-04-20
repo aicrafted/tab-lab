@@ -232,6 +232,7 @@ export function CombinedListTable({
 
   const triageFilteredData = useMemo(() => {
     if (!triageFilter) return filteredData
+    const now = Date.now()
 
     switch (triageFilter) {
       case 'duplicates':
@@ -248,8 +249,8 @@ export function CombinedListTable({
         )
       case 'stale':
         return filteredData.filter((row) =>
-          row.bookmarks.some((b) => isStaleBookmark(b, Date.now()))
-          || row.tabs.some((t) => t.lastAccessed < Date.now() - STALE_TAB_MS),
+          row.bookmarks.some((b) => isStaleBookmark(b, now))
+          || row.tabs.some((t) => t.lastAccessed < now - STALE_TAB_MS),
         )
       case 'open-now':
         return filteredData.filter((row) => row.bookmarks.some((b) => b.isOpen === true))

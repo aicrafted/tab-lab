@@ -586,32 +586,64 @@ export function App() {
     return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
   }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
 
-  const multiFolderUrls = useMemo(() => {
-    const byUrl = new Map<string, Set<string>>()
+  const { multiFolderUrls, triageChipCounts } = useMemo(() => {
+    const now = Date.now()
+    const foldersByUrl = new Map<string, Set<string>>()
+
+    let duplicateBookmarksCount = 0
+    let neverOpenedCount = 0
+    let transactionalBookmarksCount = 0
+    let staleBookmarksCount = 0
+    let openNowCount = 0
+
     for (const bookmark of filteredBookmarks) {
-      const folders = byUrl.get(bookmark.url) ?? new Set<string>()
+      if (bookmark.isDuplicate === true) duplicateBookmarksCount += 1
+      if (bookmark.lastVisited == null && bookmark.visitCount == null) neverOpenedCount += 1
+      if (effectiveIntent(bookmark) === 'transactional') transactionalBookmarksCount += 1
+      if (isStaleBookmark(bookmark, now)) staleBookmarksCount += 1
+      if (bookmark.isOpen === true) openNowCount += 1
+
+      const folders = foldersByUrl.get(bookmark.url) ?? new Set<string>()
       if (bookmark.folder) folders.add(bookmark.folder)
-      byUrl.set(bookmark.url, folders)
+      foldersByUrl.set(bookmark.url, folders)
     }
-    return new Set(
-      Array.from(byUrl.entries())
+
+    const multiFolderUrlsLocal = new Set(
+      Array.from(foldersByUrl.entries())
         .filter(([, folders]) => folders.size > 1)
         .map(([url]) => url),
     )
-  }, [filteredBookmarks])
 
-  const triageChipCounts = useMemo<Record<string, number>>(() => ({
-    duplicates: filteredBookmarks.filter((b) => b.isDuplicate === true).length
-      + filteredTabs.filter((t) => t.isDuplicate === true).length,
-    'never-opened': filteredBookmarks.filter((b) => b.lastVisited == null && b.visitCount == null).length,
-    transactional: filteredBookmarks.filter((b) => effectiveIntent(b) === 'transactional').length
-      + filteredTabs.filter((t) => effectiveIntent(t) === 'transactional').length,
-    stale: filteredBookmarks.filter((b) => isStaleBookmark(b, Date.now())).length
-      + filteredTabs.filter((t) => t.lastAccessed < Date.now() - STALE_TAB_MS).length,
-    'open-now': filteredBookmarks.filter((b) => b.isOpen === true).length,
-    'multi-folder': filteredBookmarks.filter((b) => multiFolderUrls.has(b.url)).length,
-    bookmarked: filteredTabs.filter((t) => t.isBookmarked === true).length,
-  }), [filteredBookmarks, filteredTabs, multiFolderUrls])
+    let multiFolderCount = 0
+    for (const bookmark of filteredBookmarks) {
+      if (multiFolderUrlsLocal.has(bookmark.url)) multiFolderCount += 1
+    }
+
+    let duplicateTabsCount = 0
+    let transactionalTabsCount = 0
+    let staleTabsCount = 0
+    let bookmarkedTabsCount = 0
+
+    for (const tab of filteredTabs) {
+      if (tab.isDuplicate === true) duplicateTabsCount += 1
+      if (effectiveIntent(tab) === 'transactional') transactionalTabsCount += 1
+      if (tab.lastAccessed < now - STALE_TAB_MS) staleTabsCount += 1
+      if (tab.isBookmarked === true) bookmarkedTabsCount += 1
+    }
+
+    return {
+      multiFolderUrls: multiFolderUrlsLocal,
+      triageChipCounts: {
+        duplicates: duplicateBookmarksCount + duplicateTabsCount,
+        'never-opened': neverOpenedCount,
+        transactional: transactionalBookmarksCount + transactionalTabsCount,
+        stale: staleBookmarksCount + staleTabsCount,
+        'open-now': openNowCount,
+        'multi-folder': multiFolderCount,
+        bookmarked: bookmarkedTabsCount,
+      } as Record<string, number>,
+    }
+  }, [filteredBookmarks, filteredTabs])
 
   const handleViewChange = useCallback((view: ViewId) => {
     setActiveView(view)

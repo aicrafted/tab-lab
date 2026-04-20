@@ -17,7 +17,6 @@ const TAB_TRIAGE_PREDICATES: Record<string, (t: TabItem) => boolean> = {
   duplicates: (t) => t.isDuplicate === true,
   bookmarked: (t) => t.isBookmarked === true,
   transactional: (t) => effectiveIntent(t) === 'transactional',
-  stale: (t) => t.lastAccessed < Date.now() - STALE_TAB_MS,
 }
 
 const GROUP_COLORS: Record<string, string> = {
@@ -363,6 +362,10 @@ export function TabsTable({
   const groupedData = useMemo(() => groupByUrl(filteredTabs), [filteredTabs])
   const triageGroupedData = useMemo(() => {
     if (!triageFilter) return groupedData
+    const now = Date.now()
+    if (triageFilter === 'stale') {
+      return groupedData.filter((group) => group.representative.lastAccessed < now - STALE_TAB_MS)
+    }
     const predicate = TAB_TRIAGE_PREDICATES[triageFilter]
     return predicate ? groupedData.filter((group) => predicate(group.representative)) : groupedData
   }, [groupedData, triageFilter])
