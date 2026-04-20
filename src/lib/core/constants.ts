@@ -31,6 +31,7 @@ export const BUILD = {
     'console-api': false,
     views: {
       hide: [       
+        'triage',
         'tag-constellation', 'domain-graph', 'reading-queue',         
         'focus-rings', 'shadow-map', 'magazine',
         'settings-knowledge', 'settings-advanced'

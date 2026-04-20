@@ -70,20 +70,22 @@ export function DomainDrillDownView({ bookmarks, tabs, loading }: ViewProps) {
       byDomain.set(entry.domain, [...(byDomain.get(entry.domain) ?? []), entry])
     }
 
-    const base: DomainGroup[] = Array.from(byDomain.entries()).map(([domain, domainEntries]) => {
-      const { subgroups, ungrouped } = parseSubgroups(domain, domainEntries)
-      return {
-        domain,
-        total: domainEntries.length,
-        subgroups: subgroups
-          .map((group) => ({
-            ...group,
-            entries: [...group.entries].sort((a, b) => (b.visitCount ?? 0) - (a.visitCount ?? 0)),
-          }))
-          .sort((a, b) => b.entries.length - a.entries.length || a.label.localeCompare(b.label)),
-        ungrouped: [...ungrouped].sort((a, b) => (b.visitCount ?? 0) - (a.visitCount ?? 0)),
-      }
-    })
+    const base: DomainGroup[] = Array.from(byDomain.entries())
+      .filter(([, domainEntries]) => domainEntries.length >= 2)
+      .map(([domain, domainEntries]) => {
+        const { subgroups, ungrouped } = parseSubgroups(domain, domainEntries)
+        return {
+          domain,
+          total: domainEntries.length,
+          subgroups: subgroups
+            .map((group) => ({
+              ...group,
+              entries: [...group.entries].sort((a, b) => (b.visitCount ?? 0) - (a.visitCount ?? 0)),
+            }))
+            .sort((a, b) => b.entries.length - a.entries.length || a.label.localeCompare(b.label)),
+          ungrouped: [...ungrouped].sort((a, b) => (b.visitCount ?? 0) - (a.visitCount ?? 0)),
+        }
+      })
 
     if (sortMode === 'alpha') {
       return base.sort((a, b) => a.domain.localeCompare(b.domain))
@@ -116,14 +118,22 @@ export function DomainDrillDownView({ bookmarks, tabs, loading }: ViewProps) {
         <Button type="button" size="sm" variant={sortMode === 'alpha' ? 'default' : 'outline'} onClick={() => setSortMode('alpha')}>A-Z</Button>
       </div>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
         {groups.map((group) => (
           <details key={group.domain} className="rounded-md border border-border bg-card/40">
             <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
               {group.domain} ({group.total})
             </summary>
             <div className="space-y-2 border-t border-border px-3 py-3">
-              {group.subgroups.map((subgroup) => (
+              {group.subgroups.length === 1
+              && group.subgroups[0]?.label === 'other'
+              && group.ungrouped.length === 0 ? (
+                <div className="space-y-1.5">
+                  {group.subgroups[0].entries.map((entry) => (
+                    <EntryRow key={entry.id} entry={entry} onOpen={openEntry} />
+                  ))}
+                </div>
+              ) : group.subgroups.map((subgroup) => (
                 <details key={`${group.domain}-${subgroup.label}`} className="rounded-md border border-border/70 bg-background/40">
                   <summary className="cursor-pointer px-2.5 py-2 text-xs font-medium text-foreground">
                     {subgroup.label} ({subgroup.entries.length})
@@ -137,16 +147,24 @@ export function DomainDrillDownView({ bookmarks, tabs, loading }: ViewProps) {
               ))}
 
               {group.ungrouped.length > 0 && (
-                <details className="rounded-md border border-border/70 bg-background/40">
-                  <summary className="cursor-pointer px-2.5 py-2 text-xs font-medium text-muted-foreground">
-                    other ({group.ungrouped.length})
-                  </summary>
-                  <div className="space-y-1.5 border-t border-border/60 px-2.5 py-2">
+                group.subgroups.length === 0 ? (
+                  <div className="space-y-1.5">
                     {group.ungrouped.map((entry) => (
                       <EntryRow key={entry.id} entry={entry} onOpen={openEntry} />
                     ))}
                   </div>
-                </details>
+                ) : (
+                  <details className="rounded-md border border-border/70 bg-background/40">
+                    <summary className="cursor-pointer px-2.5 py-2 text-xs font-medium text-muted-foreground">
+                      other ({group.ungrouped.length})
+                    </summary>
+                    <div className="space-y-1.5 border-t border-border/60 px-2.5 py-2">
+                      {group.ungrouped.map((entry) => (
+                        <EntryRow key={entry.id} entry={entry} onOpen={openEntry} />
+                      ))}
+                    </div>
+                  </details>
+                )
               )}
             </div>
           </details>

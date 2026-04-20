@@ -28,7 +28,7 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'settings-knowledge', label: 'Knowledge Base', hint: 'Manage domain pre-fill knowledge and site descriptions' },
   { id: 'settings-advanced', label: 'Advanced Settings', hint: 'Network patterns, cache management, and performance' },
   { id: 'magazine', label: 'Magazine', hint: 'Rich grid view with large previews and extracted summaries' },
-  { id: 'treemap', label: 'Treemap', hint: 'Hierarchical area map of categories and disk space' },
+  { id: 'treemap', label: 'Treemap', hint: 'Area map — block size = visit count or item count. Top level: categories. Click a block to drill into individual pages.' },
   { id: 'semantic', label: 'Semantic Map', hint: '2D projection of pages based on AI semantic similarity' },
 ]
 

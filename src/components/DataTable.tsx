@@ -222,6 +222,7 @@ export function DataTable<TData, TValue>({
                 ).map(row => (
                   <TableRow
                     key={row.id}
+                    data-index={shouldVirtualize ? row.index : undefined}
                     ref={shouldVirtualize ? (node) => {
                       if (node) rowVirtualizer.measureElement(node)
                     } : undefined}
