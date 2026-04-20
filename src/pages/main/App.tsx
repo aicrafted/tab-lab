@@ -101,6 +101,8 @@ const VIEW_SOURCE_FILTER_POLICY: Partial<Record<ViewId, SourceFilter[]>> = {
   list: ['bookmarks', 'tabs', 'both'],
   table: ['bookmarks', 'tabs', 'both'],
 }
+const STALE_BOOKMARK_MS = 180 * 86_400_000
+const STALE_TAB_MS = 30 * 86_400_000
 
 function filterItems<T extends TabItem | BookmarkItem>(
   items: T[],
@@ -160,6 +162,7 @@ export function App() {
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [activeView, setActiveView] = useState<ViewId>('table')
   const [sourceFilter, setSourceFilterState] = useState<SourceFilter>('both')
+  const [triageFilter, setTriageFilter] = useState<string | null>(null)
   const [bookmarkScopeFilter, setBookmarkScopeFilterState] = useState<BookmarkScopeFilter>({ mode: 'root' })
   const [bookmarkFolderOptions, setBookmarkFolderOptions] = useState<BookmarkFolderOption[]>([])
   const [bookmarkScopeDescendants, setBookmarkScopeDescendants] = useState<Set<string> | null>(null)
@@ -450,6 +453,10 @@ export function App() {
     void setSourceFilter(fallback)
   }, [allowedSourceFilters, sourceFilter])
 
+  useEffect(() => {
+    setTriageFilter(null)
+  }, [sourceFilter])
+
   // --- Facet computation ---
   const domainsFacet = useMemo(() => {
     const counts = new Map<string, number>()
@@ -575,6 +582,33 @@ export function App() {
     return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
   }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
 
+  const multiFolderUrls = useMemo(() => {
+    const byUrl = new Map<string, Set<string>>()
+    for (const bookmark of filteredBookmarks) {
+      const folders = byUrl.get(bookmark.url) ?? new Set<string>()
+      if (bookmark.folder) folders.add(bookmark.folder)
+      byUrl.set(bookmark.url, folders)
+    }
+    return new Set(
+      Array.from(byUrl.entries())
+        .filter(([, folders]) => folders.size > 1)
+        .map(([url]) => url),
+    )
+  }, [filteredBookmarks])
+
+  const triageChipCounts = useMemo<Record<string, number>>(() => ({
+    duplicates: filteredBookmarks.filter((b) => b.isDuplicate === true).length
+      + filteredTabs.filter((t) => t.isDuplicate === true).length,
+    'never-opened': filteredBookmarks.filter((b) => b.lastVisited == null && b.visitCount == null).length,
+    transactional: filteredBookmarks.filter((b) => effectiveIntent(b) === 'transactional').length
+      + filteredTabs.filter((t) => effectiveIntent(t) === 'transactional').length,
+    stale: filteredBookmarks.filter((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS).length
+      + filteredTabs.filter((t) => t.lastAccessed < Date.now() - STALE_TAB_MS).length,
+    'open-now': filteredBookmarks.filter((b) => b.isOpen === true).length,
+    'multi-folder': filteredBookmarks.filter((b) => multiFolderUrls.has(b.url)).length,
+    bookmarked: filteredTabs.filter((t) => t.isBookmarked === true).length,
+  }), [filteredBookmarks, filteredTabs, multiFolderUrls])
+
   const handleViewChange = useCallback((view: ViewId) => {
     setActiveView(view)
     setActiveFacets([])
@@ -604,6 +638,8 @@ export function App() {
           bookmarks={filteredBookmarks}
           tabs={filteredTabs}
           localUrlSet={localUrlSet}
+          triageFilter={triageFilter}
+          multiFolderUrls={multiFolderUrls}
           sourceFilter={sourceFilter}
           settings={llmSettings}
           loading={loading}
@@ -727,6 +763,9 @@ export function App() {
         <FacetSidebar
           sourceFilter={sourceFilter}
           onSourceFilterChange={handleSourceFilterChange}
+          triageFilter={triageFilter}
+          onTriageFilterChange={setTriageFilter}
+          triageChipCounts={triageChipCounts}
           allowedSourceFilters={allowedSourceFilters}
           sourceCounts={sourceCounts}
           bookmarkScopeFilter={bookmarkScopeFilter}

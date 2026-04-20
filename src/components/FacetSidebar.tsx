@@ -118,6 +118,9 @@ export interface CategoryGroupFacet {
 interface FacetSidebarProps {
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
+  triageFilter: string | null
+  onTriageFilterChange: (value: string | null) => void
+  triageChipCounts: Record<string, number>
   allowedSourceFilters?: SourceFilter[]
   sourceCounts: {
     bookmarks: number
@@ -147,9 +150,28 @@ interface FacetSidebarProps {
   onCollapsedChange?: (collapsed: boolean) => void
 }
 
+const BOOKMARK_CHIPS = [
+  { id: 'duplicates', label: 'Duplicates', hint: 'Multiple bookmarks with the same URL' },
+  { id: 'never-opened', label: 'Never opened', hint: 'Bookmarks you have never visited' },
+  { id: 'transactional', label: 'Transactional', hint: 'Orders, bookings, tickets — safe to delete when done' },
+  { id: 'stale', label: 'Stale', hint: 'Not visited in over 6 months' },
+  { id: 'open-now', label: 'Open now', hint: 'URL is currently open in a tab' },
+  { id: 'multi-folder', label: 'Multi-folder', hint: 'Saved in two or more bookmark folders' },
+] as const
+
+const TAB_CHIPS = [
+  { id: 'duplicates', label: 'Duplicates', hint: 'Same URL open in multiple tabs' },
+  { id: 'bookmarked', label: 'Bookmarked', hint: 'Already saved as a bookmark' },
+  { id: 'transactional', label: 'Transactional', hint: 'Orders, bookings, tickets — safe to close when done' },
+  { id: 'stale', label: 'Stale', hint: 'Not accessed in over 30 days' },
+] as const
+
 export function FacetSidebar({
   sourceFilter,
   onSourceFilterChange,
+  triageFilter,
+  onTriageFilterChange,
+  triageChipCounts,
   allowedSourceFilters,
   sourceCounts,
   bookmarkScopeFilter,
@@ -189,6 +211,17 @@ export function FacetSidebar({
     ? selectedFolder.path
     : 'Root (all bookmarks)'
   const collapsedWidth = 40
+  const visibleChips = useMemo(() => {
+    if (sourceFilter === 'tabs') return TAB_CHIPS
+    if (sourceFilter === 'bookmarks') return BOOKMARK_CHIPS
+    const merged = [...BOOKMARK_CHIPS, ...TAB_CHIPS]
+    const byId = new Map<string, (typeof merged)[number]>()
+    for (const chip of merged) {
+      if (!byId.has(chip.id)) byId.set(chip.id, chip)
+    }
+    return Array.from(byId.values())
+  }, [sourceFilter])
+  const showTriage = visibleChips.some((chip) => (triageChipCounts[chip.id] ?? 0) > 0)
 
   return (
     <div
@@ -248,6 +281,26 @@ export function FacetSidebar({
             />
           </div>
         </div>
+
+        {showTriage && (
+          <div className="shrink-0 border-b border-border px-2 py-2">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+              Triage
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {visibleChips.map((chip) => (
+                <TriageChip
+                  key={chip.id}
+                  label={chip.label}
+                  hint={chip.hint}
+                  active={triageFilter === chip.id}
+                  count={triageChipCounts[chip.id] ?? 0}
+                  onClick={() => onTriageFilterChange(triageFilter === chip.id ? null : chip.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="shrink-0 border-b border-border px-1 pt-0.5 pb-0">
           <div className="flex items-center justify-center">
@@ -627,6 +680,42 @@ function FacetRow({
       <span className="shrink-0 tabular-nums text-muted-foreground/60">
         {count}
       </span>
+    </button>
+  )
+}
+
+function TriageChip({
+  label,
+  hint,
+  active,
+  count,
+  onClick,
+}: {
+  label: string
+  hint: string
+  active: boolean
+  count: number
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        'rounded border px-2 py-0.5 text-xs transition-colors',
+        count === 0 && 'pointer-events-none cursor-default opacity-40',
+        active
+          ? 'border-amber-600/60 bg-amber-600/20 text-amber-300'
+          : 'border-border text-muted-foreground hover:border-border/80 hover:text-foreground',
+      )}
+    >
+      {label}
+      {count > 0 && (
+        <span className={cn('ml-1', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }

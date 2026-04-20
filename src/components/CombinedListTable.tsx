@@ -44,6 +44,8 @@ interface CombinedListTableProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
   localUrlSet: Set<string>
+  triageFilter: string | null
+  multiFolderUrls: Set<string>
   settings: LlmSettings
   loading?: boolean
   onDeleteBookmark: (id: string) => void
@@ -170,6 +172,8 @@ export function CombinedListTable({
   bookmarks,
   tabs,
   localUrlSet,
+  triageFilter,
+  multiFolderUrls,
   settings,
   loading,
   onDeleteBookmark,
@@ -179,13 +183,8 @@ export function CombinedListTable({
 }: CombinedListTableProps) {
   const [query, setQuery] = useState('')
   const [semanticEnabled, setSemanticEnabled] = useState(false)
-  const [triageFilter, setTriageFilter] = useState<string | null>(null)
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set())
   const { results, state, error, search, clear } = useSemanticSearch(settings)
-
-  useEffect(() => {
-    setTriageFilter(null)
-  }, [bookmarks, tabs])
 
   useEffect(() => {
     if (!semanticEnabled || !query.trim()) {
@@ -205,20 +204,6 @@ export function CombinedListTable({
   }, [results])
 
   const merged = useMemo(() => mergeRows(bookmarks, tabs), [bookmarks, tabs])
-  const multiFolderUrls = useMemo(() => {
-    const byUrl = new Map<string, Set<string>>()
-    for (const bookmark of bookmarks) {
-      const set = byUrl.get(bookmark.url) ?? new Set<string>()
-      if (bookmark.folder) set.add(bookmark.folder)
-      byUrl.set(bookmark.url, set)
-    }
-    return new Set(
-      Array.from(byUrl.entries())
-        .filter(([, folders]) => folders.size > 1)
-        .map(([url]) => url),
-    )
-  }, [bookmarks])
-
   const filteredData = useMemo(() => {
     if (!query.trim()) return merged
     const needle = query.trim().toLowerCase()
@@ -245,43 +230,33 @@ export function CombinedListTable({
     if (!triageFilter) return filteredData
 
     switch (triageFilter) {
-      case 'bm-duplicates':
-        return filteredData.filter((row) => row.bookmarks.some((b) => b.isDuplicate === true))
-      case 'bm-never-opened':
+      case 'duplicates':
+        return filteredData.filter((row) =>
+          row.bookmarks.some((b) => b.isDuplicate === true)
+          || row.tabs.some((t) => t.isDuplicate === true),
+        )
+      case 'never-opened':
         return filteredData.filter((row) => row.bookmarks.some((b) => b.lastVisited == null && b.visitCount == null))
-      case 'bm-transactional':
-        return filteredData.filter((row) => row.bookmarks.some((b) => effectiveIntent(b) === 'transactional'))
-      case 'bm-stale':
-        return filteredData.filter((row) => row.bookmarks.some((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS))
-      case 'bm-open-now':
+      case 'transactional':
+        return filteredData.filter((row) =>
+          row.bookmarks.some((b) => effectiveIntent(b) === 'transactional')
+          || row.tabs.some((t) => effectiveIntent(t) === 'transactional'),
+        )
+      case 'stale':
+        return filteredData.filter((row) =>
+          row.bookmarks.some((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS)
+          || row.tabs.some((t) => t.lastAccessed < Date.now() - STALE_TAB_MS),
+        )
+      case 'open-now':
         return filteredData.filter((row) => row.bookmarks.some((b) => b.isOpen === true))
-      case 'bm-multi-folder':
+      case 'multi-folder':
         return filteredData.filter((row) => row.bookmarks.length > 0 && multiFolderUrls.has(row.url))
-      case 'tab-duplicate-tabs':
-        return filteredData.filter((row) => row.tabs.some((t) => t.isDuplicate === true))
-      case 'tab-bookmarked':
+      case 'bookmarked':
         return filteredData.filter((row) => row.tabs.some((t) => t.isBookmarked === true))
-      case 'tab-transactional':
-        return filteredData.filter((row) => row.tabs.some((t) => effectiveIntent(t) === 'transactional'))
-      case 'tab-stale':
-        return filteredData.filter((row) => row.tabs.some((t) => t.lastAccessed < Date.now() - STALE_TAB_MS))
       default:
         return filteredData
     }
   }, [filteredData, triageFilter, multiFolderUrls])
-
-  const chipCounts = useMemo(() => ({
-    'bm-duplicates': bookmarks.filter((b) => b.isDuplicate === true).length,
-    'bm-never-opened': bookmarks.filter((b) => b.lastVisited == null && b.visitCount == null).length,
-    'bm-transactional': bookmarks.filter((b) => effectiveIntent(b) === 'transactional').length,
-    'bm-stale': bookmarks.filter((b) => b.lastVisited != null && b.lastVisited < Date.now() - STALE_BOOKMARK_MS).length,
-    'bm-open-now': bookmarks.filter((b) => b.isOpen === true).length,
-    'bm-multi-folder': bookmarks.filter((b) => multiFolderUrls.has(b.url)).length,
-    'tab-duplicate-tabs': tabs.filter((t) => t.isDuplicate === true).length,
-    'tab-bookmarked': tabs.filter((t) => t.isBookmarked === true).length,
-    'tab-transactional': tabs.filter((t) => effectiveIntent(t) === 'transactional').length,
-    'tab-stale': tabs.filter((t) => t.lastAccessed < Date.now() - STALE_TAB_MS).length,
-  }), [bookmarks, tabs, multiFolderUrls])
 
   const onToggleExpanded = (url: string) => {
     setExpandedUrls((prev) => {
@@ -508,21 +483,8 @@ export function CombinedListTable({
     },
   ], [expandedUrls, localUrlSet, onActivateTab, onCloseTab, onDeleteBookmark, semanticScores])
 
-  const chips = [
-    { id: 'bm-duplicates', label: 'Duplicates', hint: 'Multiple bookmarks with the same URL' },
-    { id: 'bm-never-opened', label: 'Never opened', hint: 'Bookmarks you have never visited' },
-    { id: 'bm-transactional', label: 'Transactional', hint: 'Orders, bookings, tickets — safe to delete when done' },
-    { id: 'bm-stale', label: 'Stale', hint: 'Not visited in over 6 months' },
-    { id: 'bm-open-now', label: 'Open now', hint: 'URL is currently open in a tab' },
-    { id: 'bm-multi-folder', label: 'Multi-folder', hint: 'Saved in two or more bookmark folders' },
-    { id: 'tab-duplicate-tabs', label: 'Duplicate tabs', hint: 'Same URL open in multiple tabs' },
-    { id: 'tab-bookmarked', label: 'Bookmarked', hint: 'Already saved as a bookmark' },
-    { id: 'tab-transactional', label: 'Transactional tabs', hint: 'Orders, bookings, tickets — safe to close when done' },
-    { id: 'tab-stale', label: 'Stale tabs', hint: 'Not accessed in over 30 days' },
-  ] as const
-
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-2">
       <button
         type="button"
         className={cn(
@@ -538,17 +500,6 @@ export function CombinedListTable({
       {semanticEnabled && state === 'embedding' && <span className="text-xs text-muted-foreground">Embedding query…</span>}
       {semanticEnabled && state === 'no-cache' && <span className="text-xs text-muted-foreground">No embeddings cache. Run embeddings in Lab.</span>}
       {semanticEnabled && state === 'error' && <span className="text-xs text-destructive">Error: {error}</span>}
-      {chips.length > 0 && <span className="h-4 w-px bg-border" />}
-      {chips.map((chip) => (
-        <TriageChip
-          key={chip.id}
-          label={chip.label}
-          hint={chip.hint}
-          active={triageFilter === chip.id}
-          count={chipCounts[chip.id]}
-          onClick={() => setTriageFilter((prev) => (prev === chip.id ? null : chip.id))}
-        />
-      ))}
     </div>
   )
 
@@ -566,42 +517,6 @@ export function CombinedListTable({
       initialSorting={initialSorting}
       menuHost={menuHost}
     />
-  )
-}
-
-function TriageChip({
-  label,
-  hint,
-  active,
-  count,
-  onClick,
-}: {
-  label: string
-  hint: string
-  active: boolean
-  count: number
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      title={hint}
-      onClick={onClick}
-      className={cn(
-        'rounded border px-2 py-1 text-xs transition-colors',
-        active
-          ? 'border-amber-600/60 bg-amber-600/20 text-amber-300'
-          : 'border-border text-muted-foreground hover:border-border/80 hover:text-foreground',
-        count === 0 && !active && 'cursor-default opacity-40 pointer-events-none',
-      )}
-    >
-      {label}
-      {count > 0 && (
-        <span className={cn('ml-1', active ? 'text-amber-300/70' : 'text-muted-foreground/60')}>
-          {count}
-        </span>
-      )}
-    </button>
   )
 }
 

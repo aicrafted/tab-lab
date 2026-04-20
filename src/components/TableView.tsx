@@ -8,6 +8,8 @@ interface TableViewProps {
   bookmarks: BookmarkItem[]
   tabs: TabItem[]
   localUrlSet: Set<string>
+  triageFilter: string | null
+  multiFolderUrls: Set<string>
   sourceFilter: SourceFilter
   settings: LlmSettings
   loading: boolean
@@ -21,6 +23,8 @@ export function TableView({
   bookmarks,
   tabs,
   localUrlSet,
+  triageFilter,
+  multiFolderUrls,
   sourceFilter,
   settings,
   loading,
@@ -34,6 +38,8 @@ export function TableView({
       <BookmarksTable
         data={bookmarks}
         localUrlSet={localUrlSet}
+        triageFilter={triageFilter}
+        multiFolderUrls={multiFolderUrls}
         settings={settings}
         loading={loading}
         onDelete={(id) => void onDeleteBookmark(id)}
@@ -47,6 +53,7 @@ export function TableView({
       <TabsTable
         data={tabs}
         localUrlSet={localUrlSet}
+        triageFilter={triageFilter}
         settings={settings}
         loading={loading}
         onClose={(id) => void onCloseTab(id)}
@@ -61,6 +68,8 @@ export function TableView({
       bookmarks={bookmarks}
       tabs={tabs}
       localUrlSet={localUrlSet}
+      triageFilter={triageFilter}
+      multiFolderUrls={multiFolderUrls}
       settings={settings}
       loading={loading}
       onDeleteBookmark={(id) => void onDeleteBookmark(id)}
