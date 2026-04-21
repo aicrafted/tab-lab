@@ -8,7 +8,7 @@ interface PageSummaryProps {
   llmSettings: LlmSettings
 }
 
-type SummaryState = 'idle' | 'loading' | 'done' | 'error'
+type SummaryState = 'idle' | 'picking' | 'loading' | 'done' | 'error'
 
 export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
   const [state, setState] = useState<SummaryState>('idle')
@@ -16,7 +16,78 @@ export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
   const [error, setError] = useState('')
   const cacheRef = useRef<Map<string, string>>(new Map())
 
+  async function summarizeText(text: string) {
+    setState('loading')
+    setError('')
+    try {
+      if (!text.trim()) throw new Error('Selected element has no readable text')
+      const result = await chatComplete(
+        'You are a concise summarizer. Reply with 3-5 bullet points covering the key information. No preamble. Respond in ru',
+        text,
+        llmSettings,
+        400,
+        { metricKey: 'sidepanel-summary' },
+      )
+      cacheRef.current.set(url, result)
+      setSummary(result)
+      setState('done')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setState('error')
+    }
+  }
+
+  async function summarizePage() {
+    setError('')
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'extractPageText',
+        tabId,
+      }) as { text?: string; error?: string } | undefined
+
+      if (!response) {
+        throw new Error('No response from background. Reload the extension and try again.')
+      }
+
+      if (response.error) throw new Error(response.error)
+      await summarizeText(response.text ?? '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setState('error')
+    }
+  }
+
+  async function startPicker() {
+    setError('')
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'startElementPicker',
+        tabId,
+      }) as { ok?: boolean; error?: string } | undefined
+      if (!response) throw new Error('No response from background. Reload the extension and try again.')
+      if (response.error) throw new Error(response.error)
+      setState('picking')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setState('error')
+    }
+  }
+
+  async function cancelPicker() {
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'cancelElementPicker',
+        tabId,
+      })
+    } catch {
+    }
+    setState('idle')
+  }
+
   useEffect(() => {
+    if (state === 'picking') {
+      void chrome.runtime.sendMessage({ type: 'cancelElementPicker', tabId }).catch(() => {})
+    }
     const cached = cacheRef.current.get(url)
     if (cached) {
       setSummary(cached)
@@ -29,50 +100,63 @@ export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
     setState('idle')
   }, [url])
 
-  async function summarize() {
-    setState('loading')
-    setError('')
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'extractPageText',
-        tabId,
-      }) as { text?: string; error?: string } | undefined
-
-      if (!response) {
-        throw new Error('No response from background. Reload the extension and try again.')
+  useEffect(() => {
+    const onMessage = (msg: { type?: string; text?: string }) => {
+      if (msg.type === 'elementPickerResult' && state === 'picking') {
+        void summarizeText(msg.text ?? '')
       }
-
-      const { text, error: extractError } = response
-
-      if (extractError) throw new Error(extractError)
-      if (!text?.trim()) throw new Error('Page has no readable text')
-console.log(text);
-      const result = await chatComplete(
-        'You are a concise summarizer. Reply with 3-5 bullet points covering the key information on this page. No preamble.',
-        text,
-        llmSettings,
-        1024,
-        { metricKey: 'sidepanel-summary' },
-      )
-
-      cacheRef.current.set(url, result)
-      setSummary(result)
-      setState('done')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setState('error')
+      if (msg.type === 'elementPickerCancelled' && state === 'picking') {
+        setState('idle')
+      }
     }
-  }
+    chrome.runtime.onMessage.addListener(onMessage)
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMessage)
+    }
+  }, [state, llmSettings, url])
+
+  useEffect(() => {
+    return () => {
+      if (state === 'picking') {
+        void chrome.runtime.sendMessage({ type: 'cancelElementPicker', tabId }).catch(() => {})
+      }
+    }
+  }, [state, tabId])
 
   if (state === 'idle') {
     return (
       <div className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void summarizePage()}
+            className="text-xs text-[#666] transition-colors hover:text-[#888]"
+          >
+            ✦ Summarize this page
+          </button>
+          <span className="text-[#333]">·</span>
+          <button
+            type="button"
+            onClick={() => void startPicker()}
+            className="text-xs text-[#555] transition-colors hover:text-[#777]"
+          >
+            select section
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (state === 'picking') {
+    return (
+      <div className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2">
+        <p className="text-xs text-[#555]">Click an element on the page... (Esc to cancel)</p>
         <button
           type="button"
-          onClick={() => void summarize()}
-          className="w-full text-left text-xs text-[#666] transition-colors hover:text-[#888]"
+          onClick={() => void cancelPicker()}
+          className="mt-1 text-xs text-[#666] transition-colors hover:text-[#888]"
         >
-          ✦ Summarize this page
+          Cancel
         </button>
       </div>
     )
@@ -88,14 +172,33 @@ console.log(text);
           <p className="animate-pulse text-xs text-[#555]">Summarizing...</p>
         )}
         {state === 'done' && (
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-[#aaa]">{summary}</p>
+          <div className="space-y-2">
+            <p className="whitespace-pre-wrap text-xs leading-relaxed text-[#aaa]">{summary}</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void summarizePage()}
+                className="text-xs text-[#666] transition-colors hover:text-[#888]"
+              >
+                Summarize again
+              </button>
+              <span className="text-[#333]">·</span>
+              <button
+                type="button"
+                onClick={() => void startPicker()}
+                className="text-xs text-[#555] transition-colors hover:text-[#777]"
+              >
+                select section
+              </button>
+            </div>
+          </div>
         )}
         {state === 'error' && (
           <div className="space-y-1.5">
             <p className="text-xs text-red-400/70">{error}</p>
             <button
               type="button"
-              onClick={() => void summarize()}
+              onClick={() => void summarizePage()}
               className="text-xs text-[#666] transition-colors hover:text-[#888]"
             >
               Retry

@@ -1,20 +1,14 @@
-// MV3 service worker — no persistent state here.
-// All state lives in chrome.storage.local or the page's React state.
 import { initDomainData } from '@/lib/ai/domain-prefill'
 
-// Initialize domain data at startup
 void initDomainData()
 
 const MAX_HISTORY = 50
 let activeTabId: number | null = null
 
-// Track active tab for history tracking + side panel notification
 chrome.tabs.onActivated.addListener(async (info) => {
   activeTabId = info.tabId
-  // Notify side panel
   void chrome.runtime.sendMessage({ type: 'tabActivated', tabId: info.tabId }).catch(() => {})
 
-  // Record in history
   try {
     const tab = await chrome.tabs.get(info.tabId)
     if (!tab.url || tab.url.startsWith('chrome://')) return
@@ -28,15 +22,12 @@ chrome.tabs.onActivated.addListener(async (info) => {
       favIconUrl: tab.favIconUrl,
       ts: Date.now(),
     }
-    // Deduplicate by tabId — move existing entry to top
     const next = [entry, ...tabHistory.filter((h: { tabId: number }) => h.tabId !== info.tabId)].slice(0, MAX_HISTORY)
     await chrome.storage.session.set({ tabHistory: next })
   } catch {
-    // ignore errors (tab may have been closed)
   }
 })
 
-// Remove closed tabs from history
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   try {
     const { tabHistory = [] } = await chrome.storage.session.get('tabHistory')
@@ -44,7 +35,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       tabHistory: tabHistory.filter((h: { tabId: number }) => h.tabId !== tabId),
     })
   } catch {
-    // ignore
   }
 })
 
@@ -54,14 +44,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 })
 
-// Full page: open TabLab in a new tab
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({
     url: chrome.runtime.getURL('src/pages/main/index.html'),
   })
 })
 
-// Side panel: open for current window
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'open-side-panel') {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
@@ -72,7 +60,68 @@ chrome.commands.onCommand.addListener((command) => {
   }
 })
 
-// Messaging: side panel requests data
+function injectElementPicker() {
+  const win = window as any
+  if (win.__tabMindPickerActive) return
+
+  win.__tabMindPickerActive = true
+  let hovered: HTMLElement | null = null
+  const HIGHLIGHT_STYLE = '2px solid #3b82f6'
+
+  function highlight(el: HTMLElement | null) {
+    if (hovered && hovered !== el) {
+      hovered.style.outline = ''
+    }
+    hovered = el
+    if (el) {
+      el.style.outline = HIGHLIGHT_STYLE
+    }
+  }
+
+  function onMouseOver(e: MouseEvent) {
+    highlight(e.target as HTMLElement | null)
+  }
+
+  function onMouseOut() {
+    highlight(null)
+  }
+
+  function cleanup() {
+    document.removeEventListener('mouseover', onMouseOver, true)
+    document.removeEventListener('mouseout', onMouseOut, true)
+    document.removeEventListener('click', onClick, true)
+    document.removeEventListener('keydown', onKeyDown, true)
+    highlight(null)
+    win.__tabMindPickerActive = false
+    delete win.__tabMindPickerCleanup
+  }
+
+  function onClick(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+    const target = e.target as HTMLElement | null
+    const text = target?.innerText?.replace(/\s{3,}/g, '\n\n').trim().slice(0, 12_000) ?? ''
+    cleanup()
+    void chrome.runtime.sendMessage({ type: 'elementPickerResult', text }).catch(() => {})
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    cleanup()
+    void chrome.runtime.sendMessage({ type: 'elementPickerCancelled' }).catch(() => {})
+  }
+
+  win.__tabMindPickerCleanup = cleanup
+
+  document.addEventListener('mouseover', onMouseOver, true)
+  document.addEventListener('mouseout', onMouseOut, true)
+  document.addEventListener('click', onClick, true)
+  document.addEventListener('keydown', onKeyDown, true)
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'getSidePanelData') {
     void (async () => {
@@ -103,6 +152,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           },
         })
         sendResponse({ text: results[0]?.result ?? '' })
+      } catch (err) {
+        sendResponse({ error: String(err) })
+      }
+    })()
+    return true
+  }
+
+  if (msg.type === 'startElementPicker') {
+    void (async () => {
+      try {
+        const tabId: number = msg.tabId
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: injectElementPicker,
+        })
+        sendResponse({ ok: true })
+      } catch (err) {
+        sendResponse({ error: String(err) })
+      }
+    })()
+    return true
+  }
+
+  if (msg.type === 'cancelElementPicker') {
+    void (async () => {
+      try {
+        const tabId: number = msg.tabId
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            const win = window as any
+            if (typeof win.__tabMindPickerCleanup === 'function') {
+              win.__tabMindPickerCleanup()
+            }
+          },
+        })
+        sendResponse({ ok: true })
       } catch (err) {
         sendResponse({ error: String(err) })
       }
