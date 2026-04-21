@@ -17,6 +17,7 @@ import { checkLlmAvailability, type LlmAvailability } from '@/lib/ai/classifier'
 import { loadProjectionForCurrentModel } from '@/lib/ai/embedder'
 import { loadHydratedData } from '@/lib/pipeline/initial-load'
 import { loadClusterNames } from '@/lib/ai/cluster-names'
+import { DOMAIN_PREFILL } from '@/lib/ai/domain-prefill'
 import {
   getBookmarkScopeFilter,
   getLlmSettings,
@@ -38,6 +39,7 @@ import { isLocalUrl } from '@/lib/core/local-network'
 import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
 import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
+import { getAllDomainRows, type DomainRow } from '@/lib/db/domain-repo'
 import { Brain, ChevronDown, ChevronUp, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
@@ -65,6 +67,12 @@ interface UniversalFacetFilters {
   intent: string | null
   platform: string | null
   tags: string[]
+}
+
+interface DomainCategoryGroup {
+  category: string
+  domains: string[]
+  count: number
 }
 
 const VIEW_HINTS_COLLAPSED_KEY = 'tablab.view-hints.collapsed'
@@ -114,8 +122,16 @@ function filterItems<T extends TabItem | BookmarkItem>(
   facetMode: FacetMode,
   parentCategoryFilterMap: Map<string, Set<string>>,
   universalFilters: UniversalFacetFilters,
+  activeDomainCategory: string | null,
+  domainCategoryGroups: DomainCategoryGroup[],
 ): T[] {
   if (facetMode === 'domains') {
+    if (activeDomainCategory) {
+      const group = domainCategoryGroups.find((entry) => entry.category === activeDomainCategory)
+      const domainsInCategory = new Set(group?.domains ?? [])
+      if (domainsInCategory.size === 0) return items
+      return items.filter((item) => domainsInCategory.has(item.domain))
+    }
     if (activeFacets.length === 0) return items
     return items.filter((item) => activeFacets.includes(item.domain))
   }
@@ -180,6 +196,9 @@ export function App() {
   const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
   const [hintsCollapsed, setHintsCollapsed] = useState(false)
   const [manualFacetsCollapsed, setManualFacetsCollapsed] = useState(false)
+  const [enrichedDomainRows, setEnrichedDomainRows] = useState<DomainRow[]>([])
+  const [activeDomainCategory, setActiveDomainCategory] = useState<string | null>(null)
+  const [lastDomainTaskFinishedAt, setLastDomainTaskFinishedAt] = useState<number | null>(null)
 
   // Build domain → favicon map from open tabs (for bookmark favicon fallback)
   const domainIconMap = useMemo(() => {
@@ -246,6 +265,15 @@ export function App() {
     }
   }, [hintsCollapsed])
 
+  useEffect(() => {
+    void getAllDomainRows().then(setEnrichedDomainRows).catch(() => {})
+  }, [])
+
+  const refreshEnrichedDomainRows = useCallback(async () => {
+    const rows = await getAllDomainRows()
+    setEnrichedDomainRows(rows)
+  }, [])
+
   const handleSourceFilterChange = useCallback((value: SourceFilter) => {
     startFilterTransition(() => {
       setSourceFilterState(value)
@@ -297,7 +325,13 @@ export function App() {
     reload,
   })
 
-  const { activeTasks, lastError } = useOrchestratorTasks(orchestrator)
+  const { tasks, activeTasks, lastError } = useOrchestratorTasks(orchestrator)
+  useEffect(() => {
+    const finishedAt = tasks.find((task) => task.id === 'domains' && task.status === 'done')?.finishedAt ?? null
+    if (!finishedAt || finishedAt === lastDomainTaskFinishedAt) return
+    setLastDomainTaskFinishedAt(finishedAt)
+    void refreshEnrichedDomainRows()
+  }, [tasks, lastDomainTaskFinishedAt, refreshEnrichedDomainRows])
 
   // Sync data with browser events
   useBrowserStateSync(doLoad)
@@ -463,6 +497,10 @@ export function App() {
   }, [sourceFilter])
 
   useEffect(() => {
+    setActiveDomainCategory(null)
+  }, [sourceFilter])
+
+  useEffect(() => {
     if (triageFacetSupported) return
     setTriageFilter(null)
   }, [triageFacetSupported])
@@ -533,6 +571,32 @@ export function App() {
       .sort((a, b) => b.totalCount - a.totalCount || a.parent.localeCompare(b.parent))
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
+  const domainCategoryMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of enrichedDomainRows) {
+      if (row.category) map.set(row.domain, row.category)
+    }
+    for (const [domain, info] of Object.entries(DOMAIN_PREFILL)) {
+      if (info.category) map.set(domain, info.category)
+    }
+    return map
+  }, [enrichedDomainRows])
+
+  const domainCategoryGroups = useMemo<DomainCategoryGroup[]>(() => {
+    const byCategory = new Map<string, { domains: string[]; count: number }>()
+    for (const { value: domain, count } of domainsFacet) {
+      const category = domainCategoryMap.get(domain)
+      if (!category) continue
+      const entry = byCategory.get(category) ?? { domains: [], count: 0 }
+      entry.domains.push(domain)
+      entry.count += count
+      byCategory.set(category, entry)
+    }
+    return Array.from(byCategory.entries())
+      .map(([category, { domains, count }]) => ({ category, domains, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [domainCategoryMap, domainsFacet])
+
   const parentCategoryFilterMap = useMemo(() => {
     const map = new Map<string, Set<string>>()
     for (const group of categoriesFacet) {
@@ -585,12 +649,28 @@ export function App() {
   }, [sourceScopedTabs, sourceScopedBookmarks])
 
   const filteredBookmarks = useMemo(() => {
-    return filterItems(sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
-  }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
+    return filterItems(
+      sourceScopedBookmarks,
+      activeFacets,
+      facetMode,
+      parentCategoryFilterMap,
+      universalFilters,
+      activeDomainCategory,
+      domainCategoryGroups,
+    )
+  }, [sourceScopedBookmarks, activeFacets, facetMode, parentCategoryFilterMap, universalFilters, activeDomainCategory, domainCategoryGroups])
 
   const filteredTabs = useMemo(() => {
-    return filterItems(sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters)
-  }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters])
+    return filterItems(
+      sourceScopedTabs,
+      activeFacets,
+      facetMode,
+      parentCategoryFilterMap,
+      universalFilters,
+      activeDomainCategory,
+      domainCategoryGroups,
+    )
+  }, [sourceScopedTabs, activeFacets, facetMode, parentCategoryFilterMap, universalFilters, activeDomainCategory, domainCategoryGroups])
 
   const { multiFolderUrls, triageChipCounts } = useMemo(() => {
     const now = Date.now()
@@ -815,21 +895,25 @@ export function App() {
           bookmarkFolderOptions={bookmarkFolderOptions}
           onBookmarkScopeChange={handleBookmarkScopeChange}
           domains={domainsFacet}
+          domainCategoryGroups={domainCategoryGroups}
           categories={categoriesFacet}
           intents={intentFacet}
           platforms={platformFacet}
           tags={tagsFacet}
           activeMode={facetMode}
           activeValues={activeFacets}
+          activeDomainCategory={activeDomainCategory}
           universalIntent={universalFilters.intent}
           universalPlatform={universalFilters.platform}
           universalTags={universalFilters.tags}
           onModeChange={(m) => {
             setFacetMode(m)
             setActiveFacets([])
+            setActiveDomainCategory(null)
           }}
           onToggle={(v) => setActiveFacets((prev) => {
             if (facetMode === 'categories' || facetMode === 'domains') {
+              if (facetMode === 'domains') setActiveDomainCategory(null)
               return prev.includes(v) ? [] : [v]
             }
             return prev
@@ -841,12 +925,17 @@ export function App() {
               ? { ...prev, tags: [] }
               : { ...prev, tags: [value] }
           ))}
+          onDomainCategoryChange={(category) => {
+            setActiveFacets([])
+            setActiveDomainCategory((prev) => (prev === category ? null : category))
+          }}
           onClear={() => {
             if (facetMode === 'universal') {
               setUniversalFilters({ intent: null, platform: null, tags: [] })
               return
             }
             setActiveFacets([])
+            setActiveDomainCategory(null)
           }}
           width={sidebarWidth}
           collapsed={facetsCollapsed}

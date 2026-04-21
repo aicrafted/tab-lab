@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SourceFilterToggle } from '@/components/SourceFilter'
 import { Favicon } from '@/components/Favicon'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ import {
   Wrench,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronRight,
 } from 'lucide-react'
 import {
   Select,
@@ -115,6 +116,12 @@ export interface CategoryGroupFacet {
   totalCount: number
 }
 
+export interface DomainCategoryGroup {
+  category: string
+  domains: string[]
+  count: number
+}
+
 interface FacetSidebarProps {
   sourceFilter: SourceFilter
   onSourceFilterChange: (value: SourceFilter) => void
@@ -131,17 +138,20 @@ interface FacetSidebarProps {
   bookmarkFolderOptions: BookmarkFolderOption[]
   onBookmarkScopeChange: (value: BookmarkScopeFilter) => void
   domains: FacetItem[]
+  domainCategoryGroups: DomainCategoryGroup[]
   categories: CategoryGroupFacet[]
   intents: FacetItem[]
   platforms: FacetItem[]
   tags: FacetItem[]
   activeMode: 'domains' | 'categories' | 'universal'
   activeValues: string[]
+  activeDomainCategory: string | null
   universalIntent: string | null
   universalPlatform: string | null
   universalTags: string[]
   onModeChange: (mode: 'domains' | 'categories' | 'universal') => void
   onToggle: (value: string) => void
+  onDomainCategoryChange: (category: string) => void
   onUniversalIntentChange: (value: string | null) => void
   onUniversalPlatformChange: (value: string | null) => void
   onUniversalTagToggle: (value: string) => void
@@ -190,17 +200,20 @@ export function FacetSidebar({
   bookmarkFolderOptions,
   onBookmarkScopeChange,
   domains,
+  domainCategoryGroups,
   categories,
   intents,
   platforms,
   tags,
   activeMode,
   activeValues,
+  activeDomainCategory,
   universalIntent,
   universalPlatform,
   universalTags,
   onModeChange,
   onToggle,
+  onDomainCategoryChange,
   onUniversalIntentChange,
   onUniversalPlatformChange,
   onUniversalTagToggle,
@@ -209,10 +222,14 @@ export function FacetSidebar({
   collapsed = false,
   onCollapsedChange,
 }: FacetSidebarProps) {
+  const allCategoryNames = useMemo(
+    () => new Set(domainCategoryGroups.map((group) => group.category)),
+    [domainCategoryGroups],
+  )
   const showEmpty = activeMode === 'categories' && categories.length === 0
   const activeCount = activeMode === 'universal'
     ? (universalIntent ? 1 : 0) + (universalPlatform ? 1 : 0) + universalTags.length
-    : activeValues.length
+    : activeValues.length + (activeMode === 'domains' && activeDomainCategory ? 1 : 0)
   const bookmarkScopeValue = bookmarkScopeFilter.mode === 'folder' && bookmarkScopeFilter.folderId
     ? bookmarkScopeFilter.folderId
     : 'root'
@@ -229,6 +246,21 @@ export function FacetSidebar({
     return BOTH_CHIPS
   }, [sourceFilter])
   const showTriage = showTriageFilters && visibleChips.some((chip) => (triageChipCounts[chip.id] ?? 0) > 0)
+  const domainCountMap = useMemo(() => new Map(domains.map((domain) => [domain.value, domain.count])), [domains])
+  const categorizedDomains = useMemo(
+    () => new Set(domainCategoryGroups.flatMap((group) => group.domains)),
+    [domainCategoryGroups],
+  )
+  const uncategorizedDomains = useMemo(
+    () => domains.filter((domain) => !categorizedDomains.has(domain.value)),
+    [categorizedDomains, domains],
+  )
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(allCategoryNames)
+
+  useEffect(() => {
+    if (activeMode !== 'domains') return
+    setExpandedCategories(allCategoryNames)
+  }, [activeMode, allCategoryNames])
 
   return (
     <div
@@ -358,16 +390,54 @@ export function FacetSidebar({
               onTagToggle={onUniversalTagToggle}
             />
           ) : (
-            domains.map(item => (
-              <FacetRow
-                key={item.value}
-                value={item.value}
-                count={item.count}
-                showDomainIcon
-                active={activeValues.includes(item.value)}
-                onClick={() => onToggle(item.value)}
-              />
-            ))
+            <div className="py-1">
+              {domainCategoryGroups.map((group) => {
+                const expanded = expandedCategories.has(group.category)
+                const active = activeDomainCategory === group.category
+                return (
+                  <DomainCategoryRow
+                    key={group.category}
+                    group={group}
+                    active={active}
+                    expanded={expanded}
+                    domainCountMap={domainCountMap}
+                    activeValues={activeValues}
+                    onToggle={onToggle}
+                    onToggleActive={() => {
+                      if (active) {
+                        setExpandedCategories((prev) => {
+                          const next = new Set(prev)
+                          next.add(group.category)
+                          return next
+                        })
+                      }
+                      onDomainCategoryChange(group.category)
+                    }}
+                    onToggleExpand={() => {
+                      setExpandedCategories((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(group.category)) next.delete(group.category)
+                        else next.add(group.category)
+                        return next
+                      })
+                    }}
+                  />
+                )
+              })}
+              {domainCategoryGroups.length > 0 && uncategorizedDomains.length > 0 && (
+                <hr className="my-1 border-border/30" />
+              )}
+              {uncategorizedDomains.map((domain) => (
+                <FacetRow
+                  key={domain.value}
+                  value={domain.value}
+                  count={domain.count}
+                  showDomainIcon
+                  active={activeValues.includes(domain.value)}
+                  onClick={() => onToggle(domain.value)}
+                />
+              ))}
+            </div>
           )}
         </div>
 
@@ -635,6 +705,70 @@ function GroupedCategoryList({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function DomainCategoryRow({
+  group,
+  active,
+  expanded,
+  domainCountMap,
+  activeValues,
+  onToggle,
+  onToggleActive,
+  onToggleExpand,
+}: {
+  group: DomainCategoryGroup
+  active: boolean
+  expanded: boolean
+  domainCountMap: Map<string, number>
+  activeValues: string[]
+  onToggle: (value: string) => void
+  onToggleActive: () => void
+  onToggleExpand: () => void
+}) {
+  return (
+    <div>
+      <div
+        className={cn(
+          'mx-1 flex items-center justify-between rounded px-2 py-1 text-xs transition-colors',
+          active
+            ? 'bg-primary/15 text-primary font-medium'
+            : 'text-foreground/70 hover:bg-card/30 hover:text-foreground',
+        )}
+      >
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="flex flex-1 items-center gap-1.5 text-left"
+        >
+          <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
+          <span className="truncate">{group.category}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleActive}
+          className={cn('ml-1 shrink-0 tabular-nums', active ? 'text-primary/80' : 'text-muted-foreground/60')}
+          title={active ? 'Remove category filter' : 'Filter by this category'}
+        >
+          {group.count}
+        </button>
+      </div>
+      {expanded && (
+        <div className="ml-3 border-l border-border/30 pl-2">
+          {group.domains.map((domain) => (
+            <FacetRow
+              key={domain}
+              value={domain}
+              count={domainCountMap.get(domain) ?? 0}
+              showDomainIcon
+              active={activeValues.includes(domain)}
+              onClick={() => onToggle(domain)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
