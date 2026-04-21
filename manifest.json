@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TabLab",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Analytics lab for bookmark hoarders — local AI classification, semantic search, and visual exploration.",
   "permissions": ["bookmarks", "tabs", "storage", "history", "tabGroups", "offscreen", "sidePanel", "scripting"],
   "host_permissions": ["http://*/*", "https://*/*"],
