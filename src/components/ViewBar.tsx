@@ -1,6 +1,7 @@
 import { cn } from '@/lib/core/utils'
 import type { ViewId } from '@/components/views/types'
 import { ACTIVE_BUILD } from '@/lib/core/constants'
+import { CircleHelp } from 'lucide-react'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'table', label: 'Table', hint: 'Classic table with sorting and filters' },
@@ -86,9 +87,11 @@ const GROUP_BY_VIEW: Record<ViewId, string> = Object.fromEntries(
 interface ViewBarProps {
   activeView: ViewId
   onChange: (view: ViewId) => void
+  hintsVisible: boolean
+  onToggleHints: () => void
 }
 
-export function ViewBar({ activeView, onChange }: ViewBarProps) {
+export function ViewBar({ activeView, onChange, hintsVisible, onToggleHints }: ViewBarProps) {
   const activeIdToUse = GROUP_BY_VIEW[activeView] ?? VIEW_GROUPS[0].id
   const activeGroup = VIEW_GROUPS.find((group) => group.id === activeIdToUse) ?? VIEW_GROUPS[0]
 
@@ -125,26 +128,37 @@ export function ViewBar({ activeView, onChange }: ViewBarProps) {
 
         <div className="border-t border-primary/50 bg-primary/10 px-2 py-1.5">
           <div className="flex items-center gap-1">
-          {activeGroup.views.filter(v => !ACTIVE_BUILD.views.hide.includes(v)).map((viewId) => {
-            const view = VIEW_BY_ID[viewId]
-            if (!view) return null
-            return (
-              <button
-                key={view.id}
-                type="button"
-                title={view.hint}
-                onClick={() => onChange(view.id)}
-                className={cn(
-                  'whitespace-nowrap rounded px-2.5 py-1 text-sm transition-colors',
-                  activeView === view.id
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'text-muted-foreground hover:bg-background hover:text-foreground',
-                )}
-              >
-                {view.label}
-              </button>
-            )
-          })}
+            {activeGroup.views.filter(v => !ACTIVE_BUILD.views.hide.includes(v)).map((viewId) => {
+              const view = VIEW_BY_ID[viewId]
+              if (!view) return null
+              return (
+                <button
+                  key={view.id}
+                  type="button"
+                  title={view.hint}
+                  onClick={() => onChange(view.id)}
+                  className={cn(
+                    'whitespace-nowrap rounded px-2.5 py-1 text-sm transition-colors',
+                    activeView === view.id
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                  )}
+                >
+                  {view.label}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              onClick={onToggleHints}
+              title={hintsVisible ? 'Hide view hint' : 'Show view hint'}
+              className={cn(
+                'ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground',
+                hintsVisible && 'text-primary',
+              )}
+            >
+              <CircleHelp className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>

@@ -40,7 +40,7 @@ import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
 import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
 import { getAllDomainRows, type DomainRow } from '@/lib/db/domain-repo'
-import { Brain, ChevronDown, ChevronUp, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Database, Eraser, Hash, RefreshCw, Tag, Wand2, type LucideIcon } from 'lucide-react'
 import { TriageView } from '@/components/views/TriageView'
 import { KanbanView } from '@/components/views/KanbanView'
 import { TimelineView } from '@/components/views/TimelineView'
@@ -75,7 +75,7 @@ interface DomainCategoryGroup {
   count: number
 }
 
-const VIEW_HINTS_COLLAPSED_KEY = 'tablab.view-hints.collapsed'
+const VIEW_HINTS_VISIBLE_KEY = 'tablab.view-hints.visible'
 
 const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list' | 'table'>, (props: ViewProps) => JSX.Element> = {
   triage: TriageView,
@@ -194,7 +194,7 @@ export function App() {
   const { width: sidebarWidth, startDrag } = useResizable(280, 280, 400)
   const [projectedPoints, setProjectedPoints] = useState<Map<string, [number, number]>>(new Map())
   const [clusterNames, setClusterNames] = useState<Map<number, string>>(new Map())
-  const [hintsCollapsed, setHintsCollapsed] = useState(false)
+  const [hintsVisible, setHintsVisible] = useState(true)
   const [manualFacetsCollapsed, setManualFacetsCollapsed] = useState(false)
   const [enrichedDomainRows, setEnrichedDomainRows] = useState<DomainRow[]>([])
   const [activeDomainCategory, setActiveDomainCategory] = useState<string | null>(null)
@@ -257,8 +257,8 @@ export function App() {
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(VIEW_HINTS_COLLAPSED_KEY)
-      if (stored === '1') setHintsCollapsed(true)
+      const stored = window.localStorage.getItem(VIEW_HINTS_VISIBLE_KEY)
+      if (stored === '0') setHintsVisible(false)
     } catch {
       // Ignore storage access issues and keep default state.
     }
@@ -266,11 +266,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(VIEW_HINTS_COLLAPSED_KEY, hintsCollapsed ? '1' : '0')
+      window.localStorage.setItem(VIEW_HINTS_VISIBLE_KEY, hintsVisible ? '1' : '0')
     } catch {
       // Ignore storage access issues.
     }
-  }, [hintsCollapsed])
+  }, [hintsVisible])
 
   useEffect(() => {
     void getAllDomainRows().then(setEnrichedDomainRows).catch(() => {})
@@ -1017,27 +1017,18 @@ export function App() {
 
         <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden px-6">
           <div className="shrink-0">
-            <ViewBar activeView={activeView} onChange={handleViewChange} />
+            <ViewBar
+              activeView={activeView}
+              onChange={handleViewChange}
+              hintsVisible={hintsVisible}
+              onToggleHints={() => setHintsVisible((prev) => !prev)}
+            />
           </div>
 
-          <div className="shrink-0 pb-3 flex flex-col gap-3">
-            {VIEW_HINTS[activeView] && (
-              <div className="rounded-md border border-border/40 bg-card/10 px-3 py-2">
-                <div className="flex items-start justify-between gap-2">
-                  <p className={`text-xs leading-5 text-muted-foreground/55 ${hintsCollapsed ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''}`}>
-                    {VIEW_HINTS[activeView]}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setHintsCollapsed((prev) => !prev)}
-                    className="h-6 shrink-0 px-1.5 text-muted-foreground/55 hover:text-muted-foreground"
-                    title={hintsCollapsed ? 'Expand hints' : 'Collapse hints to one line'}
-                  >
-                    {hintsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                  </Button>
-                </div>
+          <div className="shrink-0 pb-1 flex flex-col gap-1">
+            {hintsVisible && VIEW_HINTS[activeView] && (
+              <div className="rounded-md bg-card/10 px-3 py-2">
+                <p className="border-l-2 border-primary/40 pl-3 text-xs leading-5 text-muted-foreground/55">{VIEW_HINTS[activeView]}</p>
               </div>
             )}
             <div ref={setViewMenuHost} />

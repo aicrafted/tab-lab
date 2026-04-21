@@ -66,7 +66,7 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
     const q = search.toLowerCase()
     return Object.entries(DOMAIN_PREFILL)
       .filter(([domain, data]) => {
-        return domain.includes(q) || data.category.toLowerCase().includes(q)
+        return domain.includes(q) || data.category.toLowerCase().includes(q) || data.description.toLowerCase().includes(q)
       })
       .sort((a, b) => a[0].localeCompare(b[0]))
   }, [search, kbVersion])
@@ -135,21 +135,8 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
   }, [kbVersion])
 
   return (
-    <div className="flex h-full flex-col space-y-6 py-4 pr-1 scrollbar-hide">
-      {/* 1. Global Section Title & Remote Sync */}
+    <div className="flex h-full flex-col space-y-6 py-2 pr-1 scrollbar-hide">
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Domains enrichment</h3>
-            <p className="text-xs text-muted-foreground">Manage how TabLab identifies and categorizes domains.</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1 text-[10px] font-medium text-muted-foreground border">
-            <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-blue-500 p-0 border-0" /> Bundled: {stats.bundledCount}</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-green-500 p-0 border-0" /> Remote: {stats.remoteCount}</span>
-            <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-amber-500 p-0 border-0" /> Custom: {stats.customCount}</span>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Remote Sync Config */}
           <div className="space-y-4 rounded-xl border border-border bg-card/50 p-4 flex flex-col justify-between">
@@ -235,10 +222,17 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
               className="h-9 pl-9 bg-background border-none shadow-none focus-visible:ring-1"
             />
           </div>
-          <Button size="sm" className="h-9 gap-2" onClick={startAdd}>
-            <Plus className="h-4 w-4" />
-            Add Custom Domain
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1 text-[10px] font-medium text-muted-foreground border">
+              <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-blue-500 p-0 border-0" /> Bundled: {stats.bundledCount}</span>
+              <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-green-500 p-0 border-0" /> Remote: {stats.remoteCount}</span>
+              <span className="flex items-center gap-1"><Badge variant="outline" className="h-1.5 w-1.5 rounded-full bg-amber-500 p-0 border-0" /> Custom: {stats.customCount}</span>
+            </div>
+            <Button size="sm" className="h-9 gap-2" onClick={startAdd}>
+              <Plus className="h-4 w-4" />
+              Add Custom Domain
+            </Button>
+          </div>
         </div>
 
         <div className="overflow-y-auto max-h-[500px]">
@@ -247,6 +241,7 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
               <TableRow>
                 <TableHead className="w-[180px] text-[11px] uppercase font-bold">Domain</TableHead>
                 <TableHead className="text-[11px] uppercase font-bold">Category</TableHead>
+                <TableHead className="text-[11px] uppercase font-bold">Description</TableHead>
                 <TableHead className="w-[120px] text-[11px] uppercase font-bold">Platform</TableHead>
                 <TableHead className="w-[80px] text-[11px] uppercase font-bold">Source</TableHead>
                 <TableHead className="w-[80px] text-right text-[11px] uppercase font-bold">Actions</TableHead>
@@ -254,7 +249,7 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
             </TableHeader>
             <TableBody>
               {filteredDomains.map(([domain, data]) => (
-                <TableRow key={domain} className="group hover:bg-muted/30 transition-colors border-border/50">
+                <TableRow key={domain} className="hover:bg-muted/30 transition-colors border-border/50">
                   <TableCell className="py-2">
                     <div className="flex items-center gap-2">
                       <Favicon domain={domain} className="h-4 w-4 rounded-sm" />
@@ -262,6 +257,9 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
                     </div>
                   </TableCell>
                   <TableCell className="py-2 text-[11px] text-muted-foreground">{data.category}</TableCell>
+                  <TableCell className="py-2 text-[11px] text-muted-foreground/85">
+                    <span className="line-clamp-2" title={data.description}>{data.description}</span>
+                  </TableCell>
                   <TableCell className="py-2">
                     <Badge variant="outline" className="text-[10px] py-0 font-normal border-primary/20 bg-primary/5">
                       {data.platform}
@@ -281,7 +279,7 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
                     </Badge>
                   </TableCell>
                   <TableCell className="py-2 text-right">
-                    <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-0.5">
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10" onClick={() => startEdit(domain, data)}>
                         <Edit3 className="h-3.5 w-3.5" />
                       </Button>
@@ -296,13 +294,13 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
               ))}
               {filteredDomains.length === 0 && ( search ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground text-xs italic">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground text-xs italic">
                     No domains found matching "{search}"
                   </TableCell>
                 </TableRow>
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground text-xs italic">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground text-xs italic">
                     Domains catalog is empty. Try syncing from remote.
                   </TableCell>
                 </TableRow>

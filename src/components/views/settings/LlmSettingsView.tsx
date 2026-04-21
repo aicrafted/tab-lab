@@ -427,7 +427,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   }, [browserMl, chatProvider, embeddingProvider, embeddingFlags, classificationMethod, llmSettings, lmstudio, onSaveSettings, openrouter, geminiNano, nliCategories, nliConfidenceThreshold])
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-10 py-4 px-6 overflow-x-hidden">
+    <div className="max-w-[1600px] mx-auto space-y-10 pb-4 px-6 overflow-x-hidden">
       <div className="grid gap-8 xl:grid-cols-12 lg:grid-cols-2">
         {/* PROVIDERS COLUMN */}
         <div className="xl:col-span-4 xl:row-span-2 space-y-6">
