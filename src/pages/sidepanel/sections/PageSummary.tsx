@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronRight, Copy, RotateCcw, ScanSearch } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { chatComplete } from '@/lib/ai/llm'
 import type { ChatProvider, LlmSettings } from '@/lib/core/types'
 import { DEFAULT_SUMMARY_SYSTEM_PROMPT } from '../sidepanel-settings'
@@ -12,6 +15,14 @@ interface PageSummaryProps {
 }
 
 type SummaryState = 'idle' | 'picking' | 'loading' | 'done' | 'error'
+
+function providerLabel(provider: ChatProvider): string {
+  if (provider === 'browser-ml') return 'Browser ML'
+  if (provider === 'gemini-nano') return 'Gemini Nano'
+  if (provider === 'lmstudio') return 'LM Studio / Ollama'
+  if (provider === 'openrouter') return 'OpenRouter'
+  return provider
+}
 
 function getEffectiveLlmSettings(
   llmSettings: LlmSettings,
@@ -37,7 +48,10 @@ export function PageSummary({
   const [state, setState] = useState<SummaryState>('idle')
   const [summary, setSummary] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
   const cacheRef = useRef<Map<string, string>>(new Map())
+  const effectiveProvider = summaryProvider === 'defined' ? llmSettings.tasks.chat.provider : summaryProvider
+  const effectiveProviderLabel = providerLabel(effectiveProvider)
 
   async function summarizeText(text: string) {
     setState('loading')
@@ -107,6 +121,17 @@ export function PageSummary({
     setState('idle')
   }
 
+  async function copySummary() {
+    if (!summary.trim()) return
+    try {
+      await navigator.clipboard.writeText(summary)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch {
+      setCopied(false)
+    }
+  }
+
   useEffect(() => {
     if (state === 'picking') {
       void chrome.runtime.sendMessage({ type: 'cancelElementPicker', tabId }).catch(() => {})
@@ -149,22 +174,27 @@ export function PageSummary({
   if (state === 'idle') {
     return (
       <div className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void summarizePage()}
-            className="text-xs text-[#666] transition-colors hover:text-[#888]"
-          >
-            ✦ Summarize this page
-          </button>
-          <span className="text-[#333]">·</span>
-          <button
-            type="button"
-            onClick={() => void startPicker()}
-            className="text-xs text-[#555] transition-colors hover:text-[#777]"
-          >
-            select section
-          </button>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void summarizePage()}
+              className="text-xs text-[#666] transition-colors hover:text-[#888]"
+            >
+              ✦ Summarize this page
+            </button>
+            <span className="text-[#333]">·</span>
+            <button
+              type="button"
+              onClick={() => void startPicker()}
+              className="text-xs text-[#555] transition-colors hover:text-[#777]"
+            >
+              select section
+            </button>
+          </div>
+          <span className="shrink-0 text-[10px] font-normal uppercase tracking-wide text-[#666]">
+            {effectiveProviderLabel}
+          </span>
         </div>
       </div>
     )
@@ -187,8 +217,14 @@ export function PageSummary({
 
   return (
     <details open className="group rounded-lg border border-[#2a2a2a] bg-[#1a1a1a]">
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[#888]">
-        Summary
+      <summary className="flex cursor-pointer list-none select-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[#888] [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-1.5">
+          <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90" />
+          <span>Summary</span>
+        </span>
+        <span className="shrink-0 text-[10px] font-normal uppercase tracking-wide text-[#666]">
+          {effectiveProviderLabel}
+        </span>
       </summary>
       <div className="px-3 pb-3">
         {state === 'loading' && (
@@ -196,21 +232,58 @@ export function PageSummary({
         )}
         {state === 'done' && (
           <div className="space-y-2">
-            <p className="whitespace-pre-wrap text-xs leading-relaxed text-[#aaa]">{summary}</p>
+            <div className="text-xs leading-relaxed text-[#aaa]">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
+                  ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
+                  li: ({ children }) => <li className="mb-1">{children}</li>,
+                  strong: ({ children }) => <strong className="font-semibold text-[#cfcfcf]">{children}</strong>,
+                  em: ({ children }) => <em className="italic text-[#bcbcbc]">{children}</em>,
+                  code: ({ children }) => <code className="rounded bg-[#151515] px-1 py-0.5 text-[11px] text-[#bdbdbd]">{children}</code>,
+                  a: ({ children, href }) => (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[#9d9d9d] underline decoration-[#4a4a4a] underline-offset-2 hover:text-[#b8b8b8]"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {summary}
+              </ReactMarkdown>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => void summarizePage()}
-                className="text-xs text-[#666] transition-colors hover:text-[#888]"
+                onClick={() => void copySummary()}
+                className="inline-flex items-center gap-1 text-xs text-[#666] transition-colors hover:text-[#888]"
+                title="Copy summary"
               >
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              <span className="text-[#333]">·</span>
+              <button
+                type="button"
+                onClick={() => void summarizePage()}
+                className="inline-flex items-center gap-1 text-xs text-[#666] transition-colors hover:text-[#888]"
+              >
+                <RotateCcw className="h-3 w-3" />
                 Summarize again
               </button>
               <span className="text-[#333]">·</span>
               <button
                 type="button"
                 onClick={() => void startPicker()}
-                className="text-xs text-[#555] transition-colors hover:text-[#777]"
+                className="inline-flex items-center gap-1 text-xs text-[#555] transition-colors hover:text-[#777]"
               >
+                <ScanSearch className="h-3 w-3" />
                 select section
               </button>
             </div>
