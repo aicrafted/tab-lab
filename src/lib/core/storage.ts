@@ -13,12 +13,12 @@ import type { BookmarkScopeFilter, CacheEntry, LlmSettings } from './types'
 import type { SourceFilter } from '@/components/views/types'
 import {
   BOOKMARK_SCOPE_FILTER_KEY,
+  DOMAINS_OVERRIDES_KEY,
+  DOMAINS_REMOTE_KEY,
   LAST_SCAN_KEY,
+  MAP_SETTINGS_KEY,
   SETTINGS_KEY,
   SOURCE_FILTER_KEY,
-  MAP_SETTINGS_KEY,
-  KB_REMOTE_KEY,
-  KB_OVERRIDES_KEY,
   STORAGE_KEEP_KEYS,
 } from './storage-keys'
 import type { PrefilledDomain } from '../ai/domain-prefill'
@@ -140,22 +140,22 @@ export async function setMapSettings(settings: MapSettings): Promise<void> {
   await safeLocalSet({ [MAP_SETTINGS_KEY]: settings })
 }
 
-export async function getKbRemote(): Promise<Record<string, PrefilledDomain>> {
-  const result = await chrome.storage.local.get(KB_REMOTE_KEY)
-  return (result[KB_REMOTE_KEY] as Record<string, PrefilledDomain>) ?? {}
+export async function getDomainsRemote(): Promise<Record<string, PrefilledDomain>> {
+  const result = await chrome.storage.local.get(DOMAINS_REMOTE_KEY)
+  return (result[DOMAINS_REMOTE_KEY] as Record<string, PrefilledDomain>) ?? {}
 }
 
-export async function setKbRemote(kb: Record<string, PrefilledDomain>): Promise<void> {
-  await safeLocalSet({ [KB_REMOTE_KEY]: kb })
+export async function setDomainsRemote(kb: Record<string, PrefilledDomain>): Promise<void> {
+  await safeLocalSet({ [DOMAINS_REMOTE_KEY]: kb })
 }
 
-export async function getKbOverrides(): Promise<Record<string, PrefilledDomain>> {
-  const result = await chrome.storage.local.get(KB_OVERRIDES_KEY)
-  return (result[KB_OVERRIDES_KEY] as Record<string, PrefilledDomain>) ?? {}
+export async function getDomainsOverrides(): Promise<Record<string, PrefilledDomain>> {
+  const result = await chrome.storage.local.get(DOMAINS_OVERRIDES_KEY)
+  return (result[DOMAINS_OVERRIDES_KEY] as Record<string, PrefilledDomain>) ?? {}
 }
 
-export async function setKbOverrides(kb: Record<string, PrefilledDomain>): Promise<void> {
-  await safeLocalSet({ [KB_OVERRIDES_KEY]: kb })
+export async function setDomainsOverrides(kb: Record<string, PrefilledDomain>): Promise<void> {
+  await safeLocalSet({ [DOMAINS_OVERRIDES_KEY]: kb })
 }
 
 async function safeLocalSet(payload: Record<string, unknown>): Promise<void> {

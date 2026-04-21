@@ -25,7 +25,7 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'shadow-map', label: 'Shadow Map', hint: 'Duplicate and near-duplicate groups by semantic similarity' },
   { id: 'session-story', label: 'Session Story', hint: 'Chronological rabbit-hole chains from browsing sessions' },
   { id: 'settings-llm', label: 'Models & Providers', hint: 'Configure LLM and Embedding providers (OpenRouter, LM Studio, etc.)' },
-  { id: 'settings-knowledge', label: 'Knowledge Base', hint: 'Manage domain pre-fill knowledge and site descriptions' },
+  { id: 'settings-domains', label: 'Domains', hint: 'Manage domain prefill catalog, overrides, and sync source' },
   { id: 'settings-advanced', label: 'Advanced Settings', hint: 'Network patterns, cache management, and performance' },
   { id: 'magazine', label: 'Magazine', hint: 'Rich grid view with large previews and extracted summaries' },
   { id: 'treemap', label: 'Treemap', hint: 'Area map — block size = visit count or item count. Top level: categories. Click a block to drill into individual pages.' },
@@ -71,7 +71,7 @@ const VIEW_GROUPS: Array<{ id: string; label: string; hint: string; views: ViewI
     id: 'settings',
     label: 'Settings',
     hint: 'Application configuration and AI settings.',
-    views: ['settings-llm', 'settings-knowledge', 'settings-advanced'],
+    views: ['settings-llm', 'settings-domains', 'settings-advanced'],
   },
 ]
 

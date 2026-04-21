@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
 import { TableView } from '@/components/TableView'
 import { LlmSettingsView } from '@/components/views/settings/LlmSettingsView'
-import { KnowledgeSettingsView } from '@/components/views/settings/KnowledgeSettingsView'
+import { DomainsSettingsView } from '@/components/views/settings/DomainsSettingsView'
 import { AdvancedSettingsView } from '@/components/views/settings/AdvancedSettingsView'
 import { FacetSidebar, type CategoryGroupFacet } from '@/components/FacetSidebar'
 import { ViewBar, VIEW_HINTS } from '@/components/ViewBar'
@@ -97,7 +97,7 @@ const ALL_VIEW_COMPONENTS: Record<Exclude<ViewId, 'list' | 'table'>, (props: Vie
   'shadow-map': ShadowMapView,
   'session-story': SessionStoryView,
   'settings-llm': LlmSettingsView,
-  'settings-knowledge': KnowledgeSettingsView,
+  'settings-domains': DomainsSettingsView,
   'settings-advanced': AdvancedSettingsView,
 }
 

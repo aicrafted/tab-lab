@@ -165,7 +165,7 @@ export interface LlmSettings {
   localNetworks: string[]
   nliCategories: NliCategory[]
   nliConfidenceThreshold: number
-  knowledge: {
+  domains: {
     remoteUrl: string
     lastSyncAt: number
   }
@@ -285,7 +285,7 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   },
   nliCategories: [...DEFAULT_NLI_CATEGORIES],
   nliConfidenceThreshold: 0.25,
-  knowledge: {
+  domains: {
     remoteUrl: 'https://raw.githubusercontent.com/aicrafted/tab-lab/refs/heads/main/public/data/domains.json',
     lastSyncAt: 0,
   },
@@ -392,9 +392,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       },
       nliCategories: (obj.nliCategories as NliCategory[]) ?? [...DEFAULT_NLI_CATEGORIES],
       nliConfidenceThreshold: typeof obj.nliConfidenceThreshold === 'number' ? obj.nliConfidenceThreshold : 0.25,
-      knowledge: {
-        remoteUrl: asString(asObject(obj.knowledge).remoteUrl, DEFAULT_LLM_SETTINGS.knowledge.remoteUrl),
-        lastSyncAt: typeof asObject(obj.knowledge).lastSyncAt === 'number' ? (asObject(obj.knowledge).lastSyncAt as number) : 0,
+      domains: {
+        remoteUrl: asString(asObject(obj.domains).remoteUrl, DEFAULT_LLM_SETTINGS.domains.remoteUrl),
+        lastSyncAt: typeof asObject(obj.domains).lastSyncAt === 'number'
+          ? (asObject(obj.domains).lastSyncAt as number)
+          : 0,
       },
     }
   }

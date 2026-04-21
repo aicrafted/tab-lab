@@ -24,7 +24,7 @@ export type ViewId =
   | 'shadow-map'
   | 'session-story'
   | 'settings-llm'
-  | 'settings-knowledge'
+  | 'settings-domains'
   | 'settings-advanced'
 
 export interface ViewProps {

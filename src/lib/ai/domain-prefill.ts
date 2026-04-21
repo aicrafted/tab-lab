@@ -1,6 +1,9 @@
 import type { KnownPlatform } from '../core/types'
-import { getKbOverrides, getKbRemote } from '../core/storage'
-import { KB_OVERRIDES_KEY, KB_REMOTE_KEY } from '../core/storage-keys'
+import { getDomainsOverrides, getDomainsRemote } from '../core/storage'
+import {
+  DOMAINS_OVERRIDES_KEY,
+  DOMAINS_REMOTE_KEY,
+} from '../core/storage-keys'
 
 export interface PrefilledDomain {
   category: string
@@ -10,7 +13,7 @@ export interface PrefilledDomain {
 }
 
 /**
- * Merged knowledge base for domains.
+ * Merged domains catalog.
  * Resolution priority: Custom Overrides > Remote Sync > Bundled Fallback.
  */
 export let DOMAIN_PREFILL: Record<string, PrefilledDomain> = {}
@@ -51,7 +54,7 @@ function rebuildPrefill() {
 }
 
 /**
- * Initializes the domain knowledge base from all sources.
+ * Initializes domain prefill data from all sources.
  */
 export async function initDomainData(): Promise<void> {
   try {
@@ -63,8 +66,8 @@ export async function initDomainData(): Promise<void> {
     }
 
     // Load dynamic tiers
-    REMOTE_KB = await getKbRemote()
-    USER_OVERRIDES = await getKbOverrides()
+    REMOTE_KB = await getDomainsRemote()
+    USER_OVERRIDES = await getDomainsOverrides()
 
     rebuildPrefill()
   } catch (err) {
@@ -79,12 +82,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return
   
   let changed = false
-  if (changes[KB_REMOTE_KEY]) {
-    REMOTE_KB = changes[KB_REMOTE_KEY].newValue || {}
+  if (changes[DOMAINS_REMOTE_KEY]) {
+    REMOTE_KB = (changes[DOMAINS_REMOTE_KEY].newValue || {}) as Record<string, PrefilledDomain>
     changed = true
   }
-  if (changes[KB_OVERRIDES_KEY]) {
-    USER_OVERRIDES = changes[KB_OVERRIDES_KEY].newValue || {}
+  if (changes[DOMAINS_OVERRIDES_KEY]) {
+    USER_OVERRIDES = (changes[DOMAINS_OVERRIDES_KEY].newValue || {}) as Record<string, PrefilledDomain>
     changed = true
   }
 
@@ -92,9 +95,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 })
 
 /**
- * Fetches knowledge base from a remote URL and updates the cache.
+ * Fetches domains catalog from a remote URL and updates the cache.
  */
-export async function syncRemoteKnowledge(url: string): Promise<void> {
+export async function syncRemoteDomains(url: string): Promise<void> {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`)
   
@@ -102,15 +105,15 @@ export async function syncRemoteKnowledge(url: string): Promise<void> {
   // Basic validation: ensure it's a record of PrefilledDomain
   if (typeof data !== 'object' || data === null) throw new Error('Invalid JSON format')
   
-  const { setKbRemote, setLlmSettings, getLlmSettings } = await import('../core/storage')
-  await setKbRemote(data)
+  const { setDomainsRemote, setLlmSettings, getLlmSettings } = await import('../core/storage')
+  await setDomainsRemote(data)
   
   // Update last sync time
   const settings = await getLlmSettings()
   await setLlmSettings({
     ...settings,
-    knowledge: {
-      ...settings.knowledge,
+    domains: {
+      ...settings.domains,
       lastSyncAt: Date.now(),
     },
   })
@@ -120,8 +123,8 @@ export async function syncRemoteKnowledge(url: string): Promise<void> {
  * Saves or updates a custom override for a domain.
  */
 export async function saveDomainOverride(domain: string, patch: Partial<PrefilledDomain>): Promise<void> {
-  const { getKbOverrides, setKbOverrides } = await import('../core/storage')
-  const overrides = await getKbOverrides()
+  const { getDomainsOverrides, setDomainsOverrides } = await import('../core/storage')
+  const overrides = await getDomainsOverrides()
   
   const existing = overrides[domain] || { category: '', description: '', platform: 'tool' as any }
   overrides[domain] = {
@@ -129,21 +132,21 @@ export async function saveDomainOverride(domain: string, patch: Partial<Prefille
     ...patch,
   }
   
-  await setKbOverrides(overrides)
+  await setDomainsOverrides(overrides)
 }
 
 /**
  * Removes a custom override, falling back to lower tiers.
  */
 export async function deleteDomainOverride(domain: string): Promise<void> {
-  const { getKbOverrides, setKbOverrides } = await import('../core/storage')
-  const overrides = await getKbOverrides()
+  const { getDomainsOverrides, setDomainsOverrides } = await import('../core/storage')
+  const overrides = await getDomainsOverrides()
   delete overrides[domain]
-  await setKbOverrides(overrides)
+  await setDomainsOverrides(overrides)
 }
 
 /**
- * Checks if a domain is present in the prefilled knowledge base.
+ * Checks if a domain is present in the prefilled domains catalog.
  */
 export function getPrefilledDomain(domain: string): PrefilledDomain | undefined {
   return DOMAIN_PREFILL[domain]

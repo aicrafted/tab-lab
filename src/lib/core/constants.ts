@@ -34,7 +34,7 @@ export const BUILD = {
         'triage',
         'tag-constellation', 'domain-graph', 'reading-queue',         
         'focus-rings', 'shadow-map', 'magazine',
-        'settings-knowledge', 'settings-advanced'
+        'settings-domains', 'settings-advanced'
       ] as ViewId[],
     }
   }

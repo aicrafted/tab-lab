@@ -24,9 +24,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { 
+import {
   DOMAIN_PREFILL, 
-  syncRemoteKnowledge, 
+  syncRemoteDomains, 
   saveDomainOverride, 
   deleteDomainOverride,
   type PrefilledDomain 
@@ -35,12 +35,12 @@ import { KNOWN_PLATFORMS, DEFAULT_LOCAL_NETWORKS } from '@/lib/core/types'
 import { cn } from '@/lib/core/utils'
 import { Favicon } from '@/components/Favicon'
 
-export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
+export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   const [search, setSearch] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   
-  // Knowledge Base Table state
+  // Domains table state
   const [editingDomain, setEditingDomain] = useState<string | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [editForm, setEditForm] = useState<Partial<PrefilledDomain>>({})
@@ -54,7 +54,7 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
 
   useEffect(() => {
     const handler = (changes: any, area: string) => {
-      if (area === 'local' && (changes.kb_remote || changes.kb_overrides)) {
+      if (area === 'local' && (changes.domains_remote || changes.domains_overrides)) {
         setKbVersion(v => v + 1)
       }
     }
@@ -72,11 +72,11 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
   }, [search, kbVersion])
 
   const handleSync = async () => {
-    if (!llmSettings?.knowledge.remoteUrl) return
+    if (!llmSettings?.domains.remoteUrl) return
     setIsSyncing(true)
     setSyncError(null)
     try {
-      await syncRemoteKnowledge(llmSettings.knowledge.remoteUrl)
+      await syncRemoteDomains(llmSettings.domains.remoteUrl)
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -156,15 +156,15 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <CloudDownload className="h-4 w-4 text-primary" />
-                Remote Knowledge Base
+                Remote Domains Catalog
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Update URL</label>
                 <Input 
-                  value={llmSettings?.knowledge.remoteUrl || ''} 
+                  value={llmSettings?.domains.remoteUrl || ''} 
                   onChange={(e) => onSaveSettings?.({
                     ...llmSettings!,
-                    knowledge: { ...llmSettings!.knowledge, remoteUrl: e.target.value }
+                    domains: { ...llmSettings!.domains, remoteUrl: e.target.value }
                   })}
                   placeholder="https://..."
                   className="h-8 bg-background text-xs"
@@ -174,9 +174,9 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
             
             <div className="flex items-center justify-between mt-4">
               <div className="space-y-0.5">
-                {llmSettings?.knowledge.lastSyncAt ? (
+                {llmSettings?.domains.lastSyncAt ? (
                   <p className="text-[10px] text-muted-foreground">
-                    Synced: {new Date(llmSettings.knowledge.lastSyncAt).toLocaleDateString()}
+                    Synced: {new Date(llmSettings.domains.lastSyncAt).toLocaleDateString()}
                   </p>
                 ) : (
                   <p className="text-[10px] text-muted-foreground italic">Never synced</p>
@@ -303,7 +303,7 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
               ) : (
                 <TableRow>
                   <TableCell colSpan={5} className="h-32 text-center text-muted-foreground text-xs italic">
-                    Knowledge base is empty. Try syncing from remote.
+                    Domains catalog is empty. Try syncing from remote.
                   </TableCell>
                 </TableRow>
               ))}
@@ -322,7 +322,7 @@ export function KnowledgeSettingsView({ llmSettings, onSaveSettings }: ViewProps
               </div>
               <div>
                 <h4 className="font-bold text-lg">{isAddingNew ? "Add Custom Domain" : editingDomain}</h4>
-                <p className="text-xs text-muted-foreground">Define custom domain-level knowledge</p>
+                <p className="text-xs text-muted-foreground">Define custom domain metadata</p>
               </div>
             </div>
 
