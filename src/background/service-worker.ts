@@ -62,9 +62,9 @@ chrome.commands.onCommand.addListener((command) => {
 
 function injectElementPicker() {
   const win = window as any
-  if (win.__tabMindPickerActive) return
+  if (win.__tabLabPickerActive) return
 
-  win.__tabMindPickerActive = true
+  win.__tabLabPickerActive = true
   let hovered: HTMLElement | null = null
   const HIGHLIGHT_STYLE = '2px solid #3b82f6'
 
@@ -92,8 +92,8 @@ function injectElementPicker() {
     document.removeEventListener('click', onClick, true)
     document.removeEventListener('keydown', onKeyDown, true)
     highlight(null)
-    win.__tabMindPickerActive = false
-    delete win.__tabMindPickerCleanup
+    win.__tabLabPickerActive = false
+    delete win.__tabLabPickerCleanup
   }
 
   function onClick(e: MouseEvent) {
@@ -114,7 +114,7 @@ function injectElementPicker() {
     void chrome.runtime.sendMessage({ type: 'elementPickerCancelled' }).catch(() => {})
   }
 
-  win.__tabMindPickerCleanup = cleanup
+  win.__tabLabPickerCleanup = cleanup
 
   document.addEventListener('mouseover', onMouseOver, true)
   document.addEventListener('mouseout', onMouseOut, true)
@@ -183,8 +183,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           target: { tabId },
           func: () => {
             const win = window as any
-            if (typeof win.__tabMindPickerCleanup === 'function') {
-              win.__tabMindPickerCleanup()
+            if (typeof win.__tabLabPickerCleanup === 'function') {
+              win.__tabLabPickerCleanup()
             }
           },
         })

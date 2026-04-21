@@ -2,7 +2,7 @@ import { ACTIVE_BUILD } from './constants'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
-const STORAGE_KEY = 'tabmind:logLevel'
+const STORAGE_KEY = 'tablab:logLevel'
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 10,
   info: 20,

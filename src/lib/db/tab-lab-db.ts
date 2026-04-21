@@ -21,7 +21,7 @@ export function openDB(): Promise<IDBDatabase> {
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result
 
-      // 1. Page Cache (formerly tabmind-cache)
+      // 1. Page Cache (formerly tablab-cache)
       if (!db.objectStoreNames.contains(STORES.PAGE_CACHE)) {
         db.createObjectStore(STORES.PAGE_CACHE, { keyPath: 'key' })
       }
@@ -31,7 +31,7 @@ export function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.DOMAINS, { keyPath: 'domain' })
       }
 
-      // 3. Embeddings (formerly tabmind-embeddings)
+      // 3. Embeddings (formerly tablab-embeddings)
       if (!db.objectStoreNames.contains(STORES.EMBEDDINGS)) {
         const store = db.createObjectStore(STORES.EMBEDDINGS, { keyPath: 'key' })
         store.createIndex('by-dim', 'dim', { unique: false })

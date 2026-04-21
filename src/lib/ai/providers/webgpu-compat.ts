@@ -1,4 +1,4 @@
-const PATCH_FLAG = '__tabmind_request_adapter_patched__'
+const PATCH_FLAG = '__tablab_request_adapter_patched__'
 
 type RequestAdapterOptions = { powerPreference?: unknown } & Record<string, unknown>
 type GpuLike = {

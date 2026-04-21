@@ -161,9 +161,9 @@ export async function exportToChromeFolders(
   if (!bar) throw new Error('Could not find bookmark bar')
 
   // Find or create TabLab root folder
-  let tabMindFolder = bar.children?.find(n => n.title === 'TabLab' && !n.url)
-  if (!tabMindFolder) {
-    tabMindFolder = await chrome.bookmarks.create({ parentId: bar.id, title: 'TabLab' })
+  let tabLabFolder = bar.children?.find(n => n.title === 'TabLab' && !n.url)
+  if (!tabLabFolder) {
+    tabLabFolder = await chrome.bookmarks.create({ parentId: bar.id, title: 'TabLab' })
   }
 
   // Create or reuse one sub-folder per category
@@ -171,11 +171,11 @@ export async function exportToChromeFolders(
   const uniqueCategories = [...new Set(categorized.map(b => b.category!))]
 
   for (const cat of uniqueCategories) {
-    const existing = tabMindFolder.children?.find(n => n.title === cat && !n.url)
+    const existing = tabLabFolder.children?.find(n => n.title === cat && !n.url)
     if (existing) {
       categoryFolders.set(cat, existing.id)
     } else {
-      const folder = await chrome.bookmarks.create({ parentId: tabMindFolder.id, title: cat })
+      const folder = await chrome.bookmarks.create({ parentId: tabLabFolder.id, title: cat })
       categoryFolders.set(cat, folder.id)
     }
   }
