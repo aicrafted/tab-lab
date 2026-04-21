@@ -35,7 +35,7 @@ import { DEFAULT_LLM_SETTINGS } from '@/lib/core/types'
 import type { SourceFilter, ViewId, ViewProps } from '@/components/views/types'
 import { DomainIconContext } from '@/components/Favicon'
 import { effectiveIntent } from '@/lib/ai/static-intent'
-import { isLocalUrl } from '@/lib/core/local-network'
+import { isLocalHost, isLocalUrl } from '@/lib/core/local-network'
 import { parseCategoryFacetTokens } from '@/lib/core/facet-utils'
 import { scoreFaviconCandidate } from '@/lib/ui/favicon-utils'
 import { formatAge } from '@/lib/core/utils'
@@ -596,8 +596,11 @@ export function App() {
 
   const domainCategoryGroups = useMemo<DomainCategoryGroup[]>(() => {
     const byCategory = new Map<string, { domains: string[]; count: number }>()
+    const localNetworks = llmSettings.localNetworks
     for (const { value: domain, count } of domainsFacet) {
-      const category = domainCategoryMap.get(domain)
+      const category = isLocalHost(domain, localNetworks)
+        ? 'Local'
+        : domainCategoryMap.get(domain)
       if (!category) continue
       const entry = byCategory.get(category) ?? { domains: [], count: 0 }
       entry.domains.push(domain)
@@ -607,7 +610,7 @@ export function App() {
     return Array.from(byCategory.entries())
       .map(([category, { domains, count }]) => ({ category, domains, count }))
       .sort((a, b) => b.count - a.count)
-  }, [domainCategoryMap, domainsFacet])
+  }, [domainCategoryMap, domainsFacet, llmSettings.localNetworks])
 
   const parentCategoryFilterMap = useMemo(() => {
     const map = new Map<string, Set<string>>()
