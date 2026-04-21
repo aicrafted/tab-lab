@@ -2,7 +2,7 @@ import { Brain, Database, Eraser, Hash, RefreshCw, Settings, Wand2, type LucideI
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { formatAge } from '@/lib/core/utils'
-import type { LlmAvailability } from '@/lib/ai/classifier'
+import type { LlmAvailability } from '@/lib/ai/setup'
 import type { TaskState } from '@/lib/pipeline/pipeline-orchestrator'
 
 interface StatusBarAiActions {

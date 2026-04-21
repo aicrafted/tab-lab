@@ -159,6 +159,7 @@ export const DEFAULT_NLI_CATEGORIES: NliCategory[] = [
 ]
 
 export const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
+export const DEFAULT_BROWSER_ML_CHAT_MODEL = 'Llama-3.2-1B-Instruct-q4f16_1-MLC'
 
 export interface LlmSettings {
   localNetworks: string[]
@@ -261,7 +262,7 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   localNetworks: [...DEFAULT_LOCAL_NETWORKS],
   providers: {
     browserMl: {
-      chatModel: '',
+      chatModel: DEFAULT_BROWSER_ML_CHAT_MODEL,
       embeddingModel: DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
       temperature: 0.1,
     },
@@ -289,9 +290,9 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
     lastSyncAt: 0,
   },
   tasks: {
-    chat: { provider: 'lmstudio' },
-    embedding: { 
-      provider: 'lmstudio',
+    chat: { provider: 'browser-ml' },
+    embedding: {
+      provider: 'browser-ml',
       includeTitle: true,
       includeDomain: true,
       includePath: true,
@@ -323,22 +324,41 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
     const chat = asObject(tasks.chat)
     const embedding = asObject(tasks.embedding)
     const classification = asObject(tasks.classification)
-    
+
     const localNetworks = toStringArray(obj.localNetworks) ?? [...DEFAULT_LOCAL_NETWORKS]
+    const lmstudioBaseUrl = asString(lmstudio.baseUrl, DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl)
+    const lmstudioApiKey = asString(lmstudio.apiKey, '')
+    const lmstudioChatModel = asString(lmstudio.chatModel, '')
+    const lmstudioEmbeddingModel = asString(lmstudio.embeddingModel, '')
+
+    const storedChatProvider = toChatProvider(chat.provider, DEFAULT_LLM_SETTINGS.tasks.chat.provider)
+    const storedEmbedProvider = toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider)
+
+    const lmstudioUnconfigured = !lmstudioChatModel
+      && lmstudioBaseUrl === DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl
+      && !lmstudioApiKey
+
+    const effectiveChatProvider: ChatProvider = storedChatProvider === 'lmstudio' && lmstudioUnconfigured
+      ? 'browser-ml'
+      : storedChatProvider
+
+    const effectiveEmbedProvider: EmbeddingProvider = storedEmbedProvider === 'lmstudio' && lmstudioUnconfigured
+      ? 'browser-ml'
+      : storedEmbedProvider
 
     return {
       localNetworks,
       providers: {
         browserMl: {
-          chatModel: asString(browserMl.chatModel, ''),
-          embeddingModel: asString(browserMl.embeddingModel, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL),
+          chatModel: asString(browserMl.chatModel, '') || DEFAULT_BROWSER_ML_CHAT_MODEL,
+          embeddingModel: asString(browserMl.embeddingModel, '') || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
           temperature: typeof browserMl.temperature === 'number' ? browserMl.temperature : 0.1,
         },
         lmstudio: {
-          baseUrl: asString(lmstudio.baseUrl, DEFAULT_LLM_SETTINGS.providers.lmstudio.baseUrl),
-          apiKey: asString(lmstudio.apiKey, ''),
-          chatModel: asString(lmstudio.chatModel, ''),
-          embeddingModel: asString(lmstudio.embeddingModel, ''),
+          baseUrl: lmstudioBaseUrl,
+          apiKey: lmstudioApiKey,
+          chatModel: lmstudioChatModel,
+          embeddingModel: lmstudioEmbeddingModel,
           temperature: typeof lmstudio.temperature === 'number' ? lmstudio.temperature : 0.1,
         },
         openrouter: {
@@ -353,10 +373,10 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       },
       tasks: {
         chat: {
-          provider: toChatProvider(chat.provider, DEFAULT_LLM_SETTINGS.tasks.chat.provider),
+          provider: effectiveChatProvider,
         },
         embedding: {
-          provider: toEmbeddingProvider(embedding.provider, DEFAULT_LLM_SETTINGS.tasks.embedding.provider),
+          provider: effectiveEmbedProvider,
           includeTitle: typeof embedding.includeTitle === 'boolean' ? embedding.includeTitle : true,
           includeDomain: typeof embedding.includeDomain === 'boolean' ? embedding.includeDomain : true,
           includePath: typeof embedding.includePath === 'boolean' ? embedding.includePath : true,
@@ -391,8 +411,8 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       ...DEFAULT_LLM_SETTINGS.providers,
       browserMl: {
         ...DEFAULT_LLM_SETTINGS.providers.browserMl,
-        chatModel: asString(chat.model, ''),
-        embeddingModel: asString(embedding.model, DEFAULT_TRANSFORMERS_EMBEDDING_MODEL),
+        chatModel: asString(chat.model, '') || DEFAULT_BROWSER_ML_CHAT_MODEL,
+        embeddingModel: asString(embedding.model, '') || DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
       },
       lmstudio: {
         ...DEFAULT_LLM_SETTINGS.providers.lmstudio,
@@ -407,10 +427,10 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
     },
     tasks: {
       chat: {
-        provider: toChatProvider(chat.provider || old.chatProvider, 'lmstudio'),
+        provider: toChatProvider(chat.provider || old.chatProvider, 'browser-ml'),
       },
       embedding: {
-        provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'lmstudio'),
+        provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'browser-ml'),
         includeTitle: true,
         includeDomain: true,
         includePath: true,

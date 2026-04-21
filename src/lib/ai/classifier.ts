@@ -1,6 +1,6 @@
 import { kMeans, type ClusterResult } from './cluster'
 import { chatComplete } from './llm'
-import { getChatProvider, getEmbeddingProvider } from './providers/factory'
+import { getEmbeddingProvider } from './providers/factory'
 import { getCached, setCached } from '../core/storage'
 import {
   classifyCluster,
@@ -15,6 +15,15 @@ import { aiPipelineLog } from '../core/logger'
 import { createLoggerProgress } from '../core/progress'
 import { getDomainInfo, type DomainInfo } from './domain-enricher'
 import { classifyVectorNli } from './nli-engine'
+export {
+  checkLlmAvailability,
+  resolveAiSetupState as checkAiStartupState,
+} from './setup'
+export type {
+  LlmAvailability,
+  LlmStatus,
+  AiSetupState,
+} from './setup'
 
 const classifierParseMetrics = {
   strict: 0,
@@ -60,8 +69,6 @@ const CLUSTER_RESPONSE_SCHEMA = {
   strict: false,
 } as const
 
-export type LlmAvailability = 'checking' | 'ready' | 'after-download' | 'unavailable'
-export type LlmStatus = LlmAvailability
 export const SPLIT_THRESHOLD = 15
 
 export function urlPathSnippet(url: string): string {
@@ -81,21 +88,6 @@ export function domainSiteLine(domain: string, domainMap: Map<string, DomainInfo
   if (info.description) return `\nSite: ${info.description}`
   if (info.category) return `\nSite: ${info.category}`
   return ''
-}
-
-export async function checkLlmAvailability(settings?: LlmSettings): Promise<LlmAvailability> {
-  if (!settings) return 'unavailable'
-  const providerId = settings.tasks.chat.provider
-  try {
-    const provider = getChatProvider(providerId)
-    const status = await provider.checkStatus(settings)
-    if (status.status === 'ready') return 'ready'
-    if (status.status === 'loading') return 'after-download'
-    return 'unavailable'
-  } catch (err) {
-    aiPipelineLog.warn('failed to check LLM availability', { provider: providerId, err })
-    return 'unavailable'
-  }
 }
 
 export async function fetchLmStudioModels(settings: LlmSettings): Promise<string[]> {

@@ -41,7 +41,11 @@ export class BrowserMlProvider extends LlmProvider {
     const chatModel = this.getChatModel(settings)
     const embedModel = this.getEmbeddingModel(settings)
 
-    const chatCached = chatModel ? await isWebllmModelCached(chatModel) : true
+    if (!chatModel) {
+      return { available: false, status: 'unavailable', message: 'No chat model selected for Browser ML' }
+    }
+
+    const chatCached = await isWebllmModelCached(chatModel)
     const embedCached = embedModel ? await isTransformersEmbeddingModelCached(embedModel) : true
 
     if (chatCached && embedCached) return { available: true, status: 'ready' }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags } from 'lucide-react'
+import { Info, List, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -17,7 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { checkLlmAvailability, fetchLmStudioModels } from '@/lib/ai/classifier'
+import { fetchLmStudioModels } from '@/lib/ai/classifier'
+import { checkLlmAvailability } from '@/lib/ai/setup'
 import { getChatProvider } from '@/lib/ai/providers/factory'
 import { GeminiNanoProvider } from '@/lib/ai/providers/gemini-nano'
 import { DEFAULT_TRANSFORMERS_EMBEDDING_MODEL, DEFAULT_NLI_CATEGORIES } from '@/lib/core/types'
@@ -50,6 +51,17 @@ const OPENROUTER_EMBEDDING_MODELS = [
   'openai/text-embedding-3-small',
   'openai/text-embedding-3-large',
 ] as const
+
+const OPENROUTER_CHAT_MODELS = [
+  'google/gemini-2.5-flash',
+  'google/gemini-pro-1.5',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3.5-sonnet',
+] as const
+
+function hasText(value: string): boolean {
+  return value.replace(/\s/g, '').length > 0
+}
 
 export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   if (!llmSettings || !onSaveSettings) return <div>Settings state missing</div>
@@ -146,12 +158,86 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     return () => { active = false }
   }, [browserMl.embeddingModel])
 
-  const canSave = useMemo(() => {
-    if (chatProvider === 'browser-ml' && !browserMl.chatModel.trim()) return false
-    if (chatProvider === 'lmstudio' && (!lmstudio.baseUrl.trim() || !lmstudio.chatModel.trim())) return false
-    if (chatProvider === 'openrouter' && (!openrouter.apiKey.trim() || !openrouter.chatModel.trim())) return false
-    return true
-  }, [chatProvider, browserMl.chatModel, lmstudio, openrouter])
+  const configHints = useMemo(() => {
+    const hints: string[] = []
+
+    if (chatProvider === 'browser-ml') {
+      if (!browserMl.chatModel.trim()) {
+        hints.push('Current selected chat provider is Browser ML, but no chat model is selected. AI chat-related functions will not work until you select a model.')
+      } else if (!loadingWebllm && !webllmCached) {
+        hints.push('Current selected chat provider is Browser ML, but the selected chat model is not downloaded. AI chat-related functions will not work until you download the model.')
+      }
+    }
+
+    if (chatProvider === 'lmstudio') {
+      if (!hasText(lmstudio.baseUrl)) {
+        hints.push('Current selected chat provider is LM Studio / Ollama, but Base URL is empty. AI chat-related functions will not work until you set Base URL.')
+      }
+      if (!hasText(lmstudio.chatModel)) {
+        hints.push('Current selected chat provider is LM Studio / Ollama, but no chat model is selected. AI chat-related functions will not work until you select a model.')
+      }
+    }
+
+    if (chatProvider === 'openrouter') {
+      if (!hasText(openrouter.apiKey)) {
+        hints.push('Current selected chat provider is OpenRouter, but API key is missing. AI chat-related functions will not work until you provide API key.')
+      }
+      if (!hasText(openrouter.chatModel)) {
+        hints.push('Current selected chat provider is OpenRouter, but no chat model is selected. AI chat-related functions will not work until you select a model.')
+      }
+    }
+
+    if (chatProvider === 'gemini-nano') {
+      if (geminiStatus === 'unavailable') {
+        hints.push('Current selected chat provider is Gemini Nano, but Prompt API is unavailable in current browser context. AI chat-related functions will not work until Gemini Nano is enabled and available.')
+      }
+      if (geminiStatus === 'after-download') {
+        hints.push('Current selected chat provider is Gemini Nano, but model download is still in progress. AI chat-related functions may fail until download is finished.')
+      }
+    }
+
+    if (embeddingProvider === 'browser-ml') {
+      if (!loadingEmbeddingModel && !embeddingModelCached) {
+        hints.push('Current selected embedding provider is Browser ML, but the selected embedding model is not downloaded. Embedding-related functions (semantic search, NLI) will not work until you download the model.')
+      }
+    }
+
+    if (embeddingProvider === 'lmstudio') {
+      if (!hasText(lmstudio.baseUrl)) {
+        hints.push('Current selected embedding provider is LM Studio / Ollama, but Base URL is empty. Embedding-related functions will not work until you set Base URL.')
+      }
+      if (!hasText(lmstudio.embeddingModel)) {
+        hints.push('Current selected embedding provider is LM Studio / Ollama, but no embedding model is selected. Embedding-related functions will not work until you select a model.')
+      }
+    }
+
+    if (embeddingProvider === 'openrouter') {
+      if (!hasText(openrouter.apiKey)) {
+        hints.push('Current selected embedding provider is OpenRouter, but API key is missing. Embedding-related functions will not work until you provide API key.')
+      }
+      if (!hasText(openrouter.embeddingModel)) {
+        hints.push('Current selected embedding provider is OpenRouter, but no embedding model is selected. Embedding-related functions will not work until you select a model.')
+      }
+    }
+
+    return hints
+  }, [
+    chatProvider,
+    embeddingProvider,
+    browserMl.chatModel,
+    lmstudio.baseUrl,
+    lmstudio.chatModel,
+    lmstudio.embeddingModel,
+    openrouter.apiKey,
+    openrouter.chatModel,
+    openrouter.embeddingModel,
+    geminiStatus,
+    loadingWebllm,
+    webllmCached,
+    loadingEmbeddingModel,
+    embeddingModelCached,
+    hasText,
+  ])
 
   const handleLoadModels = useCallback(async () => {
     if (!lmstudio.baseUrl.trim()) return
@@ -206,6 +292,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   }, [browserMl.embeddingModel])
 
   const handleSave = useCallback(() => {
+    setError(null)
     onSaveSettings({
       ...llmSettings,
       providers: { browserMl, lmstudio, openrouter, geminiNano },
@@ -247,7 +334,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   />
                   <Select value={browserMl.chatModel} onValueChange={(v) => setBrowserMl({ ...browserMl, chatModel: v })}>
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                      <List className="h-3.5 w-3.5 text-muted-foreground" />
                     </SelectTrigger>
                     <SelectContent>
                       {WEBLLM_CHAT_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
@@ -344,7 +431,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     onOpenChange={(open) => open && handleLoadModels()}
                   >
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />}
+                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
                       {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
@@ -367,7 +454,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     onOpenChange={(open) => open && handleLoadModels()}
                   >
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />}
+                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
                       {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
@@ -420,12 +507,22 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model ID</label>
-                <Input
-                  value={openrouter.chatModel}
-                  onChange={(e) => setOpenrouter({ ...openrouter, chatModel: e.target.value })}
-                  placeholder="google/gemini-pro-1.5"
-                  className="h-8 text-xs"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={openrouter.chatModel}
+                    onChange={(e) => setOpenrouter({ ...openrouter, chatModel: e.target.value })}
+                    placeholder="google/gemini-pro-1.5"
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Select value={openrouter.chatModel} onValueChange={(v) => setOpenrouter({ ...openrouter, chatModel: v })}>
+                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
+                      <List className="h-3.5 w-3.5 text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPENROUTER_CHAT_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embedding Model ID</label>
@@ -438,7 +535,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   />
                   <Select value={openrouter.embeddingModel} onValueChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}>
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                      <List className="h-3.5 w-3.5 text-muted-foreground" />
                     </SelectTrigger>
                     <SelectContent>
                       {OPENROUTER_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
@@ -700,7 +797,16 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             </div>
 
             <div className="pt-4 flex flex-col items-stretch gap-3">
-              <Button onClick={handleSave} disabled={!canSave} className="w-full shadow-lg shadow-primary/10">
+              {configHints.length > 0 && (
+                <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                  {configHints.map((hint) => (
+                    <p key={hint} className="text-[11px] leading-relaxed text-amber-200/90">
+                      {hint}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <Button onClick={handleSave} className="w-full shadow-lg shadow-primary/10">
                 Save & Apply Configuration
               </Button>
               {error && <p className="text-[11px] text-destructive text-center">{error}</p>}

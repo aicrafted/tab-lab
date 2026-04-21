@@ -13,7 +13,7 @@ import {
   getBookmarkFolderOptions,
   type BookmarkFolderOption,
 } from '@/lib/browser/bookmarks'
-import { checkLlmAvailability, type LlmAvailability } from '@/lib/ai/classifier'
+import { createCheckingAiSetupState, resolveAiSetupState, type AiSetupState } from '@/lib/ai/setup'
 import { loadProjectionForCurrentModel } from '@/lib/ai/embedder'
 import { loadHydratedData } from '@/lib/pipeline/initial-load'
 import { loadClusterNames } from '@/lib/ai/cluster-names'
@@ -176,7 +176,7 @@ export function App() {
   const [tabs, setTabs] = useState<TabItem[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
-  const [llmAvailability, setLlmAvailability] = useState<LlmAvailability>('checking')
+  const [aiStartup, setAiStartup] = useState<AiSetupState>(() => createCheckingAiSetupState())
   const [, setLlmError] = useState<string | undefined>(undefined)
   const [llmSettings, setLlmSettingsState] = useState<LlmSettings>(DEFAULT_LLM_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
@@ -237,13 +237,20 @@ export function App() {
   useEffect(() => {
     if (!settingsHydrated) return
     let active = true
-    setLlmAvailability('checking')
-    void checkLlmAvailability(llmSettings).then((status) => {
+    setAiStartup(createCheckingAiSetupState(llmSettings))
+    void resolveAiSetupState(llmSettings).then((status) => {
       if (!active) return
-      setLlmAvailability(status)
+      setAiStartup(status)
     }).catch(() => {
       if (!active) return
-      setLlmAvailability('unavailable')
+      setAiStartup({
+        ...createCheckingAiSetupState(llmSettings),
+        chat: { provider: llmSettings.tasks.chat.provider, model: '', configured: false, status: 'error', message: 'Failed to check chat status' },
+        embedding: { provider: llmSettings.tasks.embedding.provider, model: '', configured: false, status: 'error', message: 'Failed to check embedding status' },
+        canRunPipeline: false,
+        shouldOpenSettings: true,
+        blockingReason: 'Failed to check AI startup state',
+      })
     })
     return () => { active = false }
   }, [llmSettings, settingsHydrated])
@@ -326,6 +333,9 @@ export function App() {
   })
 
   const { tasks, activeTasks, lastError } = useOrchestratorTasks(orchestrator)
+  const llmNeedsSetup = !aiStartup.canRunPipeline || Boolean(lastError)
+  const chatStatusLabel = formatStartupCapabilityLabel(aiStartup.chat.status)
+  const embeddingStatusLabel = formatStartupCapabilityLabel(aiStartup.embedding.status)
   useEffect(() => {
     const finishedAt = tasks.find((task) => task.id === 'domains' && task.status === 'done')?.finishedAt ?? null
     if (!finishedAt || finishedAt === lastDomainTaskFinishedAt) return
@@ -823,6 +833,22 @@ export function App() {
               <span>Updated {formatAge(lastUpdated)}</span>
             )}
             <span className="text-border">·</span>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (llmNeedsSetup) {
+                  setActiveView('settings-llm')
+                } else {
+                  void runAutoAiPipeline(tabs, bookmarks, tabs)
+                }
+              }}
+              disabled={activeTasks.length > 0 || loading}
+              className="h-6 gap-1 px-2 text-[11px]"
+              title={llmNeedsSetup ? 'AI is not ready — open settings' : 'Run full AI processing pipeline'}
+            >
+              <Wand2 className="h-3 w-3" />
+              Run AI
+            </Button>
             <DropdownMenu trigger="AI Actions" align="right">
               <>
                 {aiActionItems.map((item) => (
@@ -845,15 +871,33 @@ export function App() {
             <span className="text-border">·</span>
             <span className="flex items-center gap-1">
               {lastError && (
-                <span className="flex items-center gap-1 text-destructive" title={lastError}>
+                <button
+                  type="button"
+                  onClick={() => setActiveView('settings-llm')}
+                  className="flex items-center gap-1 text-destructive transition-opacity hover:opacity-100 opacity-90"
+                  title={`${lastError} (click to open settings)`}
+                >
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
                   LLM: error
-                </span>
+                </button>
               )}
-              {llmAvailability === 'unavailable' && <span className="opacity-40">LLM: unavailable</span>}
-              {llmAvailability === 'checking' && <span className="opacity-40">LLM: checking…</span>}
-              {llmAvailability === 'after-download' && <span className="text-accent">LLM: downloading…</span>}
-              {activeTasks.length === 0 && llmAvailability === 'ready' && <span className="text-primary">LLM: ready</span>}
+              {!lastError && activeTasks.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => { if (llmNeedsSetup) setActiveView('settings-llm') }}
+                  className={llmNeedsSetup ? 'opacity-80 hover:opacity-100 transition-opacity' : ''}
+                  title={[
+                    `Chat: ${aiStartup.chat.provider} (${chatStatusLabel})${aiStartup.chat.model ? ` — ${aiStartup.chat.model}` : ''}`,
+                    `Embeddings: ${aiStartup.embedding.provider} (${embeddingStatusLabel})${aiStartup.embedding.model ? ` — ${aiStartup.embedding.model}` : ''}`,
+                    aiStartup.chat.message ?? '',
+                    aiStartup.embedding.message ?? '',
+                  ].filter(Boolean).join('\n')}
+                >
+                  {llmNeedsSetup
+                    ? `AI: chat ${chatStatusLabel} · emb ${embeddingStatusLabel} — set up →`
+                    : `AI: ready (chat ${chatStatusLabel} · emb ${embeddingStatusLabel})`}
+                </button>
+              )}
               {activeTasks.length > 0 && (
                 <Button
                   variant="ghost"
@@ -1022,6 +1066,15 @@ function formatProgressPercent(percent: number): string {
   if (!Number.isFinite(percent)) return '0'
   if (Math.abs(percent - Math.round(percent)) < 0.05) return String(Math.round(percent))
   return percent.toFixed(1)
+}
+
+function formatStartupCapabilityLabel(status: 'checking' | 'ready' | 'loading' | 'unavailable' | 'unsupported' | 'error'): string {
+  if (status === 'checking') return 'checking'
+  if (status === 'ready') return 'ready'
+  if (status === 'loading') return 'loading'
+  if (status === 'unsupported') return 'unsupported'
+  if (status === 'error') return 'error'
+  return 'unavailable'
 }
 
 interface AiActionItem {

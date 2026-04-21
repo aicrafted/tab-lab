@@ -1,4 +1,5 @@
-import { checkLlmAvailability, classifyItems, splitLargeClusters, analyzeItemsTwoPass, urlPathSnippet, domainSiteLine } from '../ai/classifier'
+import { classifyItems, splitLargeClusters, analyzeItemsTwoPass, urlPathSnippet, domainSiteLine } from '../ai/classifier'
+import { checkLlmAvailability } from '../ai/setup'
 import { analyzeMetadata, type PageIntent } from '../ai/prompts'
 import { chatComplete } from '../ai/llm'
 import { refineCategoryLabels, applyRefinedCategories } from '../ai/post-processor'
