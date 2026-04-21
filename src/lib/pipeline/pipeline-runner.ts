@@ -288,11 +288,12 @@ export class PipelineRunner {
     const useNli = settings.tasks.classification.method === 'nli' && hasEmbeddingProviderConfig(settings)
     if (!useNli) {
       const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
+      await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings, false, this.currentRun?.abortController.signal)
       normalizeTask.progress(2)
       normalizeTask.done()
     }
 
+    if (!this.isRunActive(runId)) return
     await this.runTagsAndIntents(runId, tabs, bookmarks, settings, domainMap)
   }
 
@@ -343,7 +344,7 @@ export class PipelineRunner {
 
     // Phase 3: Post-processing (Categorization polish)
     const normalizeTask = this.registry.registerTask(TASK_IDS.NORMALIZE_CATEGORIES, 'Normalize categories', 2)
-    await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings)
+    await this.normalizeCategoriesAfterClassification(tabs, bookmarks, settings, false, this.currentRun?.abortController.signal)
     normalizeTask.progress(2)
     normalizeTask.done()
   }
@@ -373,10 +374,11 @@ export class PipelineRunner {
   }
 
   async normalizeCategoriesAfterClassification(
-    tabItems: { url: string }[], 
-    bookmarkItems: { url: string }[], 
+    tabItems: { url: string }[],
+    bookmarkItems: { url: string }[],
     settings: LlmSettings,
-    skipRareMerge = false
+    skipRareMerge = false,
+    signal?: AbortSignal,
   ): Promise<void> {
     const uniqueUrls = [...new Set([...tabItems, ...bookmarkItems].map((item) => normalizeUrlForCache(item.url)))]
     const entries = await Promise.all(uniqueUrls.map(async (url) => ({ url, entry: await getCached(url) })))
@@ -395,7 +397,7 @@ export class PipelineRunner {
     
     // Phase 1: Normalize/Merge
     // Use the frequency-aware consolidation logic (Synonym/Acronym merging)
-    const mapping = await refineCategoryLabels(labelsWithCounts, settings, NORMALIZE_MAX_COUNT)
+    const mapping = await refineCategoryLabels(labelsWithCounts, settings, NORMALIZE_MAX_COUNT, signal)
     
     // Convert to item format for applyRefinedCategories
     const itemData = entries.map(({ url, entry }) => ({

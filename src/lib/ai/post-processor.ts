@@ -13,6 +13,7 @@ export async function refineCategoryLabels(
   labelsWithCounts: { label: string; count: number }[],
   settings: LlmSettings,
   maxCount: number = Infinity,
+  signal?: AbortSignal,
 ): Promise<Record<string, string>> {
   if (labelsWithCounts.length === 0) return {}
   
@@ -35,7 +36,7 @@ export async function refineCategoryLabels(
       consolidateCategories.user(candidates),
       settings,
       8000, // Very large output allowed for many groups
-      { metricKey: 'post-process-consolidation' }
+      { metricKey: 'post-process-consolidation', signal }
     )
 
     aiPipelineLog.info('refine: consolidation LLM response', { response: response.slice(0, 500) })
@@ -88,6 +89,7 @@ export async function refineCategoryLabels(
     tracker.done()
     return mapping
   } catch (err) {
+    if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
     aiPipelineLog.error('refineCategoryLabels critical failure', { err })
     tracker.done({ error: true })
     return Object.fromEntries(labelsWithCounts.map(l => [l.label, l.label]))
