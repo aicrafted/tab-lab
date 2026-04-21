@@ -1,16 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
 import { chatComplete } from '@/lib/ai/llm'
-import type { LlmSettings } from '@/lib/core/types'
+import type { ChatProvider, LlmSettings } from '@/lib/core/types'
+import { DEFAULT_SUMMARY_SYSTEM_PROMPT } from '../sidepanel-settings'
 
 interface PageSummaryProps {
   tabId: number
   url: string
   llmSettings: LlmSettings
+  summaryProvider?: 'defined' | ChatProvider
+  systemPrompt?: string
 }
 
 type SummaryState = 'idle' | 'picking' | 'loading' | 'done' | 'error'
 
-export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
+function getEffectiveLlmSettings(
+  llmSettings: LlmSettings,
+  summaryProvider: 'defined' | ChatProvider,
+): LlmSettings {
+  if (summaryProvider === 'defined') return llmSettings
+  return {
+    ...llmSettings,
+    tasks: {
+      ...llmSettings.tasks,
+      chat: { provider: summaryProvider },
+    },
+  }
+}
+
+export function PageSummary({
+  tabId,
+  url,
+  llmSettings,
+  summaryProvider = 'defined',
+  systemPrompt = DEFAULT_SUMMARY_SYSTEM_PROMPT,
+}: PageSummaryProps) {
   const [state, setState] = useState<SummaryState>('idle')
   const [summary, setSummary] = useState('')
   const [error, setError] = useState('')
@@ -22,9 +45,9 @@ export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
     try {
       if (!text.trim()) throw new Error('Selected element has no readable text')
       const result = await chatComplete(
-        'You are a concise summarizer. Reply with 3-5 bullet points covering the key information. No preamble. Respond in ru',
+        systemPrompt,
         text,
-        llmSettings,
+        getEffectiveLlmSettings(llmSettings, summaryProvider),
         400,
         { metricKey: 'sidepanel-summary' },
       )
@@ -113,7 +136,7 @@ export function PageSummary({ tabId, url, llmSettings }: PageSummaryProps) {
     return () => {
       chrome.runtime.onMessage.removeListener(onMessage)
     }
-  }, [state, llmSettings, url])
+  }, [state, llmSettings, summaryProvider, systemPrompt, url])
 
   useEffect(() => {
     return () => {

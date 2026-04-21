@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
-import { PanelLeft } from 'lucide-react'
+import { PanelLeft, Settings } from 'lucide-react'
 import { Favicon } from '@/components/Favicon'
 import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
@@ -8,9 +8,12 @@ import { RelatedBookmarks } from './sections/RelatedBookmarks'
 import { Search } from './sections/Search'
 import { RecentTabs } from './sections/RecentTabs'
 import { PageSummary } from './sections/PageSummary'
-import { parseDomain } from '@/lib/core/utils'
+import { deepMerge, parseDomain, type DeepPartial } from '@/lib/core/utils'
 import type { LlmSettings } from '@/lib/core/types'
 import { getLlmSettings } from '@/lib/core/storage'
+import { SIDEPANEL_SETTINGS_KEY } from '@/lib/core/storage-keys'
+import { SidePanelSettingsPanel } from './SidePanelSettingsPanel'
+import { DEFAULT_SIDEPANEL_SETTINGS, mergeSidePanelSettings, type SidePanelSettings } from './sidepanel-settings'
 
 interface SidePanelData {
   tabs: chrome.tabs.Tab[]
@@ -26,6 +29,8 @@ export function SidePanel() {
   const [currentWindowId, setCurrentWindowId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [llmSettings, setLlmSettings] = useState<LlmSettings | null>(null)
+  const [spSettings, setSpSettings] = useState<SidePanelSettings>(DEFAULT_SIDEPANEL_SETTINGS)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -58,6 +63,15 @@ export function SidePanel() {
   }, [])
 
   useEffect(() => {
+    void chrome.storage.local.get(SIDEPANEL_SETTINGS_KEY).then((res) => {
+      const raw = res[SIDEPANEL_SETTINGS_KEY]
+      if (raw) {
+        setSpSettings(mergeSidePanelSettings(raw))
+      }
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     const handler = (msg: { type: string; tabId: number }) => {
       if (msg.type === 'tabActivated') {
         setActiveTabId(msg.tabId)
@@ -66,6 +80,14 @@ export function SidePanel() {
     chrome.runtime.onMessage.addListener(handler)
     return () => { chrome.runtime.onMessage.removeListener(handler) }
   }, [])
+
+  function updateSettings(patch: DeepPartial<SidePanelSettings>) {
+    setSpSettings((prev) => {
+      const next = deepMerge(prev, patch)
+      void chrome.storage.local.set({ [SIDEPANEL_SETTINGS_KEY]: next })
+      return next
+    })
+  }
 
   const bookmarkItems = flattenBookmarks(data?.bookmarks ?? [])
 
@@ -95,42 +117,60 @@ export function SidePanel() {
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#2a2a2a] bg-[#111]/95 px-3 py-2 backdrop-blur">
           <Favicon domain={currentTabData.domain} src={currentTabData.favIconUrl} />
           <span className="flex-1 truncate text-sm text-[#f0e6d0]">{currentTabData.domain}</span>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((prev) => !prev)}
+            className="shrink-0 text-[#555] transition-colors hover:text-[#888]"
+            title="SidePanel settings"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
       <div className="flex-1 space-y-1 p-2">
-        {currentTabData && llmSettings && (
+        {settingsOpen && (
+          <SidePanelSettingsPanel
+            settings={spSettings}
+            onUpdate={updateSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+        {spSettings.sections.summary && currentTabData && llmSettings && (
           <PageSummary
             tabId={currentTabData.id}
             url={currentTabData.url}
             llmSettings={llmSettings}
+            summaryProvider={spSettings.summarization.provider}
+            systemPrompt={spSettings.summarization.systemPrompt}
           />
         )}
-        {currentTabData && data && (
+        {spSettings.sections.search && currentTabData && data && (
           <Search data={data} currentTabId={currentTabData.id} currentWindowId={currentWindowId} />
         )}
-        {data && (
+        {spSettings.sections.recentTabsLimit > 0 && data && (
           <RecentTabs
             history={data.tabHistory ?? []}
+            limit={spSettings.sections.recentTabsLimit}
             currentTabId={activeTabId}
             currentWindowId={currentWindowId}
           />
         )}
-        {currentTabData && data && (
+        {spSettings.sections.duplicates && currentTabData && data && (
           <Duplicates
             currentTab={currentTabData}
             allTabs={data.tabs}
             currentWindowId={currentWindowId}
           />
         )}
-        {currentTabData && data && (
+        {spSettings.sections.similarTabs && currentTabData && data && (
           <SimilarTabs
             currentTab={currentTabData}
             allTabs={data.tabs}
             currentWindowId={currentWindowId}
           />
         )}
-        {currentTabData && bookmarkItems.length > 0 && (
+        {spSettings.sections.relatedBookmarks && currentTabData && bookmarkItems.length > 0 && (
           <RelatedBookmarks currentTab={currentTabData} bookmarks={bookmarkItems} />
         )}
         {!currentTabData && (

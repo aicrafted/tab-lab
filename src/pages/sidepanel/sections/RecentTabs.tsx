@@ -17,10 +17,12 @@ async function activateTab(tabId: number, windowId: number) {
 
 export function RecentTabs({
   history,
+  limit = 10,
   currentTabId,
   currentWindowId,
 }: {
   history: HistoryEntry[]
+  limit?: number
   currentTabId: number | null
   currentWindowId: number | null
 }) {
@@ -33,7 +35,7 @@ export function RecentTabs({
       seen.add(h.tabId)
       return true
     })
-    .slice(0, 10)
+    .slice(0, limit)
 
   const sameWindow = recent.filter((h) => h.windowId === currentWindowId)
   const otherWindows = recent.filter((h) => h.windowId !== currentWindowId)

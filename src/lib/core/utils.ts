@@ -56,3 +56,31 @@ export function parseDomain(rawUrl: string): string {
     return ''
   }
 }
+
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K]
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function deepMerge<T extends object>(base: T, patch: DeepPartial<T>): T {
+  const result = { ...base } as Record<string, unknown>
+  const patchObj = patch as Record<string, unknown>
+
+  for (const key of Object.keys(patchObj)) {
+    const pVal = patchObj[key]
+    if (pVal === undefined) continue
+
+    const baseVal = result[key]
+    if (isPlainObject(baseVal) && isPlainObject(pVal)) {
+      result[key] = deepMerge(baseVal, pVal)
+      continue
+    }
+
+    result[key] = pVal
+  }
+
+  return result as T
+}
