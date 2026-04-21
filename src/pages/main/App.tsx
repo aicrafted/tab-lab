@@ -336,6 +336,8 @@ export function App() {
   const llmNeedsSetup = !aiStartup.canRunPipeline || Boolean(lastError)
   const chatStatusLabel = formatStartupCapabilityLabel(aiStartup.chat.status)
   const embeddingStatusLabel = formatStartupCapabilityLabel(aiStartup.embedding.status)
+  const chatBadgeWarn = Boolean(lastError) || aiStartup.chat.status !== 'ready'
+  const embedBadgeWarn = Boolean(lastError) || aiStartup.embedding.status !== 'ready'
   useEffect(() => {
     const finishedAt = tasks.find((task) => task.id === 'domains' && task.status === 'done')?.finishedAt ?? null
     if (!finishedAt || finishedAt === lastDomainTaskFinishedAt) return
@@ -881,22 +883,37 @@ export function App() {
                   LLM: error
                 </button>
               )}
-              {!lastError && activeTasks.length === 0 && (
-                <button
-                  type="button"
-                  onClick={() => { if (llmNeedsSetup) setActiveView('settings-llm') }}
-                  className={llmNeedsSetup ? 'opacity-80 hover:opacity-100 transition-opacity' : ''}
-                  title={[
-                    `Chat: ${aiStartup.chat.provider} (${chatStatusLabel})${aiStartup.chat.model ? ` — ${aiStartup.chat.model}` : ''}`,
-                    `Embeddings: ${aiStartup.embedding.provider} (${embeddingStatusLabel})${aiStartup.embedding.model ? ` — ${aiStartup.embedding.model}` : ''}`,
-                    aiStartup.chat.message ?? '',
-                    aiStartup.embedding.message ?? '',
-                  ].filter(Boolean).join('\n')}
-                >
-                  {llmNeedsSetup
-                    ? `AI: chat ${chatStatusLabel} · emb ${embeddingStatusLabel} — set up →`
-                    : `AI: ready (chat ${chatStatusLabel} · emb ${embeddingStatusLabel})`}
-                </button>
+              {activeTasks.length === 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { if (llmNeedsSetup) setActiveView('settings-llm') }}
+                    className={chatBadgeWarn
+                      ? 'rounded bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300 transition-opacity hover:opacity-100'
+                      : 'rounded bg-primary/15 px-2 py-0.5 text-[11px] text-primary'}
+                    title={[
+                      `Chat: ${aiStartup.chat.provider} (${chatStatusLabel})${aiStartup.chat.model ? ` — ${aiStartup.chat.model}` : ''}`,
+                      aiStartup.chat.message ?? '',
+                      lastError ? `Last error: ${lastError}` : '',
+                    ].filter(Boolean).join('\n')}
+                  >
+                    chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (llmNeedsSetup) setActiveView('settings-llm') }}
+                    className={embedBadgeWarn
+                      ? 'rounded bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300 transition-opacity hover:opacity-100'
+                      : 'rounded bg-primary/15 px-2 py-0.5 text-[11px] text-primary'}
+                    title={[
+                      `Embeddings: ${aiStartup.embedding.provider} (${embeddingStatusLabel})${aiStartup.embedding.model ? ` — ${aiStartup.embedding.model}` : ''}`,
+                      aiStartup.embedding.message ?? '',
+                      lastError ? `Last error: ${lastError}` : '',
+                    ].filter(Boolean).join('\n')}
+                  >
+                    embed
+                  </button>
+                </>
               )}
               {activeTasks.length > 0 && (
                 <Button

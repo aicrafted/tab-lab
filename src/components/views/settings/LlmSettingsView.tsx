@@ -59,8 +59,54 @@ const OPENROUTER_CHAT_MODELS = [
   'anthropic/claude-3.5-sonnet',
 ] as const
 
+const OPENROUTER_MODELS_CACHE_KEY = 'tablab.openrouter.models.v1'
+const OPENROUTER_MODELS_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+
 function hasText(value: string): boolean {
   return value.replace(/\s/g, '').length > 0
+}
+
+function isEmbeddingModelName(model: string): boolean {
+  const lower = model.toLowerCase()
+  return lower.includes('embed')
+    || lower.includes('embedding')
+    || lower.includes('text-embedding')
+    || lower.includes('nomic-embed')
+    || lower.includes('bge')
+    || lower.includes('e5')
+}
+
+function normalizeModelList(models: string[]): string[] {
+  return Array.from(
+    new Set(
+      models
+        .map((model) => model.trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b))
+}
+
+function readCachedOpenRouterModels(): string[] | null {
+  try {
+    const raw = window.localStorage.getItem(OPENROUTER_MODELS_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ts?: number; models?: string[] }
+    if (!parsed?.ts || !Array.isArray(parsed.models)) return null
+    if (Date.now() - parsed.ts > OPENROUTER_MODELS_CACHE_TTL_MS) return null
+    return normalizeModelList(parsed.models)
+  } catch {
+    return null
+  }
+}
+
+function writeCachedOpenRouterModels(models: string[]): void {
+  try {
+    window.localStorage.setItem(OPENROUTER_MODELS_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      models,
+    }))
+  } catch {
+  }
 }
 
 export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
@@ -92,6 +138,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
   // UI State
   const [models, setModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
+  const [openrouterModels, setOpenrouterModels] = useState<string[]>([])
+  const [loadingOpenrouterModels, setLoadingOpenrouterModels] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [geminiStatus, setGeminiStatus] = useState<'checking' | 'ready' | 'after-download' | 'unavailable'>('checking')
   const [geminiInfo, setGeminiInfo] = useState<{ apis: string[]; caps?: any }>({ apis: [] })
@@ -157,6 +205,43 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
     })
     return () => { active = false }
   }, [browserMl.embeddingModel])
+
+  useEffect(() => {
+    const cached = readCachedOpenRouterModels()
+    if (cached && cached.length > 0) {
+      setOpenrouterModels(cached)
+    }
+  }, [])
+
+  const lmstudioModelOptions = useMemo(
+    () => normalizeModelList(models),
+    [models],
+  )
+
+  const lmstudioChatModelOptions = useMemo(() => {
+    const chatOnly = lmstudioModelOptions.filter((model) => !isEmbeddingModelName(model))
+    return chatOnly.length > 0 ? chatOnly : lmstudioModelOptions
+  }, [lmstudioModelOptions])
+
+  const lmstudioEmbeddingModelOptions = useMemo(() => {
+    const embedOnly = lmstudioModelOptions.filter((model) => isEmbeddingModelName(model))
+    return embedOnly.length > 0 ? embedOnly : lmstudioModelOptions
+  }, [lmstudioModelOptions])
+
+  const openrouterModelOptions = useMemo(() => {
+    if (openrouterModels.length > 0) return normalizeModelList(openrouterModels)
+    return normalizeModelList([...OPENROUTER_CHAT_MODELS, ...OPENROUTER_EMBEDDING_MODELS])
+  }, [openrouterModels])
+
+  const openrouterChatModelOptions = useMemo(() => {
+    const chatOnly = openrouterModelOptions.filter((model) => !isEmbeddingModelName(model))
+    return chatOnly.length > 0 ? chatOnly : openrouterModelOptions
+  }, [openrouterModelOptions])
+
+  const openrouterEmbeddingModelOptions = useMemo(() => {
+    const embedOnly = openrouterModelOptions.filter((model) => isEmbeddingModelName(model))
+    return embedOnly.length > 0 ? embedOnly : openrouterModelOptions
+  }, [openrouterModelOptions])
 
   const configHints = useMemo(() => {
     const hints: string[] = []
@@ -255,6 +340,38 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
       setLoadingModels(false)
     }
   }, [llmSettings, browserMl, lmstudio, openrouter])
+
+  const handleLoadOpenrouterModels = useCallback(async () => {
+    setError(null)
+    const cached = readCachedOpenRouterModels()
+    if (cached && cached.length > 0) {
+      setOpenrouterModels(cached)
+      return
+    }
+
+    setLoadingOpenrouterModels(true)
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/models?output_modalities=all', {
+        method: 'GET',
+        headers: openrouter.apiKey.trim() ? { Authorization: `Bearer ${openrouter.apiKey.trim()}` } : {},
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) {
+        throw new Error(`OpenRouter models API returned ${res.status}`)
+      }
+      const json = await res.json() as { data?: Array<{ id?: string }> }
+      const fetched = normalizeModelList((json.data ?? []).map((item) => item.id ?? ''))
+      if (fetched.length === 0) {
+        throw new Error('OpenRouter returned empty model list')
+      }
+      setOpenrouterModels(fetched)
+      writeCachedOpenRouterModels(fetched)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoadingOpenrouterModels(false)
+    }
+  }, [openrouter.apiKey])
 
   const handleOpenFlag = (flagUrl: string) => {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
@@ -365,7 +482,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   />
                   <Select value={browserMl.embeddingModel} onValueChange={(v) => setBrowserMl({ ...browserMl, embeddingModel: v })}>
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                      <List className="h-3.5 w-3.5 text-muted-foreground" />
                     </SelectTrigger>
                     <SelectContent>
                       {TRANSFORMERS_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
@@ -434,8 +551,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                       {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
-                      {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
-                      {models.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                      {lmstudioChatModelOptions.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">No chat models detected. Type manually.</div>}
+                      {lmstudioChatModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -457,8 +574,8 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                       {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
-                      {models.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">Click to fetch models...</div>}
-                      {models.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                      {lmstudioEmbeddingModelOptions.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">No embedding models detected. Type manually.</div>}
+                      {lmstudioEmbeddingModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -511,15 +628,20 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   <Input
                     value={openrouter.chatModel}
                     onChange={(e) => setOpenrouter({ ...openrouter, chatModel: e.target.value })}
-                    placeholder="google/gemini-pro-1.5"
+                    placeholder="Type model ID or pick from list"
                     className="h-8 text-xs flex-1"
                   />
-                  <Select value={openrouter.chatModel} onValueChange={(v) => setOpenrouter({ ...openrouter, chatModel: v })}>
+                  <Select
+                    value={openrouter.chatModel}
+                    onValueChange={(v) => setOpenrouter({ ...openrouter, chatModel: v })}
+                    onOpenChange={(open) => open && void handleLoadOpenrouterModels()}
+                  >
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <List className="h-3.5 w-3.5 text-muted-foreground" />
+                      {loadingOpenrouterModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
-                      {OPENROUTER_CHAT_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                      {openrouterChatModelOptions.length === 0 && !loadingOpenrouterModels && <div className="p-2 text-[10px] text-muted-foreground">No chat models detected. Type manually.</div>}
+                      {openrouterChatModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -530,15 +652,20 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                   <Input
                     value={openrouter.embeddingModel}
                     onChange={(e) => setOpenrouter({ ...openrouter, embeddingModel: e.target.value })}
-                    placeholder="google/gemini-embedding-004"
+                    placeholder="Type embedding model ID or pick from list"
                     className="h-8 text-xs flex-1"
                   />
-                  <Select value={openrouter.embeddingModel} onValueChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}>
+                  <Select
+                    value={openrouter.embeddingModel}
+                    onValueChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}
+                    onOpenChange={(open) => open && void handleLoadOpenrouterModels()}
+                  >
                     <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <List className="h-3.5 w-3.5 text-muted-foreground" />
+                      {loadingOpenrouterModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
                     </SelectTrigger>
                     <SelectContent>
-                      {OPENROUTER_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
+                      {openrouterEmbeddingModelOptions.length === 0 && !loadingOpenrouterModels && <div className="p-2 text-[10px] text-muted-foreground">No embedding models detected. Type manually.</div>}
+                      {openrouterEmbeddingModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
