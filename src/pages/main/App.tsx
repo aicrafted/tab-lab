@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ListView } from '@/components/ListView'
 import { TableView } from '@/components/TableView'
 import { LlmSettingsView } from '@/components/views/settings/LlmSettingsView'
@@ -198,7 +198,7 @@ export function App() {
   const [manualFacetsCollapsed, setManualFacetsCollapsed] = useState(false)
   const [enrichedDomainRows, setEnrichedDomainRows] = useState<DomainRow[]>([])
   const [activeDomainCategory, setActiveDomainCategory] = useState<string | null>(null)
-  const [lastDomainTaskFinishedAt, setLastDomainTaskFinishedAt] = useState<number | null>(null)
+  const lastDomainRefreshKeyRef = useRef<string>('')
 
   // Build domain → favicon map from open tabs (for bookmark favicon fallback)
   const domainIconMap = useMemo(() => {
@@ -339,11 +339,16 @@ export function App() {
   const chatBadgeWarn = Boolean(lastError) || aiStartup.chat.status !== 'ready'
   const embedBadgeWarn = Boolean(lastError) || aiStartup.embedding.status !== 'ready'
   useEffect(() => {
-    const finishedAt = tasks.find((task) => task.id === 'domains' && task.status === 'done')?.finishedAt ?? null
-    if (!finishedAt || finishedAt === lastDomainTaskFinishedAt) return
-    setLastDomainTaskFinishedAt(finishedAt)
+    const domainTask = [...tasks].reverse().find((task) => task.id === 'domains')
+    if (!domainTask) return
+    if (domainTask.status !== 'running' && domainTask.status !== 'done') return
+
+    const refreshKey = `${domainTask.status}:${domainTask.done}:${domainTask.finishedAt ?? 0}`
+    if (lastDomainRefreshKeyRef.current === refreshKey) return
+    lastDomainRefreshKeyRef.current = refreshKey
+
     void refreshEnrichedDomainRows()
-  }, [tasks, lastDomainTaskFinishedAt, refreshEnrichedDomainRows])
+  }, [tasks, refreshEnrichedDomainRows])
 
   // Sync data with browser events
   useBrowserStateSync(doLoad)

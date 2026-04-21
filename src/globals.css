@@ -82,4 +82,8 @@
     scrollbar-color: hsl(var(--muted-foreground) / 0.2) hsl(var(--background));
     scrollbar-width: thin;
   }
+
+  input[type='number'] {
+    color-scheme: dark;
+  }
 }

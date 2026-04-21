@@ -174,7 +174,6 @@ Example: {"category": "Software Engineering"}`
 
 const ENRICH_DOMAIN_SYSTEM = `You are a web domain classifier with broad knowledge of websites worldwide.
 Classify every domain you can identify — including well-known companies, brands, media, shops, tools, and services in any country.
-Only skip domains that are clearly private/internal: IP addresses, localhost, random subdomains of unknown services, corporate intranets.
 When in doubt whether you know a domain, include it rather than skipping it.
 Always respond with valid JSON only.`
 const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you can identify, output a JSON object with:
@@ -184,8 +183,7 @@ const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you c
 - "platform": classify the domain's service type using one of these values (omit if none fits):
   social=social networks (Reddit, Twitter, LinkedIn) | video=video hosting (YouTube, Twitch) | code=code hosting/dev tools (GitHub, GitLab) | registry=package managers (npm, PyPI, crates.io) | qa=Q&A sites (Stack Overflow) | blog=articles/blogs (Medium, Substack, dev.to) | docs=official documentation (ReadTheDocs, MDN) | shopping=e-commerce (Amazon, eBay) | news=news media (BBC, TechCrunch, HN) | ai=AI tools/model hubs (ChatGPT, HuggingFace) | tool=general SaaS apps (Figma, Notion, Linear) | sandbox=code playgrounds (CodePen, StackBlitz) | cloud=cloud providers (AWS, GCP, Azure) | music=music streaming (Spotify, SoundCloud) | finance=banking/trading (Stripe, Robinhood) | ci=CI/CD platforms (CircleCI, Vercel) | games=gaming stores/communities (Steam, itch.io) | education=learning platforms (Coursera, Udemy) | email=webmail clients (Gmail, Outlook) | reference=encyclopedias/wikis (Wikipedia)
 
-Skip only: IP addresses, localhost, clearly private/internal hostnames.
-Include everything else you know — companies, brands, shops, media, tools from any country.
+Include everything you know — companies, brands, shops, media, tools from any country.
 
 Examples:
 [

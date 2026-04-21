@@ -4,7 +4,7 @@ import { getChatProvider } from './providers/factory'
 import { enrichDomain } from './prompts'
 import { KNOWN_PLATFORMS, type KnownPlatform, type LlmSettings } from '../core/types'
 import { getPrefilledDomain } from './domain-prefill'
-import { isLocalHost } from '../core/local-network'
+import { isLocalHost, isNonEnrichableDomain } from '../core/local-network'
 import { setDomainRow, getAllDomainRows, clearDomains } from '../db/domain-repo'
 
 const BATCH_SIZE = 25
@@ -260,8 +260,6 @@ async function queryDomainsIntoResult(
         nextBatchIndex += 1
         const batch = batches[batchIndex]
         const batchSize = batch.length
-        const upfrontProgress = batchSize > 0 ? 1 : 0
-        if (upfrontProgress > 0) onProgress?.(upfrontProgress)
         try {
           const knownItems = await classifyDomainBatch(batch, settings, signal)
           const knownByDomain = new Map(knownItems.map((item) => [item.domain, item]))
@@ -281,14 +279,15 @@ async function queryDomainsIntoResult(
           }
 
           await putDomainRows(rowsToStore)
-          onProgress?.(Math.max(0, batchSize - upfrontProgress))
+          onProgress?.(batchSize)
         } catch (err) {
+          if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
           domainEnricherLog.error('domain enrichment batch failed', {
             err: err instanceof Error ? err.message : String(err),
             batchIndex,
             batchSize,
           })
-          onProgress?.(Math.max(0, batchSize - upfrontProgress))
+          onProgress?.(batchSize)
         }
       }
     }),
@@ -330,6 +329,7 @@ export async function estimateDomainEnrichmentWork(domains: string[], settings: 
   const localNetworks = settings.localNetworks
 
   for (const domain of uniqueDomains) {
+    if (isNonEnrichableDomain(domain)) continue
     if (getPrefilledDomain(domain) || isLocalHost(domain, localNetworks)) continue
     const cached = cache.get(domain)
     if (!cached || (!cached.known && !isUnknownStillFresh(cached, now))) {
@@ -340,6 +340,7 @@ export async function estimateDomainEnrichmentWork(domains: string[], settings: 
   for (const domain of toQuery) {
     const parent = getParentDomain(domain, localNetworks)
     if (!parent || toQuery.has(parent)) continue
+    if (isNonEnrichableDomain(parent)) continue
     if (getPrefilledDomain(parent) || isLocalHost(parent, localNetworks)) continue
     const parentCached = cache.get(parent)
     if (!parentCached || (!parentCached.known && !isUnknownStillFresh(parentCached, now))) {
@@ -367,6 +368,7 @@ export async function enrichDomains(
 
     const localNetworks = settings.localNetworks
     for (const domain of uniqueDomains) {
+      if (isNonEnrichableDomain(domain)) continue
       const prefilled = getPrefilledDomain(domain)
       if (prefilled) {
         result.set(domain, {
@@ -403,6 +405,7 @@ export async function enrichDomains(
       for (const domain of toQuery) {
         const parent = getParentDomain(domain, localNetworks)
         if (!parent || toQuery.has(parent) || result.has(parent)) continue
+        if (isNonEnrichableDomain(parent)) continue
         const prefilled = getPrefilledDomain(parent)
         if (prefilled) {
           result.set(parent, {

@@ -14,6 +14,7 @@ export interface WebllmChatOptions {
     strict?: boolean
   }
   temperature?: number
+  signal?: AbortSignal
 }
 
 interface ChatMessage {
@@ -96,8 +97,21 @@ export async function webllmChat(
       : {}),
   }
 
+  if (options.signal?.aborted) throw Object.assign(new Error('Aborted'), { name: 'AbortError' })
+
   const createCompletion = (request: CompletionRequest): Promise<CompletionResponse> =>
     eng.chat.completions.create(request as unknown as never) as Promise<CompletionResponse>
+
+  // WebLLM doesn't natively support AbortSignal, so race against an abort promise.
+  // The underlying WASM inference continues in background but our await rejects immediately.
+  const withAbort = <T>(promise: Promise<T>): Promise<T> => {
+    const { signal } = options
+    if (!signal) return promise
+    const abort = new Promise<never>((_, reject) =>
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })), { once: true })
+    )
+    return Promise.race([promise, abort])
+  }
 
   let reply: CompletionResponse
   if (options.responseFormat === 'json' && WEBLLM_JSON_MODE_ENABLED) {
@@ -105,11 +119,12 @@ export async function webllmChat(
       ? JSON.stringify(options.jsonSchema.schema)
       : '{}'
     try {
-      reply = await createCompletion({
+      reply = await withAbort(createCompletion({
         ...baseRequest,
         response_format: { type: 'json_object' as const, schema: schemaStr },
-      })
+      }))
     } catch (err) {
+      if (options.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
       // Use String(err) so the error type prefix (e.g. "BindingError: ...") is included —
       // err.message alone strips it when BindingError extends Error.
       const full = String(err)
@@ -124,10 +139,10 @@ export async function webllmChat(
         modelId,
         error: full,
       })
-      reply = await createCompletion(baseRequest)
+      reply = await withAbort(createCompletion(baseRequest))
     }
   } else {
-    reply = await createCompletion(baseRequest)
+    reply = await withAbort(createCompletion(baseRequest))
   }
 
   const raw = reply.choices?.[0]?.message?.content ?? ''

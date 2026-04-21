@@ -247,6 +247,7 @@ export async function fetchAndCacheEmbeddings(
         onProgress?.(batchUpdates)
       }
     } catch (err) {
+      if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
       embedderLog.error('batch embedding failed', {
         count: chunk.length,
         err: err instanceof Error ? err.message : String(err),

@@ -4,6 +4,11 @@ function normalizeHost(hostname: string): string {
   return host
 }
 
+const RESERVED_TLDS = new Set([
+  'local', 'internal', 'lan', 'test', 'example',
+  'invalid', 'arpa', 'home', 'localdomain',
+])
+
 function parseIPv4(host: string): number | null {
   const parts = host.split('.')
   if (parts.length !== 4) return null
@@ -116,6 +121,22 @@ function matchesPattern(host: string, patternRaw: string): boolean {
   if (pattern.includes('/')) return inCidr(host, pattern)
   if (pattern.startsWith('*.')) return matchesGlob(host, pattern)
   return host === pattern
+}
+
+/**
+ * Returns true for domains that should never be sent to LLM enrichment.
+ */
+export function isNonEnrichableDomain(domain: string): boolean {
+  const normalized = normalizeHost(domain)
+  if (!normalized) return true
+  if (parseIPv4(normalized) != null) return true
+  if (parseIPv6(normalized) != null) return true
+  if (!normalized.includes('.')) return true
+
+  const tld = normalized.split('.').at(-1) ?? ''
+  if (RESERVED_TLDS.has(tld)) return true
+
+  return false
 }
 
 export function isLocalHost(hostname: string, patterns: string[]): boolean {

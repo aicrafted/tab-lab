@@ -198,6 +198,7 @@ export async function classifyItems(
         await setCached(item.url, { ...existing, category: finalCategory, parentCategory, processedAt: Date.now() })
         results.push({ url: item.url, category: finalCategory, parentCategory })
       } catch (err) {
+        if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
         aiPipelineLog.error('classifyItems item failed', { url: item.url, err })
       } finally {
         tracker.progress(1)
@@ -303,6 +304,7 @@ export async function analyzeItemsTwoPass(
           platform: platform 
         })
       } catch (err) {
+        if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
         aiPipelineLog.error('analyzeItemsTwoPass item failed', { url: item.url, err })
       } finally {
         tracker.progress(1)
@@ -426,6 +428,7 @@ export async function splitLargeClusters(
         await setCached(item.url, { ...existing, category, parentCategory, processedAt: Date.now() })
         onProgress([{ url: item.url, category }])
       } catch (err) {
+        if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err
         aiPipelineLog.error('splitLargeClusters item failed', { url: item.url, err })
       } finally {
         tracker.progress(1)

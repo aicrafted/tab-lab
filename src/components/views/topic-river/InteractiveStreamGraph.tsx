@@ -358,16 +358,27 @@ export function InteractiveStreamGraph<T>({
     return Math.round(ratio * (visibleDayBuckets.length - 1))
   }
 
+  function clientToSvgPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = svgRef.current
+    if (!svg) return { x: PADDING_LEFT, y: HEIGHT }
+
+    const matrix = svg.getScreenCTM()
+    if (!matrix) return { x: PADDING_LEFT, y: HEIGHT }
+
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    const transformed = point.matrixTransform(matrix.inverse())
+
+    return { x: transformed.x, y: transformed.y }
+  }
+
   function clientXToSvgX(clientX: number): number {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect || rect.width <= 0) return PADDING_LEFT
-    return ((clientX - rect.left) * WIDTH) / rect.width
+    return clientToSvgPoint(clientX, 0).x
   }
 
   function clientYToSvgY(clientY: number): number {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect || rect.height <= 0) return HEIGHT
-    return ((clientY - rect.top) * HEIGHT) / rect.height
+    return clientToSvgPoint(0, clientY).y
   }
 
   useEffect(() => {

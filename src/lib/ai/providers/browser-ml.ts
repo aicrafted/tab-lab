@@ -28,7 +28,8 @@ export class BrowserMlProvider extends LlmProvider {
     return webllmChat(systemPrompt, userMessage, model, options?.maxTokens, {
       responseFormat: (options as any).responseFormat,
       jsonSchema: (options as any).jsonSchema,
-      temperature: options?.temperature ?? settings.providers.browserMl.temperature
+      temperature: options?.temperature ?? settings.providers.browserMl.temperature,
+      signal: options?.signal,
     })
   }
 
