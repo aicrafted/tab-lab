@@ -1,7 +1,7 @@
 import { cn } from '@/lib/core/utils'
 import type { ViewId } from '@/components/views/types'
 import { ACTIVE_BUILD } from '@/lib/core/constants'
-import { CircleHelp } from 'lucide-react'
+import { CircleHelp, Settings } from 'lucide-react'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'table', label: 'Table', hint: 'Classic table with sorting and filters' },
@@ -117,10 +117,14 @@ export function ViewBar({ activeView, onChange, hintsVisible, onToggleHints }: V
                   isActive
                     ? 'border-primary text-primary font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground',
+                  isSettingsGroup && 'text-amber-200 hover:text-amber-100',
                   isSettingsGroup && 'ml-auto',
                 )}
               >
-                {group.label}
+                <span className="inline-flex items-center gap-1.5">
+                  {isSettingsGroup && <Settings className="h-3.5 w-3.5" />}
+                  {group.label}
+                </span>
               </button>
             )
           })}

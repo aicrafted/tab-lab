@@ -692,25 +692,23 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         <div className="xl:col-span-4 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Gemini Nano</h3>
 
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Configuration</h3>
-            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
-              <div className="space-y-1.5 w-24">
-                <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={geminiNano.temperature}
-                  onChange={(e) => setGeminiNano({ ...geminiNano, temperature: parseFloat(e.target.value) || 0 })}
-                  className="h-8 text-xs"
-                />
-              </div>
+          <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+            <div className="space-y-1.5 w-24">
+              <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Temperature</label>
+              <Input
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                value={geminiNano.temperature}
+                onChange={(e) => setGeminiNano({ ...geminiNano, temperature: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
             </div>
 
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50">Diagnostics</h3>
-            <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
+            <div className="h-px bg-border/40" />
+
+            <div className="space-y-4">
               <div className="flex items-start gap-4">
                 <div className={`shrink-0 p-2 rounded-lg ${geminiStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' :
                     geminiStatus === 'after-download' ? 'bg-amber-500/10 text-amber-500' :
@@ -780,6 +778,22 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="space-y-3">
+            {configHints.length > 0 && (
+              <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                {configHints.map((hint) => (
+                  <p key={hint} className="text-[11px] leading-relaxed text-amber-200/90">
+                    {hint}
+                  </p>
+                ))}
+              </div>
+            )}
+            <Button onClick={handleSave} className="w-full shadow-lg shadow-primary/10">
+              Save & Apply Configuration
+            </Button>
+            {error && <p className="text-[11px] text-destructive text-center">{error}</p>}
           </div>
         </div>
 
@@ -923,21 +937,6 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
             </div>
 
-            <div className="pt-4 flex flex-col items-stretch gap-3">
-              {configHints.length > 0 && (
-                <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                  {configHints.map((hint) => (
-                    <p key={hint} className="text-[11px] leading-relaxed text-amber-200/90">
-                      {hint}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <Button onClick={handleSave} className="w-full shadow-lg shadow-primary/10">
-                Save & Apply Configuration
-              </Button>
-              {error && <p className="text-[11px] text-destructive text-center">{error}</p>}
-            </div>
           </div>
 
         </div>
