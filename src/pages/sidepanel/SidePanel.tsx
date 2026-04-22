@@ -12,7 +12,7 @@ import { PageSummary } from './sections/PageSummary'
 import { deepMerge, parseDomain, type DeepPartial } from '@/lib/core/utils'
 import type { LlmSettings } from '@/lib/core/types'
 import { getLlmSettings } from '@/lib/core/storage'
-import { SIDEPANEL_SETTINGS_KEY } from '@/lib/core/storage-keys'
+import { SETTINGS_KEY, SIDEPANEL_SETTINGS_KEY } from '@/lib/core/storage-keys'
 import { SidePanelSettingsPanel } from './SidePanelSettingsPanel'
 import { DEFAULT_SIDEPANEL_SETTINGS, mergeSidePanelSettings, type SidePanelSettings } from './sidepanel-settings'
 
@@ -57,11 +57,15 @@ export function SidePanel() {
   useBrowserStateSync(loadData)
 
   useEffect(() => {
-    void getLlmSettings().then((settings) => {
-      setLlmSettings(settings)
-    }).catch(() => {
-      setLlmSettings(null)
-    })
+    void getLlmSettings().then(setLlmSettings).catch(() => setLlmSettings(null))
+
+    const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if (SETTINGS_KEY in changes) {
+        void getLlmSettings().then(setLlmSettings).catch(() => setLlmSettings(null))
+      }
+    }
+    chrome.storage.onChanged.addListener(handler)
+    return () => chrome.storage.onChanged.removeListener(handler)
   }, [])
 
   useEffect(() => {
