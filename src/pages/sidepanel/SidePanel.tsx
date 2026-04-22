@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useBrowserStateSync } from '@/hooks/useBrowserStateSync'
-import { PanelLeft, Settings } from 'lucide-react'
+import { PanelLeft, QrCode, Settings } from 'lucide-react'
+import QRCode from 'react-qr-code'
 import { Favicon } from '@/components/Favicon'
 import { Duplicates } from './sections/Duplicates'
 import { SimilarTabs } from './sections/SimilarTabs'
@@ -31,6 +32,7 @@ export function SidePanel() {
   const [llmSettings, setLlmSettings] = useState<LlmSettings | null>(null)
   const [spSettings, setSpSettings] = useState<SidePanelSettings>(DEFAULT_SIDEPANEL_SETTINGS)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -102,6 +104,10 @@ export function SidePanel() {
       }
     : null
 
+  useEffect(() => {
+    setQrOpen(false)
+  }, [currentTabData?.url])
+
   if (loading && !data) {
     return (
       <div className="flex h-full items-center justify-center bg-[#111] p-4 text-sm text-[#888]">
@@ -119,6 +125,14 @@ export function SidePanel() {
           <span className="flex-1 truncate text-sm text-[#f0e6d0]">{currentTabData.domain}</span>
           <button
             type="button"
+            onClick={() => setQrOpen((prev) => !prev)}
+            className="shrink-0 text-[#555] transition-colors hover:text-[#888]"
+            title="QR code for current URL"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setSettingsOpen((prev) => !prev)}
             className="shrink-0 text-[#555] transition-colors hover:text-[#888]"
             title="SidePanel settings"
@@ -129,6 +143,16 @@ export function SidePanel() {
       )}
 
       <div className="flex-1 space-y-1 p-2">
+        {qrOpen && currentTabData?.url && (
+          <div className="mx-2 mt-1 flex flex-col items-center gap-2 rounded-md border border-[#2a2a2a] bg-[#1a1a1a] p-4">
+            <div className="rounded bg-white p-2">
+              <QRCode value={currentTabData.url} size={160} />
+            </div>
+            <span className="max-w-[200px] break-all text-center text-xs text-[#555]">
+              {currentTabData.url}
+            </span>
+          </div>
+        )}
         {settingsOpen && (
           <SidePanelSettingsPanel
             settings={spSettings}
