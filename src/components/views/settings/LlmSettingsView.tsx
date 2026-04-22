@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, List, Loader2, RotateCcw, ShieldCheck, ShieldX, Cpu, Server, Globe, AlertTriangle, Plus, Trash2, Tags } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { AlertTriangle, ChevronDown, Cpu, Globe, Info, Loader2, Plus, RotateCcw, Server, ShieldCheck, ShieldX, Tags, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -107,6 +108,209 @@ function writeCachedOpenRouterModels(models: string[]): void {
     }))
   } catch {
   }
+}
+
+interface ModelSuggestInputProps {
+  value: string
+  onChange: (value: string) => void
+  options: readonly string[]
+  placeholder?: string
+  loading?: boolean
+  onOpen?: () => void | Promise<void>
+}
+
+function ModelSuggestInput({
+  value,
+  onChange,
+  options,
+  placeholder,
+  loading = false,
+  onOpen,
+}: ModelSuggestInputProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [open, setOpen] = useState(false)
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [highlightedValue, setHighlightedValue] = useState<string | null>(null)
+  const [interactionMode, setInteractionMode] = useState<'mouse' | 'keyboard'>('mouse')
+
+  const filteredOptions = useMemo(() => {
+    const query = value.trim().toLowerCase()
+    if (!query) return options
+    return options.filter((option) => option.toLowerCase().includes(query))
+  }, [options, value])
+
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      const insideInput = !!rootRef.current?.contains(target)
+      const insideDropdown = !!dropdownRef.current?.contains(target)
+      if (!insideInput && !insideDropdown) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    if (highlightedValue && filteredOptions.includes(highlightedValue)) return
+    if (value && filteredOptions.includes(value)) {
+      setHighlightedValue(value)
+      return
+    }
+    setHighlightedValue(filteredOptions[0] ?? null)
+  }, [open, filteredOptions, highlightedValue, value])
+
+  useEffect(() => {
+    if (!open || !highlightedValue) return
+    const target = optionRefs.current[highlightedValue]
+    if (!target) return
+    target.scrollIntoView({ block: 'nearest' })
+  }, [open, highlightedValue])
+
+  useEffect(() => {
+    if (!open) return
+    const updateRect = () => {
+      const input = inputRef.current
+      if (!input) return
+      const rect = input.getBoundingClientRect()
+      setDropdownRect({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      })
+    }
+
+    updateRect()
+    window.addEventListener('resize', updateRect)
+    window.addEventListener('scroll', updateRect, true)
+    return () => {
+      window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
+    }
+  }, [open])
+
+  const openSuggestions = useCallback(() => {
+    if (!open) {
+      if (onOpen) {
+        void onOpen()
+      }
+      setOpen(true)
+    }
+    inputRef.current?.focus()
+  }, [onOpen, open])
+
+  const selectOption = useCallback((option: string) => {
+    onChange(option)
+    setOpen(false)
+    setHighlightedValue(option)
+    setInteractionMode('mouse')
+  }, [onChange])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <Input
+        ref={inputRef}
+        value={value}
+        onFocus={openSuggestions}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Tab') {
+            setOpen(false)
+            return
+          }
+          if (e.key === 'Escape') {
+            setOpen(false)
+            return
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            openSuggestions()
+            setInteractionMode('keyboard')
+            if (filteredOptions.length > 0) {
+              const currentIndex = highlightedValue ? filteredOptions.indexOf(highlightedValue) : -1
+              const nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, filteredOptions.length - 1)
+              setHighlightedValue(filteredOptions[nextIndex] ?? null)
+            }
+            return
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            openSuggestions()
+            setInteractionMode('keyboard')
+            if (filteredOptions.length > 0) {
+              const currentIndex = highlightedValue ? filteredOptions.indexOf(highlightedValue) : -1
+              const nextIndex = currentIndex < 0 ? filteredOptions.length - 1 : Math.max(currentIndex - 1, 0)
+              setHighlightedValue(filteredOptions[nextIndex] ?? null)
+            }
+            return
+          }
+          if (e.key === 'Enter' && open && highlightedValue && filteredOptions.includes(highlightedValue)) {
+            e.preventDefault()
+            selectOption(highlightedValue)
+          }
+        }}
+        placeholder={placeholder}
+        className="h-8 pr-8 text-xs"
+      />
+      <button
+        type="button"
+        onClick={() => {
+          if (open) {
+            setOpen(false)
+            return
+          }
+          openSuggestions()
+        }}
+        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+        title="Show model suggestions"
+      >
+        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+      {open && dropdownRect && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[9999] max-h-48 overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground shadow-md"
+          style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
+        >
+          {filteredOptions.length === 0 ? (
+            <div className="px-2 py-1.5 text-[10px] text-muted-foreground">No matches</div>
+          ) : (
+            filteredOptions.map((option) => (
+              <button
+                key={option}
+                ref={(el) => {
+                  optionRefs.current[option] = el
+                }}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => {
+                  setInteractionMode('mouse')
+                  setHighlightedValue(option)
+                }}
+                onClick={() => selectOption(option)}
+                className={`block w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                  option === highlightedValue
+                    ? 'bg-primary/20 text-foreground'
+                    : interactionMode === 'keyboard'
+                      ? 'text-foreground'
+                      : 'text-foreground hover:bg-primary/20'
+                }`}
+              >
+                {option}
+              </button>
+            ))
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
 }
 
 export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
@@ -443,21 +647,11 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model (WebLLM)</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={browserMl.chatModel}
-                    onChange={(e) => setBrowserMl({ ...browserMl, chatModel: e.target.value })}
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select value={browserMl.chatModel} onValueChange={(v) => setBrowserMl({ ...browserMl, chatModel: v })}>
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <List className="h-3.5 w-3.5 text-muted-foreground" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {WEBLLM_CHAT_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={browserMl.chatModel}
+                  onChange={(v) => setBrowserMl({ ...browserMl, chatModel: v })}
+                  options={WEBLLM_CHAT_MODELS}
+                />
                 {browserMl.chatModel && (
                   <Button
                     variant={webllmCached ? 'secondary' : 'outline'}
@@ -473,22 +667,12 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embeddings (Transformers.js)</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={browserMl.embeddingModel}
-                    onChange={(e) => setBrowserMl({ ...browserMl, embeddingModel: e.target.value })}
-                    placeholder={DEFAULT_TRANSFORMERS_EMBEDDING_MODEL}
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select value={browserMl.embeddingModel} onValueChange={(v) => setBrowserMl({ ...browserMl, embeddingModel: v })}>
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      <List className="h-3.5 w-3.5 text-muted-foreground" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TRANSFORMERS_EMBEDDING_MODELS.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={browserMl.embeddingModel}
+                  onChange={(v) => setBrowserMl({ ...browserMl, embeddingModel: v })}
+                  options={TRANSFORMERS_EMBEDDING_MODELS}
+                  placeholder={DEFAULT_TRANSFORMERS_EMBEDDING_MODEL}
+                />
                 <Button
                   variant={embeddingModelCached ? 'secondary' : 'outline'}
                   size="sm"
@@ -536,49 +720,23 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model ID</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={lmstudio.chatModel}
-                    onChange={(e) => setLmstudio({ ...lmstudio, chatModel: e.target.value })}
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select
-                    value={lmstudio.chatModel}
-                    onValueChange={(v) => setLmstudio({ ...lmstudio, chatModel: v })}
-                    onOpenChange={(open) => open && handleLoadModels()}
-                  >
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lmstudioChatModelOptions.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">No chat models detected. Type manually.</div>}
-                      {lmstudioChatModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={lmstudio.chatModel}
+                  onChange={(v) => setLmstudio({ ...lmstudio, chatModel: v })}
+                  options={lmstudioChatModelOptions}
+                  loading={loadingModels}
+                  onOpen={handleLoadModels}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embedding Model ID</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={lmstudio.embeddingModel}
-                    onChange={(e) => setLmstudio({ ...lmstudio, embeddingModel: e.target.value })}
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select
-                    value={lmstudio.embeddingModel}
-                    onValueChange={(v) => setLmstudio({ ...lmstudio, embeddingModel: v })}
-                    onOpenChange={(open) => open && handleLoadModels()}
-                  >
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lmstudioEmbeddingModelOptions.length === 0 && !loadingModels && <div className="p-2 text-[10px] text-muted-foreground">No embedding models detected. Type manually.</div>}
-                      {lmstudioEmbeddingModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={lmstudio.embeddingModel}
+                  onChange={(v) => setLmstudio({ ...lmstudio, embeddingModel: v })}
+                  options={lmstudioEmbeddingModelOptions}
+                  loading={loadingModels}
+                  onOpen={handleLoadModels}
+                />
               </div>
               <div className="flex gap-4 pt-1">
                 <div className="space-y-1.5 w-24">
@@ -624,51 +782,25 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Chat Model ID</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={openrouter.chatModel}
-                    onChange={(e) => setOpenrouter({ ...openrouter, chatModel: e.target.value })}
-                    placeholder="Type model ID or pick from list"
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select
-                    value={openrouter.chatModel}
-                    onValueChange={(v) => setOpenrouter({ ...openrouter, chatModel: v })}
-                    onOpenChange={(open) => open && void handleLoadOpenrouterModels()}
-                  >
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingOpenrouterModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {openrouterChatModelOptions.length === 0 && !loadingOpenrouterModels && <div className="p-2 text-[10px] text-muted-foreground">No chat models detected. Type manually.</div>}
-                      {openrouterChatModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={openrouter.chatModel}
+                  onChange={(v) => setOpenrouter({ ...openrouter, chatModel: v })}
+                  options={openrouterChatModelOptions}
+                  placeholder="Type model ID or pick from list"
+                  loading={loadingOpenrouterModels}
+                  onOpen={handleLoadOpenrouterModels}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium uppercase text-muted-foreground tracking-tight">Embedding Model ID</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={openrouter.embeddingModel}
-                    onChange={(e) => setOpenrouter({ ...openrouter, embeddingModel: e.target.value })}
-                    placeholder="Type embedding model ID or pick from list"
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Select
-                    value={openrouter.embeddingModel}
-                    onValueChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}
-                    onOpenChange={(open) => open && void handleLoadOpenrouterModels()}
-                  >
-                    <SelectTrigger className="h-8 w-10 px-0 flex items-center justify-center">
-                      {loadingOpenrouterModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <List className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {openrouterEmbeddingModelOptions.length === 0 && !loadingOpenrouterModels && <div className="p-2 text-[10px] text-muted-foreground">No embedding models detected. Type manually.</div>}
-                      {openrouterEmbeddingModelOptions.map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSuggestInput
+                  value={openrouter.embeddingModel}
+                  onChange={(v) => setOpenrouter({ ...openrouter, embeddingModel: v })}
+                  options={openrouterEmbeddingModelOptions}
+                  placeholder="Type embedding model ID or pick from list"
+                  loading={loadingOpenrouterModels}
+                  onOpen={handleLoadOpenrouterModels}
+                />
               </div>
               <div className="flex gap-4 pt-1">
                 <div className="space-y-1.5 w-24">
