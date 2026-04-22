@@ -275,7 +275,7 @@ function ModelSuggestInput({
       {open && dropdownRect && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[9999] max-h-48 overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground shadow-md"
+          className="fixed z-[9999] max-h-48 overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground shadow-md shadow-black/40"
           style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
         >
           {filteredOptions.length === 0 ? (
