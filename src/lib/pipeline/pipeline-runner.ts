@@ -213,7 +213,7 @@ export class PipelineRunner {
         await setCached(item.url, {
           ...existing,
           category: result.label,
-          parentCategory: result.label,
+          parentCategory: undefined,
           processedAt: Date.now(),
         })
         updates.push({ url: item.url, category: result.label })
