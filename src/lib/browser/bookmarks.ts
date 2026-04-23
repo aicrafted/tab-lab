@@ -1,5 +1,7 @@
 import type { BookmarkItem } from '../core/types'
 import { parseDomain } from '../core/utils'
+import { IS_FIREFOX } from '../core/browser-detect'
+import { getAllVisitStats } from './visitTracker'
 
 export interface BookmarkFolderOption {
   id: string
@@ -122,11 +124,23 @@ function isSkippableUrl(url: string): boolean {
   return SKIPPED_SCHEMES.some(s => url.startsWith(s))
 }
 
-/** Enrich bookmarks with lastVisited from chrome.history. Batched to avoid flooding. */
+/** Enrich bookmarks with lastVisited / visitCount. Uses chrome.history on Chrome, visitTracker on Firefox. */
 async function enrichWithHistory(bookmarks: BookmarkItem[]): Promise<BookmarkItem[]> {
-  const BATCH = 50
   const result = [...bookmarks]
 
+  if (IS_FIREFOX) {
+    // Single DB scan → in-memory lookup — O(1) per bookmark instead of N queries
+    const visitStats = await getAllVisitStats()
+    for (let i = 0; i < result.length; i++) {
+      const bm = result[i]
+      if (isSkippableUrl(bm.url)) continue
+      const stats = visitStats.get(bm.url)
+      if (stats) result[i] = { ...bm, lastVisited: stats.lastVisitTime, visitCount: stats.visitCount }
+    }
+    return result
+  }
+
+  const BATCH = 50
   for (let i = 0; i < result.length; i += BATCH) {
     const batch = result.slice(i, i + BATCH)
     await Promise.all(
@@ -156,8 +170,11 @@ export async function exportToChromeFolders(
 
   // Find bookmark bar
   const tree = await chrome.bookmarks.getTree()
-  const bar = tree[0]?.children?.find(n => n.title === 'Bookmarks bar' || n.title === 'Bookmarks Bar')
-    ?? tree[0]?.children?.[0]
+  const bar = tree[0]?.children?.find(n =>
+    n.title === 'Bookmarks bar' ||
+    n.title === 'Bookmarks Bar' ||
+    n.title === 'Bookmarks Toolbar'
+  ) ?? tree[0]?.children?.[0]
   if (!bar) throw new Error('Could not find bookmark bar')
 
   // Find or create TabLab root folder

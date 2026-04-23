@@ -1,3 +1,6 @@
+import { getRecentVisits } from './visitTracker'
+import { IS_CHROME } from '../core/browser-detect'
+
 export interface Visit {
   url: string
   title: string
@@ -26,39 +29,13 @@ const VISIT_BATCH_SIZE = 50
 
 export async function loadSessions(): Promise<Session[]> {
   const startedAt = performance.now()
-  const historyItems = await chrome.history.search({
-    text: '',
-    maxResults: 5000,
-    startTime: Date.now() - HISTORY_LOOKBACK_DAYS * DAY_MS,
-  })
 
-  const normalizedItems = historyItems.filter((item): item is chrome.history.HistoryItem & { url: string } => Boolean(item.url))
-  const typedCountMap = new Map(normalizedItems.map((item) => [item.url, item.typedCount ?? 0]))
+  const flat = IS_CHROME
+    ? await loadSessionsFromChromeHistory()
+    : await loadSessionsFromVisitTracker()
 
-  const nested: Visit[][] = []
-  for (let i = 0; i < normalizedItems.length; i += VISIT_BATCH_SIZE) {
-    const batch = normalizedItems.slice(i, i + VISIT_BATCH_SIZE)
-    const batchVisits = await Promise.all(
-      batch.map(async (item) => {
-        const visits = await chrome.history.getVisits({ url: item.url })
-        return visits
-          .filter((visit) => visit.visitTime != null)
-          .map((visit) => ({
-            url: item.url,
-            title: item.title ?? item.url,
-            visitTime: visit.visitTime as number,
-            visitId: String(visit.visitId ?? visit.id ?? ''),
-            referringVisitId: String(visit.referringVisitId ?? '0'),
-            transition: (visit.transition ?? 'link') as Visit['transition'],
-            typedCount: typedCountMap.get(item.url) ?? 0,
-            timeOnPage: 0,
-          }))
-      }),
-    )
-    nested.push(...batchVisits)
-  }
 
-  const flat = nested.flat().sort((a, b) => a.visitTime - b.visitTime)
+  flat.sort((a, b) => a.visitTime - b.visitTime)
 
   for (let i = 0; i < flat.length - 1; i += 1) {
     const gap = flat[i + 1].visitTime - flat[i].visitTime
@@ -87,10 +64,68 @@ export async function loadSessions(): Promise<Session[]> {
 
   console.info('[SessionStory] sessions built', {
     sessions: sessions.length,
-    historyItems: historyItems.length,
+    flatVisits: flat.length,
     elapsedMs: Math.round(performance.now() - startedAt),
   })
   return sessions
+}
+
+async function loadSessionsFromChromeHistory(): Promise<Visit[]> {
+  const historyItems = await chrome.history.search({
+    text: '',
+    maxResults: 5000,
+    startTime: Date.now() - HISTORY_LOOKBACK_DAYS * DAY_MS,
+  })
+
+  const normalizedItems = historyItems.filter(
+    (item): item is chrome.history.HistoryItem & { url: string } => Boolean(item.url),
+  )
+  const typedCountMap = new Map(normalizedItems.map((item) => [item.url, item.typedCount ?? 0]))
+
+  const nested: Visit[][] = []
+  for (let i = 0; i < normalizedItems.length; i += VISIT_BATCH_SIZE) {
+    const batch = normalizedItems.slice(i, i + VISIT_BATCH_SIZE)
+    const batchVisits = await Promise.all(
+      batch.map(async (item) => {
+        const visits = await chrome.history.getVisits({ url: item.url })
+        return visits
+          .filter((visit) => visit.visitTime != null)
+          .map((visit) => ({
+            url: item.url,
+            title: item.title ?? item.url,
+            visitTime: visit.visitTime as number,
+            visitId: String(visit.visitId ?? visit.id ?? ''),
+            referringVisitId: String(visit.referringVisitId ?? '0'),
+            transition: (visit.transition ?? 'link') as Visit['transition'],
+            typedCount: typedCountMap.get(item.url) ?? 0,
+            timeOnPage: 0,
+          }))
+      }),
+    )
+    nested.push(...batchVisits)
+  }
+
+  return nested.flat()
+}
+
+async function loadSessionsFromVisitTracker(): Promise<Visit[]> {
+  const items = await getRecentVisits({
+    startTime: Date.now() - HISTORY_LOOKBACK_DAYS * DAY_MS,
+    maxResults: 5000,
+  })
+
+  // visitTracker stores one row per page load, not per individual visit.
+  // Expand each item back to a single Visit entry at lastVisitTime.
+  return items.map((item) => ({
+    url: item.url,
+    title: item.title,
+    visitTime: item.lastVisitTime,
+    visitId: '',
+    referringVisitId: '0',
+    transition: 'link',
+    typedCount: 0,
+    timeOnPage: 0,
+  }))
 }
 
 function classifySession(visits: Visit[]): SessionType {

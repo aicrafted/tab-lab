@@ -1,6 +1,14 @@
 import { initDomainData } from '@/lib/ai/domain-prefill'
+import { pruneOldVisits, recordVisit } from '@/lib/browser/visitTracker'
 
 void initDomainData()
+void pruneOldVisits()
+
+chrome.tabs.onUpdated.addListener((_, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('moz-extension://')) {
+    void recordVisit(tab.url, tab.title ?? tab.url)
+  }
+})
 
 const MAX_HISTORY = 50
 let activeTabId: number | null = null
@@ -50,14 +58,19 @@ chrome.action.onClicked.addListener(() => {
   })
 })
 
+function openSidePanel() {
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    if (tab?.windowId == null) return
+    if (typeof (globalThis as any).browser !== 'undefined' && (browser as any).sidebarAction) {
+      void (browser as any).sidebarAction.open()
+    } else {
+      void chrome.sidePanel.open({ windowId: tab.windowId })
+    }
+  })
+}
+
 chrome.commands.onCommand.addListener((command) => {
-  if (command === 'open-side-panel') {
-    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-      if (tab?.windowId != null) {
-        void chrome.sidePanel.open({ windowId: tab.windowId })
-      }
-    })
-  }
+  if (command === 'open-side-panel') openSidePanel()
 })
 
 function injectElementPicker() {
@@ -123,6 +136,11 @@ function injectElementPicker() {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'openSidePanel') {
+    openSidePanel()
+    return false
+  }
+
   if (msg.type === 'getSidePanelData') {
     void (async () => {
       try {
@@ -197,4 +215,5 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })()
     return true
   }
+
 })

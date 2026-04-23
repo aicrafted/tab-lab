@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "TabLab",
+  "version": "0.2.1",
+  "description": "Analytics lab for bookmark hoarders — local AI classification, semantic search, and visual exploration.",
+  "permissions": ["bookmarks", "tabs", "storage", "scripting", "activeTab"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tablab@sharky",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": { "required": [], "optional": [] }
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "background": {
+    "scripts": ["src/background/service-worker.ts"]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TabLab",
+    "default_icon": {
+      "16":  "icons/icon-16.png",
+      "32":  "icons/icon-32.png",
+      "48":  "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "sidebar_action": {
+    "default_panel": "src/pages/sidepanel/index.html",
+    "default_title": "TabLab"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+T" },
+      "description": "Open TabLab"
+    },
+    "open-side-panel": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Open Side Panel"
+    }
+  },
+  "icons": {
+    "16":  "icons/icon-16.png",
+    "32":  "icons/icon-32.png",
+    "48":  "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

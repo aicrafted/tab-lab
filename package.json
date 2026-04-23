@@ -7,6 +7,8 @@
     "dev": "vite build --watch --mode development",
     "build:dev": "vite build --mode development && node scripts/fix-commonjs-helper.mjs",
     "build": "vite build && node scripts/fix-commonjs-helper.mjs",
+    "build:chrome": "vite build && node scripts/fix-commonjs-helper.mjs",
+    "build:ff": "vite build --config vite.config.firefox.ts && node scripts/build-firefox.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

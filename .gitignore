@@ -4,5 +4,6 @@
 node_modules/
 tasks/
 dist/
+dist-firefox/
 site/
 AGENTS.md

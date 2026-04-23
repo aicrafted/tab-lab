@@ -1,10 +1,10 @@
+import { IS_FIREFOX } from '@/lib/core/browser-detect'
+
 const OFFSCREEN_URL = 'offscreen.html'
 const DEFAULT_TRANSFORMERS_EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
 
 async function ensureOffscreen(): Promise<void> {
-  if (!chrome.offscreen) {
-    throw new Error('chrome.offscreen API is unavailable')
-  }
+  if (IS_FIREFOX) return
   const hasDocument = await chrome.offscreen.hasDocument()
   if (!hasDocument) {
     await chrome.offscreen.createDocument({

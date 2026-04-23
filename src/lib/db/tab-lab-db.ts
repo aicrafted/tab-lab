@@ -3,7 +3,7 @@
  */
 
 export const DB_NAME = 'tab-lab'
-export const DB_VERSION = 1
+export const DB_VERSION = 3
 
 export const STORES = {
   PAGE_CACHE: 'page-cache',
@@ -11,6 +11,7 @@ export const STORES = {
   EMBEDDINGS: 'embeddings',
   PROJECTION_2D: 'projection2d',
   META: 'meta',
+  VISITS: 'visits',
 } as const
 
 export type StoreName = (typeof STORES)[keyof typeof STORES]
@@ -47,6 +48,13 @@ export function openDB(): Promise<IDBDatabase> {
       // 5. Meta
       if (!db.objectStoreNames.contains(STORES.META)) {
         db.createObjectStore(STORES.META, { keyPath: 'key' })
+      }
+
+      // 6. Visits (v2) — IndexedDB-backed visit tracker, cross-browser replacement for chrome.history
+      if (!db.objectStoreNames.contains(STORES.VISITS)) {
+        const visits = db.createObjectStore(STORES.VISITS, { autoIncrement: true })
+        visits.createIndex('by-url', 'url', { unique: false })
+        visits.createIndex('by-visitTime', 'visitTime', { unique: false })
       }
     }
     req.onsuccess = () => resolve(req.result)

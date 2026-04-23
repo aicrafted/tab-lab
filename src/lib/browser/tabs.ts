@@ -5,7 +5,7 @@ import { parseDomain } from '../core/utils'
 export async function getAllTabs(): Promise<TabItem[]> {
   const [chromeTabs, groups] = await Promise.all([
     chrome.tabs.query({}),
-    chrome.tabGroups.query({}).catch(() => [] as chrome.tabGroups.TabGroup[]),
+    chrome.tabGroups?.query({}).catch(() => [] as chrome.tabGroups.TabGroup[]) ?? Promise.resolve([] as chrome.tabGroups.TabGroup[]),
   ])
 
   const groupMap = new Map<number, { title: string; color: string }>(

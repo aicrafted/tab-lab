@@ -1,8 +1,7 @@
 // popup — two buttons: Side Panel / Full View
 document.getElementById('openPanel')?.addEventListener('click', () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-    if (tab?.windowId != null) void chrome.sidePanel.open({ windowId: tab.windowId })
-  })
+  // Route through background so popup.js has no direct sidePanel/sidebarAction reference
+  void chrome.runtime.sendMessage({ type: 'openSidePanel' })
   window.close()
 })
 

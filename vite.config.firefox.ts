@@ -10,14 +10,13 @@ export default defineConfig({
   plugins: [
     react(),
     webExtension({
-      manifest: './manifest.json',
+      manifest: './manifest.firefox.json',
       additionalInputs: [
         'src/pages/main/index.html',
         'src/pages/sidepanel/index.html',
-        'offscreen.html',
         'popup.html',
       ],
-      browser: 'chrome',
+      browser: 'firefox',
     }),
     viteStaticCopy({
       targets: [
@@ -39,9 +38,10 @@ export default defineConfig({
     },
   },
   define: {
-    __BROWSER__: JSON.stringify('chrome'),
+    __BROWSER__: JSON.stringify('firefox'),
   },
   build: {
+    outDir: 'dist-firefox',
     rollupOptions: {
       output: {
         chunkFileNames: 'assets/chunk-[hash].js',
