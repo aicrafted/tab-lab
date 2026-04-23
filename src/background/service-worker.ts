@@ -131,7 +131,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           chrome.bookmarks.getTree(),
           chrome.storage.session.get('tabHistory'),
         ])
-        sendResponse({ tabs, bookmarks, tabHistory })
+        const liveTabIds = new Set(tabs.map((t) => t.id))
+        const filteredHistory = (tabHistory as { tabId: number }[]).filter((h) => liveTabIds.has(h.tabId))
+        sendResponse({ tabs, bookmarks, tabHistory: filteredHistory })
       } catch (err) {
         sendResponse({ error: String(err) })
       }
