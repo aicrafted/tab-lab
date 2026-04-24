@@ -16,6 +16,7 @@ import type { ViewProps } from '@/components/views/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -31,7 +32,7 @@ import {
   deleteDomainOverride,
   type PrefilledDomain 
 } from '@/lib/ai/domain-prefill'
-import { KNOWN_PLATFORMS, DEFAULT_LOCAL_NETWORKS } from '@/lib/core/types'
+import { KNOWN_PLATFORMS, PLATFORM_DESCRIPTIONS, DEFAULT_LOCAL_NETWORKS, type KnownPlatform } from '@/lib/core/types'
 import { cn } from '@/lib/core/utils'
 import { Favicon } from '@/components/Favicon'
 
@@ -350,22 +351,23 @@ export function DomainsSettingsView({ llmSettings, onSaveSettings }: ViewProps) 
 
               <div className="space-y-1.5">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Platform Type</label>
-                <div className="grid grid-cols-4 gap-1.5 p-1 rounded-lg bg-muted/30 border border-border/50">
-                  {KNOWN_PLATFORMS.map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setEditForm({ ...editForm, platform: p })}
-                      className={cn(
-                        "text-[9px] px-1 py-1.5 rounded-md border transition-all truncate font-medium",
-                        editForm.platform === p 
-                          ? "bg-primary text-primary-foreground border-primary shadow-sm" 
-                          : "bg-transparent hover:bg-background text-muted-foreground border-transparent hover:border-border"
-                      )}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+                <Select
+                  value={editForm.platform ?? '__none__'}
+                  onValueChange={(v) => setEditForm({ ...editForm, platform: (v === '__none__' ? undefined : v) as KnownPlatform | undefined })}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {KNOWN_PLATFORMS.map(p => (
+                      <SelectItem key={p} value={p}>
+                        <span className="font-medium w-20 inline-block">{p}</span>
+                        <span className="text-muted-foreground/60 text-[11px]">{PLATFORM_DESCRIPTIONS[p]}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-1.5">

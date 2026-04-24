@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import type { DeepPartial } from '@/lib/core/utils'
 import type { SidePanelSettings } from './sidepanel-settings'
+import { IS_FIREFOX } from '@/lib/core/browser-detect'
 
 interface SidePanelSettingsPanelProps {
   settings: SidePanelSettings
@@ -76,8 +77,8 @@ export function SidePanelSettingsPanel({ settings, onUpdate, onClose }: SidePane
             className="rounded border border-[#333] bg-[#111] px-1.5 py-0.5 text-xs text-[#ccc] focus:outline-none"
           >
             <option value="defined">Defined in settings</option>
-            <option value="gemini-nano">Gemini Nano</option>
-            <option value="browser-ml">Browser ML</option>
+            {!IS_FIREFOX && <option value="gemini-nano">Gemini Nano</option>}
+            {!IS_FIREFOX && <option value="browser-ml">Browser ML</option>}
             <option value="lmstudio">LM Studio / Ollama</option>
             <option value="openrouter">OpenRouter</option>
           </select>

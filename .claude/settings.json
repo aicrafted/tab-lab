@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rtk bun *)"
+      "Bash(rtk bun *)",
+      "Bash(npx vite *)"
     ]
   }
 }

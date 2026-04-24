@@ -1,6 +1,6 @@
 import { parseLlmJson } from './parsers'
 import type { DomainInfo } from './domain-enricher'
-import { KNOWN_PLATFORMS, PAGE_INTENTS, type PageIntent, type KnownPlatform } from '../core/types'
+import { KNOWN_PLATFORMS, PLATFORM_DESCRIPTIONS, PAGE_INTENTS, type PageIntent, type KnownPlatform } from '../core/types'
 export type { PageIntent, KnownPlatform }
 
 const VALID_INTENTS: readonly PageIntent[] = PAGE_INTENTS
@@ -181,7 +181,7 @@ const ENRICH_DOMAIN_USER_PREFIX = `Classify these domains. For each domain you c
 - "category": short label (1-4 words, Title Case) describing the site's main purpose (required)
 - "description": 3-7 words describing what the site is (required)
 - "platform": classify the domain's service type using one of these values (omit if none fits):
-  social=social networks (Reddit, Twitter, LinkedIn) | video=video hosting (YouTube, Twitch) | code=code hosting/dev tools (GitHub, GitLab) | registry=package managers (npm, PyPI, crates.io) | qa=Q&A sites (Stack Overflow) | blog=articles/blogs (Medium, Substack, dev.to) | docs=official documentation (ReadTheDocs, MDN) | shopping=e-commerce (Amazon, eBay) | news=news media (BBC, TechCrunch, HN) | ai=AI tools/model hubs (ChatGPT, HuggingFace) | tool=general SaaS apps (Figma, Notion, Linear) | sandbox=code playgrounds (CodePen, StackBlitz) | cloud=cloud providers (AWS, GCP, Azure) | music=music streaming (Spotify, SoundCloud) | finance=banking/trading (Stripe, Robinhood) | ci=CI/CD platforms (CircleCI, Vercel) | games=gaming stores/communities (Steam, itch.io) | education=learning platforms (Coursera, Udemy) | email=webmail clients (Gmail, Outlook) | reference=encyclopedias/wikis (Wikipedia)
+  ${Object.entries(PLATFORM_DESCRIPTIONS).map(([k, v]) => `${k}=${v}`).join(' | ')}
 
 Include everything you know — companies, brands, shops, media, tools from any country.
 

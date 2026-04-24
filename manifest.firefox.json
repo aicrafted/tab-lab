@@ -9,7 +9,10 @@
     "gecko": {
       "id": "tablab@sharky",
       "strict_min_version": "128.0",
-      "data_collection_permissions": { "required": [], "optional": [] }
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
     }
   },
   "content_security_policy": {

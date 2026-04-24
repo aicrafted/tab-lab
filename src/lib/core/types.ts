@@ -94,30 +94,32 @@ export interface BookmarkScopeFilter {
   folderPath?: string
 }
 
-export const KNOWN_PLATFORMS = [
-  'social',
-  'video',
-  'code',
-  'registry',
-  'qa',
-  'blog',
-  'docs',
-  'shopping',
-  'news',
-  'ai',
-  'tool',
-  'sandbox',
-  'cloud',
-  'music',
-  'finance',
-  'ci',
-  'games',
-  'education',
-  'email',
-  'reference',
-] as const
+export const PLATFORM_DESCRIPTIONS = {
+  social:    'social networks (Reddit, Twitter, LinkedIn)',
+  video:     'video hosting (YouTube, Twitch)',
+  code:      'code hosting / dev tools (GitHub, GitLab)',
+  registry:  'package managers (npm, PyPI, crates.io)',
+  qa:        'Q&A sites (Stack Overflow)',
+  blog:      'articles / blogs (Medium, Substack, dev.to)',
+  docs:      'official documentation (ReadTheDocs, MDN)',
+  shopping:  'e-commerce (Amazon, eBay)',
+  news:      'news media (BBC, TechCrunch, HN)',
+  ai:        'AI tools / model hubs (ChatGPT, HuggingFace)',
+  tool:      'general SaaS apps (Figma, Notion, Linear)',
+  sandbox:   'code playgrounds (CodePen, StackBlitz)',
+  cloud:     'cloud providers (AWS, GCP, Azure)',
+  music:     'music streaming (Spotify, SoundCloud)',
+  finance:   'banking / trading (Stripe, Robinhood)',
+  ci:        'CI/CD platforms (CircleCI, Vercel)',
+  games:     'gaming stores / communities (Steam, itch.io)',
+  education: 'learning platforms (Coursera, Udemy)',
+  email:     'webmail clients (Gmail, Outlook)',
+  reference: 'encyclopedias / wikis (Wikipedia)',
+} as const
 
-export type KnownPlatform = typeof KNOWN_PLATFORMS[number]
+export type KnownPlatform = keyof typeof PLATFORM_DESCRIPTIONS
+
+export const KNOWN_PLATFORMS = Object.keys(PLATFORM_DESCRIPTIONS) as KnownPlatform[]
 
 export interface CacheEntry {
   category: string
