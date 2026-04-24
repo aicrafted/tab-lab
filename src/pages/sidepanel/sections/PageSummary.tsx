@@ -50,10 +50,20 @@ export function PageSummary({
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const cacheRef = useRef<Map<string, string>>(new Map())
+  const abortRef = useRef<AbortController | null>(null)
   const effectiveProvider = summaryProvider === 'defined' ? llmSettings.tasks.chat.provider : summaryProvider
   const effectiveProviderLabel = providerLabel(effectiveProvider)
 
+  function cancelSummarize() {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setState('idle')
+  }
+
   async function summarizeText(text: string) {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setState('loading')
     setError('')
     try {
@@ -63,14 +73,17 @@ export function PageSummary({
         text,
         getEffectiveLlmSettings(llmSettings, summaryProvider),
         2500,
-        { metricKey: 'sidepanel-summary', disableThinking: true },
+        { metricKey: 'sidepanel-summary', disableThinking: true, signal: controller.signal },
       )
       cacheRef.current.set(url, result)
       setSummary(result)
       setState('done')
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : String(err))
       setState('error')
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
     }
   }
 
@@ -136,6 +149,8 @@ export function PageSummary({
     if (state === 'picking') {
       void chrome.runtime.sendMessage({ type: 'cancelElementPicker', tabId }).catch(() => {})
     }
+    abortRef.current?.abort()
+    abortRef.current = null
     const cached = cacheRef.current.get(url)
     if (cached) {
       setSummary(cached)
@@ -228,7 +243,16 @@ export function PageSummary({
       </summary>
       <div className="px-3 pb-3">
         {state === 'loading' && (
-          <p className="animate-pulse text-xs text-[#555]">Summarizing...</p>
+          <div className="flex items-center gap-2">
+            <p className="animate-pulse text-xs text-[#555]">Summarizing...</p>
+            <button
+              type="button"
+              onClick={cancelSummarize}
+              className="text-xs text-[#555] transition-colors hover:text-[#888]"
+            >
+              Stop
+            </button>
+          </div>
         )}
         {state === 'done' && (
           <div className="space-y-2">
