@@ -32,6 +32,7 @@ function sendToOffscreen<T>(msg: object): Promise<T> {
 }
 
 export async function webgpuEmbed(text: string, model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL): Promise<number[]> {
+  if (IS_FIREFOX) throw new Error('WebGPU embedding not supported in Firefox')
   await ensureOffscreen()
   const response = await sendToOffscreen<{ ok: true; vector: number[] }>({
     type: 'WEBGPU_EMBED',
@@ -44,6 +45,7 @@ export async function webgpuEmbed(text: string, model = DEFAULT_TRANSFORMERS_EMB
 export async function preloadTransformersEmbeddingModel(
   model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
 ): Promise<void> {
+  if (IS_FIREFOX) return
   await ensureOffscreen()
   await sendToOffscreen<{ ok: true }>({
     type: 'WEBGPU_EMBED_PRELOAD',
@@ -54,6 +56,7 @@ export async function preloadTransformersEmbeddingModel(
 export async function isTransformersEmbeddingModelCached(
   model = DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
 ): Promise<boolean> {
+  if (IS_FIREFOX) return false
   await ensureOffscreen()
   const response = await sendToOffscreen<{ ok: true; cached: boolean }>({
     type: 'WEBGPU_EMBED_CHECK_CACHE',

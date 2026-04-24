@@ -62,8 +62,8 @@ export function PageSummary({
         systemPrompt,
         text,
         getEffectiveLlmSettings(llmSettings, summaryProvider),
-        400,
-        { metricKey: 'sidepanel-summary' },
+        2500,
+        { metricKey: 'sidepanel-summary', disableThinking: true },
       )
       cacheRef.current.set(url, result)
       setSummary(result)

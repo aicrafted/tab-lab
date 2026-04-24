@@ -81,21 +81,24 @@ export abstract class OpenAiCompatibleProvider extends LlmProvider {
         messages: messagesToSent,
         max_tokens: options?.maxTokens,
         temperature: options?.temperature ?? this.getTemperature(settings),
+        ...(options?.disableThinking ? { enable_thinking: false } : {}),
         ...(options?.jsonSchema ? {
-          response_format: { 
-            type: 'json_schema', 
-            json_schema: { 
-              name: options.jsonSchema.name, 
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: options.jsonSchema.name,
               schema: options.jsonSchema.schema,
-              strict: options.jsonSchema.strict 
-            } 
+              strict: options.jsonSchema.strict
+            }
           }
         } : {})
       },
       options?.signal
     )
 
-    return data.choices[0]?.message?.content?.trim() ?? ''
+    const raw = data.choices[0]?.message?.content ?? ''
+    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+    return stripped
   }
 
   async embed(text: string, settings: LlmSettings, signal?: AbortSignal): Promise<number[]> {

@@ -33,6 +33,7 @@ import {
   preloadTransformersEmbeddingModel,
 } from '@/lib/ai/providers/webgpu-provider'
 import type { ViewProps } from '@/components/views/types'
+import { IS_FIREFOX } from '@/lib/core/browser-detect'
 
 const WEBLLM_CHAT_MODELS = [
   'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',
@@ -638,7 +639,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Providers</h3>
 
           {/* Browser-local ML */}
-          <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
+          {!IS_FIREFOX && <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <Cpu className="h-4 w-4 text-primary" />
               <p className="text-sm font-semibold uppercase">Browser-local ML</p>
@@ -699,7 +700,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                 </div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* LM Studio / Ollama */}
           <div className="space-y-4 rounded-xl border border-border/60 bg-card/30 p-5 shadow-sm backdrop-blur-sm">
@@ -821,7 +822,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
         </div>
 
         {/* GEMINI COLUMN */}
-        <div className="xl:col-span-4 space-y-6">
+        {!IS_FIREFOX && <div className="xl:col-span-4 space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Gemini Nano</h3>
 
           <div className="rounded-xl border border-border/60 bg-card/10 p-5 space-y-4">
@@ -912,25 +913,10 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
             </div>
           </div>
 
-          <div className="space-y-3">
-            {configHints.length > 0 && (
-              <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-                {configHints.map((hint) => (
-                  <p key={hint} className="text-[11px] leading-relaxed text-amber-200/90">
-                    {hint}
-                  </p>
-                ))}
-              </div>
-            )}
-            <Button onClick={handleSave} className="w-full shadow-lg shadow-primary/10">
-              Save & Apply Configuration
-            </Button>
-            {error && <p className="text-[11px] text-destructive text-center">{error}</p>}
-          </div>
-        </div>
+        </div>}
 
         {/* ASSIGNMENTS COLUMN */}
-        <div className="xl:col-span-4 space-y-6">
+        <div className={`${IS_FIREFOX ? 'xl:col-span-8' : 'xl:col-span-4'} space-y-6`}>
           <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground/70">Assignments</h3>
 
           <div className="space-y-6 rounded-xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur-sm">
@@ -945,10 +931,10 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(geminiStatus === 'ready' || geminiStatus === 'after-download') && (
+                    {!IS_FIREFOX && (geminiStatus === 'ready' || geminiStatus === 'after-download') && (
                       <SelectItem value="gemini-nano">Gemini Nano</SelectItem>
                     )}
-                    <SelectItem value="browser-ml">Browser-local ML</SelectItem>
+                    {!IS_FIREFOX && <SelectItem value="browser-ml">Browser-local ML</SelectItem>}
                     <SelectItem value="lmstudio">LM Studio / Ollama</SelectItem>
                     <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
@@ -967,7 +953,7 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="browser-ml">Browser-local ML</SelectItem>
+                    {!IS_FIREFOX && <SelectItem value="browser-ml">Browser-local ML</SelectItem>}
                     <SelectItem value="lmstudio">LM Studio / Ollama</SelectItem>
                     <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
@@ -1069,6 +1055,22 @@ export function LlmSettingsView({ llmSettings, onSaveSettings }: ViewProps) {
               </div>
             </div>
 
+          </div>
+
+          <div className="space-y-3">
+            {configHints.length > 0 && (
+              <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                {configHints.map((hint) => (
+                  <p key={hint} className="text-[11px] leading-relaxed text-amber-200/90">
+                    {hint}
+                  </p>
+                ))}
+              </div>
+            )}
+            <Button onClick={handleSave} className="w-full shadow-lg shadow-primary/10">
+              Save & Apply Configuration
+            </Button>
+            {error && <p className="text-[11px] text-destructive text-center">{error}</p>}
           </div>
 
         </div>

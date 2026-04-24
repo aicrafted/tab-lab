@@ -258,6 +258,11 @@ export const DEFAULT_LOCAL_NETWORKS = [
   '*.lan',
 ] as const
 
+import { IS_FIREFOX } from './browser-detect'
+
+const DEFAULT_CHAT_PROVIDER: ChatProvider = IS_FIREFOX ? 'lmstudio' : 'browser-ml'
+const DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = IS_FIREFOX ? 'lmstudio' : 'browser-ml'
+
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   localNetworks: [...DEFAULT_LOCAL_NETWORKS],
   providers: {
@@ -290,16 +295,16 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
     lastSyncAt: 0,
   },
   tasks: {
-    chat: { provider: 'browser-ml' },
+    chat: { provider: DEFAULT_CHAT_PROVIDER },
     embedding: {
-      provider: 'browser-ml',
+      provider: DEFAULT_EMBEDDING_PROVIDER,
       includeTitle: true,
-      includeDomain: true,
+      includeDomain: false,
       includePath: true,
-      includeDomainCategory: true,
-      includeDomainDescription: true,
+      includeDomainCategory: false,
+      includeDomainDescription: false,
       includeDomainPlatform: true,
-      includeCategory: true,
+      includeCategory: false,
       includeLocalLabel: true,
     },
     classification: { method: 'llm' },
@@ -339,11 +344,11 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
       && !lmstudioApiKey
 
     const effectiveChatProvider: ChatProvider = storedChatProvider === 'lmstudio' && lmstudioUnconfigured
-      ? 'browser-ml'
+      ? DEFAULT_CHAT_PROVIDER
       : storedChatProvider
 
     const effectiveEmbedProvider: EmbeddingProvider = storedEmbedProvider === 'lmstudio' && lmstudioUnconfigured
-      ? 'browser-ml'
+      ? DEFAULT_EMBEDDING_PROVIDER
       : storedEmbedProvider
 
     return {
@@ -378,12 +383,12 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
         embedding: {
           provider: effectiveEmbedProvider,
           includeTitle: typeof embedding.includeTitle === 'boolean' ? embedding.includeTitle : true,
-          includeDomain: typeof embedding.includeDomain === 'boolean' ? embedding.includeDomain : true,
+          includeDomain: typeof embedding.includeDomain === 'boolean' ? embedding.includeDomain : false,
           includePath: typeof embedding.includePath === 'boolean' ? embedding.includePath : true,
-          includeDomainCategory: typeof (embedding as any).includeDomainCategory === 'boolean' ? (embedding as any).includeDomainCategory : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : true),
-          includeDomainDescription: typeof (embedding as any).includeDomainDescription === 'boolean' ? (embedding as any).includeDomainDescription : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : true),
+          includeDomainCategory: typeof (embedding as any).includeDomainCategory === 'boolean' ? (embedding as any).includeDomainCategory : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : false),
+          includeDomainDescription: typeof (embedding as any).includeDomainDescription === 'boolean' ? (embedding as any).includeDomainDescription : (typeof (embedding as any).includeDomainLabel === 'boolean' ? (embedding as any).includeDomainLabel : false),
           includeDomainPlatform: typeof (embedding as any).includeDomainPlatform === 'boolean' ? (embedding as any).includeDomainPlatform : true,
-          includeCategory: typeof embedding.includeCategory === 'boolean' ? embedding.includeCategory : true,
+          includeCategory: typeof embedding.includeCategory === 'boolean' ? embedding.includeCategory : false,
           includeLocalLabel: typeof embedding.includeLocalLabel === 'boolean' ? embedding.includeLocalLabel : true,
         },
         classification: {
@@ -429,17 +434,17 @@ export function migrateLlmSettings(raw: unknown): LlmSettings {
     },
     tasks: {
       chat: {
-        provider: toChatProvider(chat.provider || old.chatProvider, 'browser-ml'),
+        provider: toChatProvider(chat.provider || old.chatProvider, DEFAULT_CHAT_PROVIDER),
       },
       embedding: {
-        provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, 'browser-ml'),
+        provider: toEmbeddingProvider(embedding.provider || old.embeddingProvider, DEFAULT_EMBEDDING_PROVIDER),
         includeTitle: true,
-        includeDomain: true,
+        includeDomain: false,
         includePath: true,
-        includeDomainCategory: true,
-        includeDomainDescription: true,
+        includeDomainCategory: false,
+        includeDomainDescription: false,
         includeDomainPlatform: true,
-        includeCategory: true,
+        includeCategory: false,
         includeLocalLabel: true,
       },
       classification: {
